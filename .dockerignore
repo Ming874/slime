@@ -1,0 +1,8 @@
+# 只把網站檔案放進映像
+.git
+.github
+.claude
+.DS_Store
+*.md
+Dockerfile
+.dockerignore
