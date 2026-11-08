@@ -115,6 +115,10 @@ function sanitize(o) {
   if (s.branch && !BRANCHES[s.branch]) s.branch = null;
   if (s.pos && !(Number.isFinite(s.pos.x) && Number.isFinite(s.pos.z) && Number.isFinite(s.pos.yaw))) s.pos = null;
   s.hb = clamp(Math.floor(+s.hb) || 0, 0, 8); s.sens = clamp(Math.floor(+s.sens) || 0, 0, 2);
+  // 已購買的設備：只保留有效項目；改版前（設備內建）的舊存檔自動補發
+  const OWN_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'];
+  if (!o.own || typeof o.own !== 'object') { s.own = {}; if (o.seen && ((+o.sales || 0) > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0))) { OWN_KEYS.forEach(k => s.own[k] = true); s.ownMigrated = true; } }
+  else s.own = Object.fromEntries(Object.entries(o.own).filter(([k, v]) => OWN_KEYS.includes(k) && v).map(([k]) => [k, true]));
   if (s.mk && !(SP[s.mk.sp] && s.mk.step >= 0 && s.mk.step < 3 && Array.isArray(s.mk.prec) && s.mk.prec.length === s.mk.step)) s.mk = null;
   return s;
 }
@@ -1753,7 +1757,7 @@ function renderTitle() {
     (has ? `<button class="btn big ghost" data-act="tNew">新遊戲</button>` : '') +
     `<button class="btn big ghost" data-act="tMulti">多人遊戲</button>
      <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="sound" id="tSound">音效：${S.sound ? '開' : '關'}</button></div>`;
-  $('#titleFoot').innerHTML = has ? `存檔：${fmtTime(S.last)} · ${fmt(S.money)} · 粉絲 ${Math.floor(S.fans)} · 已發現區域 ${S.zones.length}/4` : '月光谷正在等待新的工坊主人';
+  $('#titleFoot').innerHTML = has ? `存檔：${fmtTime(S.last)} · ${fmt(S.money)} · 粉絲 ${Math.floor(S.fans)} · 已發現區域 ${S.zones.length}/4 · 設備 ${Object.keys(S.own || {}).length}/5` : '月光谷正在等待新的工坊主人';
   $('#titleMain').hidden = false; $('#titleMp').hidden = true;
 }
 function showTitle() {
@@ -1762,6 +1766,7 @@ function showTitle() {
   unlockMouse(); TITLE.on = true; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
 }
 function startPlay() {
+  if (S.ownMigrated) { S.ownMigrated = false; save(); setTimeout(() => toast('偵測到改版前的存檔：已補發你原本擁有的加工機器、裝飾桌與直播設備'), 900); }
   TITLE.on = false; document.body.classList.remove('titleon'); $('#title').hidden = true;
   $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast('歡迎來到月光谷。左上角是目前目標。');
   if (!S.seen) showIntro();
