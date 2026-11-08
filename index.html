@@ -3,36 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#1d1a2f">
+<meta name="theme-color" content="#0a0e14">
 <title>史萊姆捏捏工坊</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header id="top">
-  <div class="brand">🫧 史萊姆捏捏工坊</div>
+  <div class="brand"><i class="logo"></i>SQUISH LAB</div>
   <div class="stats">
     <span class="chip" id="sMoney">¥0</span>
-    <span class="chip" id="sFans">⭐ 0</span>
-    <span class="chip" id="sTrend" title="本週流行色">🔥 —</span>
+    <span class="chip" id="sFans">粉絲 0</span>
+    <span class="chip" id="sTrend">流行 —</span>
   </div>
   <div class="tools">
-    <button class="ibtn" data-act="sound" id="btnSound" title="音效">🔊</button>
-    <button class="ibtn" data-act="help" title="說明">❓</button>
-    <button class="ibtn" data-act="reset" title="重置存檔">🗑</button>
+    <button class="ibtn" data-act="sound" id="btnSound" title="音效"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 9a4 4 0 010 6"/></svg></button>
+    <button class="ibtn" data-act="help" title="說明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1-1.5 2M12 17v.01"/></svg></button>
+    <button class="ibtn" data-act="reset" title="重置存檔"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>
   </div>
 </header>
 
 <main>
   <section class="panel" id="p-catch">
     <div id="zones" class="row"></div>
-    <div class="stagewrap"><canvas id="fieldCv"></canvas></div>
-    <div class="hint">點擊史萊姆 3 次採集凝膠。史萊姆不會受傷，只是會暫時害羞，稍後可再次採集 🌱</div>
+    <div class="stagewrap"><canvas id="fieldCv"></canvas><div class="ov fxl" id="fxl"></div></div>
+    <div class="hint">點擊史萊姆 3 次採集凝膠。史萊姆不會受傷，只是會暫時害羞，稍後可再次採集。</div>
     <div id="gelBar" class="row wrap"></div>
   </section>
 
   <section class="panel" id="p-make">
-    <h2>加工工坊</h2>
-    <div class="hint">每個捏捏需要 2 份凝膠。依序完成「切片 → 裹糖晶 → 乾燥」，停在甜蜜區越準，成品越酥脆！</div>
+    <h2>加工產線</h2>
+    <div class="stagewrap mk"><canvas id="makeCv"></canvas></div>
+    <div id="machLegend" class="row wrap small"></div>
+    <div class="hint">每個捏捏需要 2 份凝膠。依序通過切片機、糖晶滾筒機、乾燥烘箱，在甜蜜區停下機器，越準越酥脆。升級機器可加寬甜蜜區。</div>
     <div id="gelPick" class="row wrap"></div>
     <div id="mini" class="card"></div>
     <div id="makeResult"></div>
@@ -49,14 +51,14 @@
   <section class="panel" id="p-live">
     <div class="stagewrap live" id="liveWrap">
       <canvas id="liveCv"></canvas>
-      <div class="ov tl"><span class="badge" id="liveBadge">OFF AIR</span> <span id="liveViewers">👁 0</span></div>
+      <div class="ov tl"><span class="badge" id="liveBadge">OFF AIR</span> <span id="liveViewers">0 觀眾</span></div>
       <div class="ov tr"><div class="meter"><i id="hypeBar"></i></div><small id="comboTxt"></small></div>
       <div class="ov req" id="reqBox"></div>
       <div class="ov dm" id="danmaku"></div>
       <div class="ov bl" id="donate"></div>
     </div>
     <div class="row">
-      <button class="btn big" data-act="toggleLive" id="btnLive">🔴 開始直播</button>
+      <button class="btn big" data-act="toggleLive" id="btnLive">開始直播</button>
       <div id="stageInfo" class="grow small"></div>
     </div>
     <div id="chat" class="chat"></div>
@@ -82,11 +84,12 @@
   </section>
 
   <section class="panel" id="p-up">
-    <h2>升級與解鎖</h2>
+    <h2>機器與升級</h2>
     <div id="upList"></div>
   </section>
 
   <section class="panel" id="p-branch">
+    <div class="stagewrap mk" id="facWrap" hidden><canvas id="facCv"></canvas></div>
     <div id="branchBody"></div>
   </section>
 
@@ -97,27 +100,28 @@
 </main>
 
 <nav id="nav">
-  <button data-act="tab" data-tab="catch" class="on">🌿<span>捕捉</span></button>
-  <button data-act="tab" data-tab="make">🔪<span>加工</span></button>
-  <button data-act="tab" data-tab="decor">🎀<span>裝飾</span></button>
-  <button data-act="tab" data-tab="live">📺<span>直播</span></button>
-  <button data-act="tab" data-tab="web">🛒<span>網站</span></button>
-  <button data-act="tab" data-tab="up">⬆️<span>升級</span></button>
-  <button data-act="tab" data-tab="branch" id="navBranch" hidden>🏭<span>事業</span></button>
-  <button data-act="tab" data-tab="codex">📖<span>圖鑑</span></button>
+  <button data-act="tab" data-tab="catch" class="on"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span>捕捉</span></button>
+  <button data-act="tab" data-tab="make"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>加工</span></button>
+  <button data-act="tab" data-tab="decor"><svg viewBox="0 0 24 24"><path d="M12 3l8 9-8 9-8-9z"/></svg><span>裝飾</span></button>
+  <button data-act="tab" data-tab="live"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3z"/></svg><span>直播</span></button>
+  <button data-act="tab" data-tab="web"><svg viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8a3 3 0 016 0"/></svg><span>網站</span></button>
+  <button data-act="tab" data-tab="up"><svg viewBox="0 0 24 24"><path d="M12 20V5M6 11l6-6 6 6"/></svg><span>升級</span></button>
+  <button data-act="tab" data-tab="branch" id="navBranch" hidden><svg viewBox="0 0 24 24"><path d="M3 21V10l6 4v-4l6 4V6h3v15z"/></svg><span>事業</span></button>
+  <button data-act="tab" data-tab="codex"><svg viewBox="0 0 24 24"><path d="M5 4h10a3 3 0 013 3v13H8a3 3 0 01-3-3z"/><path d="M5 17a3 3 0 013-3h10"/></svg><span>圖鑑</span></button>
 </nav>
 
 <div id="toasts"></div>
 <div id="modal" hidden><div class="mbox" id="mbox"></div></div>
 <div id="login" hidden>
   <div class="mbox">
-    <h2>🫧 史萊姆捏捏工坊</h2>
+    <h2>SQUISH LAB</h2>
     <p>請輸入登入碼進入遊戲</p>
     <input id="loginCode" type="password" autocomplete="off" placeholder="登入碼" style="width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:inherit">
     <div id="loginMsg" class="small" style="color:var(--red);min-height:20px;margin-top:6px"></div>
     <div class="row"><button class="btn" id="loginBtn">進入</button></div>
   </div>
 </div>
+<script src="vendor/three.min.js"></script>
 <script src="gate.js"></script>
 </body>
 </html>
