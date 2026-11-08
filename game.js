@@ -94,7 +94,8 @@ function load() {
   return null;
 }
 let S = load() || fresh();
-function save() { S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } }
+let NOSAVE = false;
+function save() { if (NOSAVE) return; S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } }
 
 /* ---------- 經濟公式 ---------- */
 const trend = { sp: null };
@@ -394,11 +395,11 @@ function makeStage(cv, mode) {
   function bind() {
     cv.addEventListener('pointerdown', e => {
       e.preventDefault(); if (!st.p) return; try { cv.setPointerCapture(e.pointerId); } catch (_) { }
-      if (mode === 'squeeze') { const h = st.v.cast(e.clientX, e.clientY, [st.J.mesh]); if (h.length) { st.ptr = { s: 0, fired: false, px: e.clientX, py: e.clientY, lx: e.clientX, ly: e.clientY }; setHit(h[0]); sfx.squish(); } }
+      if (mode === 'squeeze') { if (st.watch) return; const h = st.v.cast(e.clientX, e.clientY, [st.J.mesh]); if (h.length) { st.ptr = { s: 0, fired: false, over: true, px: e.clientX, py: e.clientY, lx: e.clientX, ly: e.clientY }; setHit(h[0]); sfx.squish(); } }
       else { const h = st.v.cast(e.clientX, e.clientY, st.J.decoMeshes); if (h.length) { st.sel = h[0].object.userData.idx; st.drag = true; } else { st.sel = -1; st.spin = { x: e.clientX, r: st.J.group.rotation.y }; } st.onSel && st.onSel(); }
     });
     cv.addEventListener('pointermove', e => {
-      if (st.ptr) { st.ptr.px = e.clientX; st.ptr.py = e.clientY; const h = st.v.cast(e.clientX, e.clientY, [st.J.mesh]); if (h.length) setHit(h[0]); }
+      if (st.ptr) { st.ptr.px = e.clientX; st.ptr.py = e.clientY; const h = st.v.cast(e.clientX, e.clientY, [st.J.mesh]); st.ptr.over = h.length > 0; if (h.length) setHit(h[0]); }
       if (st.drag && st.sel >= 0 && st.p) {
         const b = cv.getBoundingClientRect(); RAY.setFromCamera(new THREE.Vector2((e.clientX - b.left) / b.width * 2 - 1, -((e.clientY - b.top) / b.height) * 2 + 1), st.v.cam);
         const pt = new THREE.Vector3(); if (RAY.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -2), pt)) { const l = st.J.group.worldToLocal(pt), d = st.p.deco[st.sel]; d.x = clamp(l.x, -.8, .8); d.z = clamp(l.z, -.8, .8); }
@@ -415,15 +416,22 @@ function makeStage(cv, mode) {
     let u = q.uv.x, v = q.uv.y, a = rnd(0, PI2); const cr = [u, v];
     for (let k = 0; k < 4; k++) { a += rnd(-.8, .8); const l = rnd(.03, .08); u += Math.cos(a) * l; v += Math.sin(a) * l; cr.push(u, v); }
     p.cracks.push(cr); if (p.cracks.length > 30) p.cracks.shift(); jellyTexture(st.J, p);
-    st.C.emit(q.world, Math.round(8 + eff * 14), SP[p.sp].color); st.flash = 1; st.onCrunch && st.onCrunch(st, eff);
+    st.C.emit(q.world, Math.round(8 + eff * 14), SP[p.sp].color); st.flash = 1; st.onCrunch && st.onCrunch(st, eff, { uv: [q.uv.x, q.uv.y], hit: [st.hit.x, st.hit.y, st.hit.z], cr });
+  };
+  st.remoteCrunch = m => {
+    const p = st.p; if (!p || !st.ready) return; const hit = new THREE.Vector3(...m.hit); st.rem = { hit, t: .22 };
+    if (m.cr) { p.cracks.push(m.cr); if (p.cracks.length > 30) p.cracks.shift(); jellyTexture(st.J, p); }
+    p.dur = Math.max(0, p.dur - 2.2); sfx.crunch(.6 + m.eff * .6, m.eff); st.C.emit(st.J.mesh.localToWorld(hit.clone()), Math.round(8 + m.eff * 14), SP[p.sp].color); st.flash = 1;
   };
   st.step = dt => {
     if (!st.ready) return; dt = Math.min(dt, .033); st.t += dt; if (st.shown !== st.p) apply();
     const J = st.J; let s = 0;
-    if (st.ptr) { const q = st.ptr; s = q.s = Math.min(1, q.s + dt * 5); if (s > .7 && !q.fired) { q.fired = true; q.lx = q.px; q.ly = q.py; st.crunchAt(); } else if (q.fired && Math.hypot(q.px - q.lx, q.py - q.ly) > 45) { q.lx = q.px; q.ly = q.py; st.crunchAt(); } }
+    if (st.ptr) { const q = st.ptr; s = q.s = q.over ? Math.min(1, q.s + dt * 5) : Math.max(0, q.s - dt * 6); if (q.over && s > .7 && !q.fired) { q.fired = true; q.lx = q.px; q.ly = q.py; st.crunchAt(); } else if (q.over && q.fired && Math.hypot(q.px - q.lx, q.py - q.ly) > 45) { q.lx = q.px; q.ly = q.py; st.crunchAt(); } }
+    if (st.rem) { st.rem.t -= dt; s = Math.max(s, .8); if (st.rem.t <= 0) st.rem = null; }
     if (st.p) {
-      jellyDeform(J, dt, st.ptr ? st.hit : null, s);
-      st.sqv += ((st.ptr ? s * .1 : 0) - st.sq) * 160 * dt; st.sqv *= Math.exp(-9 * dt); st.sq += st.sqv * dt;
+      const pressing = (st.ptr && st.ptr.over) || st.rem;
+      jellyDeform(J, dt, st.ptr && st.ptr.over ? st.hit : (st.rem ? st.rem.hit : null), s);
+      st.sqv += ((pressing ? s * .1 : 0) - st.sq) * 160 * dt; st.sqv *= Math.exp(-9 * dt); st.sq += st.sqv * dt;
       J.group.scale.set(1 + st.sq * .5, 1 - st.sq, 1 + st.sq * .5); J.group.position.y = 1 - st.sq;
       if (mode === 'squeeze' && !st.ptr) J.group.rotation.y = Math.sin(st.t * .5) * .25;
       syncDeco(J, st.p, st.t); const sd = st.p.deco[st.sel]; st.selRing.visible = mode === 'decor' && !!sd; if (sd) { st.selRing.position.set(sd.x, 1.01, sd.z); st.selRing.scale.setScalar(sd.s); }
@@ -468,7 +476,7 @@ function H(x, z) {
 const WS_R = 16.3, WS_Y = .45;
 function G(x, z) { const h = H(x, z); return Math.hypot(x, z) < WS_R ? Math.max(h, WS_Y) : h; }
 
-const W = { ready: false, anim: [], inter: [], t: 0, cols: new Map(), gates: {}, slimes: [], puz: [] };
+const W = { ready: false, anim: [], inter: [], t: 0, cols: new Map(), gates: {}, slimes: [], puz: [], sid: 0, spawned: new Set(), mirror: false };
 function addCol(c) {
   const x0 = c.box ? c.box[0] : c.x - c.r, x1 = c.box ? c.box[2] : c.x + c.r, z0 = c.box ? c.box[1] : c.z - c.r, z1 = c.box ? c.box[3] : c.z + c.r;
   for (let i = Math.floor(x0 / 8); i <= Math.floor(x1 / 8); i++) for (let j = Math.floor(z0 / 8); j <= Math.floor(z1 / 8); j++) { const k = i + ',' + j; if (!W.cols.has(k)) W.cols.set(k, []); W.cols.get(k).push(c); }
@@ -735,12 +743,12 @@ function buildLine(G0) {
   MK.J = makeJelly(8, true); MK.J.group.scale.setScalar(.42); MK.J.group.position.set(-6.4, 1.14, 0); MK.J.ov.visible = false; G0.add(MK.J.group);
 }
 function lineStep(dt) {
-  MK.t += dt; const t = MK.t, act = i => (M.active && M.step === i) || MK.pulse[i] > 0;
+  MK.t += dt; const t = MK.t, act = i => (M.active && M.step === i && M.phase === 'run') || MK.pulse[i] > 0, run = i => M.active && M.step === i && M.phase === 'run';
   MK.pulse = MK.pulse.map(p => Math.max(0, p - dt));
-  MK.blades.forEach((b, k) => b.position.y = act(0) ? 1.55 + .45 * Math.cos(t * 10 + k * .9) : 2.1);
-  MK.drum.rotation.x += dt * (act(1) ? 5 : .3);
+  MK.blades.forEach((b, k) => b.position.y = MK.pulse[0] > 0 ? 1.55 + .45 * Math.cos(MK.pulse[0] * 25 + k * .9) : run(0) ? 2.0 : 2.1);
+  MK.drum.rotation.x += dt * (run(1) ? 1 + (MK.drumSpd || 0) * 12 : act(1) ? 5 : .3);
   MK.sugar.forEach((s, i) => { s.visible = act(1); if (s.visible) s.position.y = 2.4 - ((t * 1.6 + i / 14) % 1) * 1.4; });
-  const hot = act(2); MK.heat.forEach(h => h.material.emissiveIntensity = hot ? 2.2 + Math.sin(t * 12) * .6 : .2); MK.fan.rotation.y += dt * (hot ? 14 : 1.2);
+  const hot = act(2), heatK = run(2) ? .3 + (MK.heatLv || 0) * 3 : (hot ? 2.2 + Math.sin(t * 12) * .6 : .2); MK.heat.forEach(h => h.material.emissiveIntensity = heatK); MK.fan.rotation.y += dt * (hot ? 14 : 1.2);
   MK.leds.forEach((row, i) => { const lv = S.up[MKEY[i]], on = act(i); row.forEach((l, k) => l.material.color.set(k < lv ? (on ? '#34d399' : '#22d3ee') : '#1e293b')); });
   const moving = M.active || MK.bx < 7.9; MK.rollers.forEach(r => r.rotation.y += dt * (moving ? 3 : 0));
   MK.belt.forEach(b => { b.position.x += dt * (moving ? .8 : 0); if (b.position.x > 7.4) b.position.x -= 15; });
@@ -795,7 +803,7 @@ function openGate(k) {
   W.inter = W.inter.filter(it => it !== gt.it);
 }
 function discoverZone(k) {
-  if (S.zones.includes(k)) return; S.zones.push(k); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); spawnZone(k);
+  if (S.zones.includes(k)) return; S.zones.push(k); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
   const txt = { coast: '地圖碎片拼在一起，指出森林盡頭有一條通往大海的小徑。', volcano: '潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '三根熔岩柱的光芒交會，冰冷的風從西方山脊吹來，雪原的入口出現了。' }[k];
   modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p><p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`, [{ t: '出發' }]);
@@ -896,7 +904,7 @@ function renderQuest() {
    史萊姆（細緻模型：水滴身體、內核、氣泡、眼睛、嘴巴、腮紅、底部滴落、品種特徵）
    ============================================================ */
 let SLIME_GEO = null; const SCACHE = {};
-function surf(x, y, z) { const l = Math.hypot(x, y, z) || 1; x /= l; y /= l; z /= l; if (y < 0) { y *= .22; x *= 1.04; z *= 1.04; } else { const t = Math.max(0, (y - .5) / .5), p = 1 - t * t * .5; x *= p; z *= p; y += t * t * t * .32; } return new THREE.Vector3(x, y, z); }
+function surf(x, y, z) { const l = Math.hypot(x, y, z) || 1; x /= l; y /= l; z /= l; if (y < 0) { y *= .2; x *= 1.06; z *= 1.06; } else { const t = Math.max(0, (y - .6) / .4), p = 1 - t * t * .3; x *= p; z *= p; y = y * .92 + t * t * t * .12; } return new THREE.Vector3(x, y, z); }
 function slimeGeo() {
   if (SLIME_GEO) return SLIME_GEO; const g = new THREE.SphereGeometry(1, LOW ? 32 : 44, LOW ? 22 : 30), p = g.attributes.position;
   for (let i = 0; i < p.count; i++) { const v = surf(p.getX(i), p.getY(i), p.getZ(i)); p.setXYZ(i, v.x, v.y, v.z); }
@@ -928,37 +936,36 @@ function slimeMesh(sp) {
   // 臉
   const face = new THREE.Group(); body.add(face); const eyes = new THREE.Group(); face.add(eyes);
   [-1, 1].forEach(s => {
-    const w = mesh(new THREE.SphereGeometry(.16, 20, 14), R.white, s * .28, .52, .74, eyes); w.scale.set(1, 1.18, .55);
-    const ir = mesh(new THREE.SphereGeometry(.105, 16, 12), R.iris, s * .27, .5, .8, eyes); ir.scale.set(1, 1.1, .5);
-    const pu = mesh(new THREE.SphereGeometry(.062, 12, 10), R.pupil, s * .27, .5, .84, eyes); pu.scale.set(1, 1.1, .5);
-    mesh(new THREE.SphereGeometry(.03, 8, 6), R.hl, s * .27 + .04, .56, .87, eyes); mesh(new THREE.SphereGeometry(.015, 6, 4), R.hl, s * .27 - .03, .46, .87, eyes);
-    const ck = mesh(new THREE.CircleGeometry(.09, 18), R.blush, s * .5, .34, .78, face); ck.lookAt(s * 1.7, .34, 2.6);
+    const w = mesh(new THREE.SphereGeometry(.2, 22, 16), R.white, s * .3, .44, .78, eyes); w.scale.set(.9, 1.1, .45);
+    const ir = mesh(new THREE.SphereGeometry(.15, 20, 14), R.iris, s * .3, .42, .83, eyes); ir.scale.set(.9, 1.05, .4);
+    const pu = mesh(new THREE.SphereGeometry(.085, 14, 10), R.pupil, s * .3, .41, .87, eyes); pu.scale.set(.9, 1.05, .4);
+    mesh(new THREE.SphereGeometry(.048, 10, 8), R.hl, s * .3 + .05, .5, .9, eyes); mesh(new THREE.SphereGeometry(.024, 8, 6), R.hl, s * .3 - .045, .35, .9, eyes);
+    const ck = mesh(new THREE.CircleGeometry(.11, 20), R.blush, s * .56, .26, .74, face); ck.scale.set(1.3, .8, 1); ck.lookAt(s * 1.9, .26, 2.6);
   });
-  const mo = mesh(new THREE.SphereGeometry(.075, 14, 10), R.mouth, 0, .32, .9, face); mo.scale.set(1.2, .7, .4);
-  const tg = mesh(new THREE.SphereGeometry(.04, 10, 8), R.tongue, 0, .29, .93, face); tg.scale.set(1.2, .6, .5);
+  const smile = mesh(new THREE.TorusGeometry(.055, .017, 8, 16, Math.PI), R.mouth, 0, .27, .91, face); smile.rotation.z = Math.PI;
   // 底部滴落
   if (!LOW) for (let i = 0; i < 3; i++) { const a = rnd(0, PI2), d = mesh(new THREE.SphereGeometry(.07, 10, 8), R.drip, Math.cos(a) * 1.02, -.02, Math.sin(a) * 1.02, body); d.scale.set(1, .6, 1); }
   // 品種特徵
   const F = new THREE.Group(); body.add(F); g.userData.feat = F;
   const m = (c, o = {}) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .4 }, o));
   if (sp.id === 'grass') {
-    const st = mesh(new THREE.CylinderGeometry(.025, .035, .32, 8), m('#3f7f45'), 0, 1.45, 0, F); void st;
-    [-1, 1].forEach(s => { const l = mesh(new THREE.SphereGeometry(.2, 12, 8), m('#4ade80', { flatShading: true }), s * .17, 1.62, 0, F); l.scale.set(1, .18, .5); l.rotation.z = s * -.5; });
+    const st = mesh(new THREE.CylinderGeometry(.025, .035, .32, 8), m('#3f7f45'), 0, 1.17, 0, F); void st;
+    [-1, 1].forEach(s => { const l = mesh(new THREE.SphereGeometry(.2, 12, 8), m('#4ade80', { flatShading: true }), s * .17, 1.34, 0, F); l.scale.set(1, .18, .5); l.rotation.z = s * -.5; });
   } else if (sp.id === 'honey') {
     const hm = m('#f59e0b', { roughness: .1, transparent: true, opacity: .9 });
     for (let i = 0; i < 5; i++) { const a = i / 5 * PI2 + .3, d = onSurf(F, new THREE.SphereGeometry(.1, 10, 8), hm, [Math.cos(a) * .7, .7, Math.sin(a) * .7], .02); d.scale.set(.9, 2.2, .9); }
-    const comb = mesh(new THREE.CylinderGeometry(.2, .2, .07, 6), m('#d97706', { flatShading: true }), .15, 1.28, -.05, F); comb.rotation.set(.3, 0, -.4);
-    mesh(new THREE.CylinderGeometry(.14, .14, .08, 6), m('#fbbf24', { emissive: '#f59e0b', emissiveIntensity: .3 }), .15, 1.3, -.05, F).rotation.set(.3, 0, -.4);
+    const comb = mesh(new THREE.CylinderGeometry(.2, .2, .07, 6), m('#d97706', { flatShading: true }), .15, 1.0, -.05, F); comb.rotation.set(.3, 0, -.4);
+    mesh(new THREE.CylinderGeometry(.14, .14, .08, 6), m('#fbbf24', { emissive: '#f59e0b', emissiveIntensity: .3 }), .15, 1.02, -.05, F).rotation.set(.3, 0, -.4);
   } else if (sp.id === 'salt') {
     const sm = m('#f8fafc', { roughness: .15, flatShading: true });
     for (let i = 0; i < 6; i++) { const a = i * 1.1, c = onSurf(F, new THREE.BoxGeometry(.11, .11, .11), sm, [Math.cos(a) * .45, .9, Math.sin(a) * .45], 0); c.rotation.set(rnd(0, 3), rnd(0, 3), rnd(0, 3)); }
   } else if (sp.id === 'coral') {
     const cm = m('#f472b6', { roughness: .5 }), tip = m('#fbcfe8');
-    [[-.2, 0], [.18, .1], [0, -.2]].forEach(([x, z], i) => { const h = .35 + i * .08, b = mesh(new THREE.CylinderGeometry(.04, .06, h, 8), cm, x, 1.25 + h / 2, z, F); b.rotation.set(z * 1.5, 0, -x * 1.5); mesh(new THREE.SphereGeometry(.065, 10, 8), tip, x - x * .6, 1.28 + h, z - z * .4, F); });
+    [[-.2, 0], [.18, .1], [0, -.2]].forEach(([x, z], i) => { const h = .35 + i * .08, b = mesh(new THREE.CylinderGeometry(.04, .06, h, 8), cm, x, .97 + h / 2, z, F); b.rotation.set(z * 1.5, 0, -x * 1.5); mesh(new THREE.SphereGeometry(.065, 10, 8), tip, x - x * .6, 1.0 + h, z - z * .4, F); });
   } else if (sp.id === 'lava') {
     const lm = glow('#fb923c'); for (let i = 0; i < 6; i++) { const a = rnd(0, PI2), c = onSurf(F, new THREE.BoxGeometry(.02, .02, .28), lm, [Math.cos(a), rnd(.1, .7), Math.sin(a)], 0); c.rotateY(rnd(0, 3)); }
     for (let i = 0; i < 4; i++) { const a = rnd(0, PI2), c = onSurf(F, new THREE.SphereGeometry(.16, 8, 6), m('#431407', { flatShading: true, roughness: .9 }), [Math.cos(a) * .6, .8, Math.sin(a) * .6], -.04); c.scale.set(1, .3, 1); }
-    const fl = mesh(new THREE.ConeGeometry(.13, .4, 12), new THREE.MeshBasicMaterial({ color: '#fde047', transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false }), 0, 1.55, 0, F); g.userData.flame = fl;
+    const fl = mesh(new THREE.ConeGeometry(.13, .4, 12), new THREE.MeshBasicMaterial({ color: '#fde047', transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false }), 0, 1.27, 0, F); g.userData.flame = fl;
   } else if (sp.id === 'obsid') {
     const om = new THREE.MeshPhysicalMaterial({ color: '#2e1065', roughness: .05, metalness: .3, clearcoat: 1, flatShading: true });
     [[0, .9, -.4, 1.2], [.35, .7, -.55, .9], [-.35, .7, -.55, .9], [0, .5, -.85, .7]].forEach(([x, y, z, s]) => { const c = onSurf(F, new THREE.OctahedronGeometry(.16), om, [x, y, z], .1); c.scale.set(s * .7, s * 2, s * .7); });
@@ -968,9 +975,9 @@ function slimeMesh(sp) {
   } else if (sp.id === 'aurora') {
     const orb = new THREE.Group(); orb.position.y = .7; body.add(orb); g.userData.orbit = orb;
     ['#22d3ee', '#a78bfa', '#34d399', '#f0abfc'].forEach((c, i) => mesh(new THREE.SphereGeometry(.06, 10, 8), glow(c), Math.cos(i / 4 * PI2) * 1.25, Math.sin(i * 2) * .2, Math.sin(i / 4 * PI2) * 1.25, orb));
-    cyl(.015, .015, .35, 6, m('#c4b5fd'), 0, 1.5, 0, F); mesh(new THREE.OctahedronGeometry(.08), glow('#fde047'), 0, 1.72, 0, F);
+    cyl(.015, .015, .35, 6, m('#c4b5fd'), 0, 1.22, 0, F); mesh(new THREE.OctahedronGeometry(.08), glow('#fde047'), 0, 1.44, 0, F);
   }
-  if (sp.rar >= 3) { const halo = mesh(new THREE.TorusGeometry(.32, .03, 10, 40), new THREE.MeshBasicMaterial({ color: sp.rar >= 4 ? '#fde047' : '#f0abfc' }), 0, 2.0, 0, g); halo.rotation.x = Math.PI / 2; g.userData.halo = halo; }
+  if (sp.rar >= 3) { const halo = mesh(new THREE.TorusGeometry(.32, .03, 10, 40), new THREE.MeshBasicMaterial({ color: sp.rar >= 4 ? '#fde047' : '#f0abfc' }), 0, 1.7, 0, g); halo.rotation.x = Math.PI / 2; g.userData.halo = halo; }
   blobShadow(1.05, g, .03);
   g.userData.body = body; g.userData.eyes = eyes; body.userData.slimeRoot = g; return g;
 }
@@ -989,40 +996,42 @@ function spawnSlime(zid, home) {
   const list = SPECIES.filter(s => s.zone === zid); let r = Math.random() * list.reduce((a, s) => a + s.w, 0), sp = list[0];
   for (const s of list) { if ((r -= s.w) <= 0) { sp = s; break; } }
   const [hx, hz] = home || zoneSpawn(zid), m = slimeMesh(sp);
-  const sl = { sp, m, zid, hx, hz, x: hx + rnd(-3, 3), z: hz + rnd(-3, 3), vx: 0, vz: 0, ph: rnd(0, 6), hits: 0, cool: 0, sq: 0, blink: rnd(1, 4), yaw: rnd(0, 6), turn: rnd(1, 4), flee: 0 };
-  m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); return sl;
+  const sl = { id: ++W.sid, sc: rnd(.66, .86), sp, m, zid, hx, hz, x: hx + rnd(-3, 3), z: hz + rnd(-3, 3), vx: 0, vz: 0, ph: rnd(0, 6), hits: 0, cool: 0, sq: 0, blink: rnd(1, 4), yaw: rnd(0, 6), turn: rnd(1, 4), flee: 0 };
+  m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); return sl;
 }
-function spawnZone(zid) { const n = LOW ? 6 : 9; for (let i = 0; i < n; i++) spawnSlime(zid); }
+function spawnZone(zid) { if (W.spawned.has(zid)) return; W.spawned.add(zid); const n = LOW ? 10 : 15; for (let i = 0; i < n; i++) spawnSlime(zid); }
 function spawnAllSlimes() { S.zones.forEach(spawnZone); }
 function slimeStep(dt, t) {
   W.slimes.forEach(s => {
     const dx = s.x - P.x, dz = s.z - P.z, dist = Math.hypot(dx, dz); s.m.visible = dist < 60; if (!s.m.visible) return;
-    s.ph += dt * 3; s.turn -= dt;
+    s.ph += dt * 3; let vx = s.vx, vz = s.vz;
+    if (s.mirror) { const k = Math.min(1, dt * 8); vx = (s.tx - s.x) * 4; vz = (s.tz - s.z) * 4; s.x += (s.tx - s.x) * k; s.z += (s.tz - s.z) * k; s.sq = Math.max(0, s.sq - dt * 3); } else {
+    s.turn -= dt;
     if (s.turn < 0) { s.turn = rnd(1.5, 4); const a = Math.atan2(s.hz - s.z, s.hx - s.x) + rnd(-1.5, 1.5), far = Math.hypot(s.hx - s.x, s.hz - s.z) > 9; const sp = Math.random() < .3 ? 0 : rnd(.4, .9); s.vx = Math.cos(far ? Math.atan2(s.hz - s.z, s.hx - s.x) : a) * sp; s.vz = Math.sin(far ? Math.atan2(s.hz - s.z, s.hx - s.x) : a) * sp; }
-    let vx = s.vx, vz = s.vz; if (s.flee > 0) { s.flee -= dt; vx = dx / (dist || 1) * 2.5; vz = dz / (dist || 1) * 2.5; }
+    if (s.flee > 0) { s.flee -= dt; vx = dx / (dist || 1) * 2.5; vz = dz / (dist || 1) * 2.5; }
     const nx = s.x + vx * dt, nz = s.z + vz * dt, nh = H(nx, nz);
     if (nh > -.1 && Math.abs(nh - H(s.x, s.z)) < .5 && Math.hypot(nx, nz) > WS_R + 1) { s.x = nx; s.z = nz; } else s.turn = 0;
-    s.cool = Math.max(0, s.cool - dt); s.sq = Math.max(0, s.sq - dt * 3);
+    s.cool = Math.max(0, s.cool - dt); s.sq = Math.max(0, s.sq - dt * 3); }
     const ph = Math.abs(Math.sin(s.ph)), cool = s.cool > 0, moving = Math.hypot(vx, vz) > .05, hop = cool || !moving ? Math.abs(Math.sin(s.ph * .5)) * .05 : ph * .45, b = s.m.userData.body;
-    s.m.position.set(s.x, G(s.x, s.z), s.z); b.position.y = hop + .02;
+    s.happy = Math.max(0, (s.happy || 0) - dt); s.m.position.set(s.x, G(s.x, s.z), s.z); b.position.y = hop + .02 + (s.happy > 0 ? Math.sin(s.happy / .6 * Math.PI) * .9 : 0);
     const k = cool ? .75 : 1, wob = Math.sin(t * 5 + s.ph) * .02;
     b.scale.set(.95 * k * (1 + s.sq * .25 + wob), .85 * k * (1 - s.sq * .3 - wob + (moving && !cool ? ph * .06 - (1 - ph) * .08 : 0)), .95 * k * (1 + s.sq * .25 + wob));
     b.material.opacity = cool ? .5 : .88;
     const want = dist < 7 ? Math.atan2(-dx, -dz) : (moving ? Math.atan2(vx, vz) : s.yaw); let d = want - s.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); s.yaw += d * Math.min(1, dt * 4); s.m.rotation.y = s.yaw;
     s.blink -= dt; s.m.userData.eyes.scale.y = s.blink < .12 ? .15 : (cool ? .35 : 1); if (s.blink < 0) s.blink = rnd(2, 5);
-    const u = s.m.userData; if (u.halo) { u.halo.rotation.z = t; u.halo.position.y = 2.0 + hop + Math.sin(t * 2) * .05; }
+    const u = s.m.userData; if (u.halo) { u.halo.rotation.z = t; u.halo.position.y = 1.7 + hop + Math.sin(t * 2) * .05; }
     if (u.flame) { u.flame.scale.set(1 + Math.sin(t * 13 + s.ph) * .15, 1 + Math.sin(t * 9 + s.ph) * .3, 1); }
     if (u.orbit) u.orbit.rotation.y = t * 1.5;
   });
 }
-function hitSlime(sl) {
-  const top = sl.m.position.clone().setY(sl.m.position.y + 2);
-  if (sl.cool > 0) { fx3(top, '害羞中…', '#cbd5e1'); return; }
-  sl.hits++; sl.sq = 1; sl.flee = .35; sfx.squish(.8); if (navigator.vibrate) navigator.vibrate(8);
-  if (sl.hits >= 3) {
-    const n = 1 + S.up.net; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); sl.cool = 6; sl.hits = 0;
-    fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color); sfx.pop(); toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠`); renderHotbar(true);
-  } else fx3(top, `${short(sl.sp.id)} ${sl.hits}/3`, RAR[sl.sp.rar].c);
+function slimeHitCore(sl) { if (sl.cool > 0) return { res: 'shy' }; sl.hits++; sl.sq = 1; sl.flee = .35; if (sl.hits >= 3) { sl.cool = 6; sl.hits = 0; sl.happy = .6; return { res: 'harvest' }; } return { res: 'hit', hits: sl.hits }; }
+function hitSlime(sl) { if (sl.mirror) { netSend({ t: 'hit', id: sl.id }); sl.sq = 1; sfx.squish(.5); return; } applyHit(sl, slimeHitCore(sl)); }
+function applyHit(sl, r) {
+  const top = sl.m.position.clone().setY(sl.m.position.y + 1.6);
+  if (r.res === 'shy') { fx3(top, '害羞中…', '#cbd5e1'); return; }
+  sfx.squish(.8); if (navigator.vibrate) navigator.vibrate(8);
+  if (r.res === 'harvest') { sl.happy = .6; const n = 1 + S.up.net; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color); sfx.pop(); toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠`); renderHotbar(true); }
+  else fx3(top, `${short(sl.sp.id)} ${r.hits}/3`, RAR[sl.sp.rar].c);
 }
 
 /* ============================================================
@@ -1036,33 +1045,37 @@ function initPlayer() {
   P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, yaw: sp.yaw, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0 };
 }
 const locked = () => document.pointerLockElement === $('#worldCv');
-function lockMouse() { if (TOUCH || GUI.kind || !$('#modal').hidden) return; try { const r = $('#worldCv').requestPointerLock(); if (r && r.catch) r.catch(() => { }); } catch (e) { } }
+function lockMouse() { if (TOUCH || GUI.kind || TITLE.on || CHAT.open || !$('#modal').hidden) return; try { const r = $('#worldCv').requestPointerLock(); if (r && r.catch) r.catch(() => { }); } catch (e) { } }
 function unlockMouse() { if (locked()) { W.unlockByUs = true; document.exitPointerLock(); } }
 function bindInput() {
   const cv = $('#worldCv');
   addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT') return;
-    const k = e.code; if (!$('#modal').hidden) return;
-    if (k === 'Escape') { if (GUI.kind) closeGui(); return; }
+    const k = e.code; if (!$('#modal').hidden || TITLE.on) return;
+    if (k === 'Escape') { if (GUI.kind) closeGui(); else openGui('pause'); return; }
+    if ((k === 'KeyT' || k === 'Enter') && NET.on && !GUI.kind) { e.preventDefault(); openChat(); return; }
     if (k === 'KeyI' || k === 'Tab') { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
-    if (GUI.kind) { if (k === 'Space' && GUI.kind === 'line' && M.active) { e.preventDefault(); stopBar(); } if (k === 'KeyE' && GUI.kind !== 'line') closeGui(); return; }
+    if (GUI.kind) {
+      if (GUI.kind === 'line' && M.active) { if (k === 'Space') { e.preventDefault(); if (!e.repeat) { makeAction('tap'); makeAction('hold', true); } } if (k === 'ArrowLeft' || k === 'KeyA') M.kdir = -1; if (k === 'ArrowRight' || k === 'KeyD') M.kdir = 1; }
+      if (k === 'KeyE' && GUI.kind !== 'line') closeGui(); return;
+    }
     KEYS.add(k); if (k === 'Space') e.preventDefault();
     if (k === 'KeyE' || k === 'KeyF') act();
     if (/^Digit[1-9]$/.test(k)) { S.hb = +k.slice(5) - 1; renderHotbar(true); }
   });
-  addEventListener('keyup', e => KEYS.delete(e.code));
+  addEventListener('keyup', e => { KEYS.delete(e.code); if (e.code === 'Space') makeAction('hold', false); if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) M.kdir = 0; });
   addEventListener('blur', () => KEYS.clear());
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => { if (GUI.kind) return; S.hb = (S.hb + (e.deltaY > 0 ? 1 : 8)) % 9; renderHotbar(true); }, { passive: true });
   document.addEventListener('pointerlockchange', () => {
-    $('#startHint').hidden = locked() || TOUCH || !!GUI.kind;
-    if (!locked() && !GUI.kind && !TOUCH && !W.unlockByUs && $('#modal').hidden) openGui('pause');
+    $('#startHint').hidden = locked() || TOUCH || !!GUI.kind || TITLE.on;
+    if (!locked() && !GUI.kind && !TOUCH && !W.unlockByUs && !TITLE.on && !CHAT.open && $('#modal').hidden) openGui('pause');
     W.unlockByUs = false;
   });
   document.addEventListener('mousemove', e => { if (!locked() || GUI.kind) return; const s = SENS[S.sens]; P.yaw -= e.movementX * s; P.pitch = clamp(P.pitch - e.movementY * s, -1.5, 1.5); });
   cv.addEventListener('pointerdown', e => {
     try { audio(); } catch (_) { }
-    if (GUI.kind) return;
+    if (GUI.kind || TITLE.on) return;
     if (e.pointerType === 'mouse') {
       if (locked()) { if (e.button === 0 || e.button === 2) act(); return; }
       IN.drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; lockMouse(); return;
@@ -1091,8 +1104,9 @@ function bindInput() {
 function jump() { if (P.ground) { P.vy = 7.2; P.ground = false; } }
 function tryMove(dx, dz) {
   let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z), h1 = G(nx, nz), d = Math.hypot(dx, dz) || 1e-6;
-  if (h1 < -.6) return false;
-  if (h1 - h0 > d * 1.15 && h1 > P.y + .35) return false;
+  if (h1 < -1.3) return false;
+  const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7);
+  if ((ha - h0) / .7 > 1.7 && ha > P.y + .7) return false;
   for (const c of colsNear(nx, nz)) {
     if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
@@ -1218,7 +1232,7 @@ function renderXP() {
 function renderTop() {
   $('#sMoney').textContent = fmt(S.money); $('#sFans').textContent = '粉絲 ' + Math.floor(S.fans);
   const t = trend.sp ? SP[trend.sp] : null; $('#sTrend').innerHTML = t ? `流行 ${dot(t.color)}${short(trend.sp)} ×1.35` : '流行 —';
-  $('#btnSound').textContent = '音效：' + (S.sound ? '開' : '關'); $('#btnSens').textContent = '視角靈敏度：' + SENS_N[S.sens];
+  $('#btnSound').textContent = '音效：' + (S.sound ? '開' : '關'); $('#btnSens').textContent = '靈敏度：' + SENS_N[S.sens];
 }
 function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast('流行色更新：' + SP[trend.sp].name + '（售價 ×1.35）'); }
 
@@ -1233,7 +1247,7 @@ const GUIS = {
 const TABN = { make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
 function openGui(kind, sec) {
-  const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open();
+  const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now();
   const it = held();
   if (kind === 'line' && it && it.t === 'gel' && !M.active) { M.sp = it.sp; M.last = null; }
   if (kind === 'line' && !M.sp) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || {}).id || null;
@@ -1247,28 +1261,68 @@ function renderGuiTabs() { const tabs = guiTabs(); $('#gtabs').innerHTML = tabs.
 function showSec(sec) { tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + sec)); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
 function closeGui() {
   if (!GUI.kind) return; if (GUI.kind === 'line' && M.active) { toast('產線還在運轉，請先完成這一輪加工。'); return; }
-  GUI.kind = null; tab = ''; $('#gui').hidden = true; $$('.panel').forEach(p => p.classList.remove('on'));
+  if (L.watch) stopWatch();
+  GUI.kind = null; tab = ''; $('#gui').hidden = true; $$('.panel').forEach(p => p.classList.remove('on')); save();
   renderHotbar(true); lockMouse(); $('#startHint').hidden = locked() || TOUCH;
 }
 function refresh() { if (GUI.kind && tab) RENDER[tab](); renderTop(); renderHotbar(); }
 
-/* ---------- 加工 ---------- */
-const M = { sp: null, step: -1, pos: 0, dir: 1, spd: 1, c: .5, prec: [], active: false, last: null };
-function zoneHalf(step) { return 0.12 + 0.03 * S.up[MKEY[step]]; }
+/* ---------- 加工：三台機器各有不同的操作流程 ---------- */
+const M = { sp: null, step: -1, active: false, phase: '', pt: 0, g: null, scores: [], last: null, hold: false, kdir: 0 };
+const MG = [
+  { name: '切片', how: '游標由左往右掃過，經過每條切割線時按「切」。', key: '空白鍵' },
+  { name: '裹糖晶', how: '按住讓滾筒加速、放開會減速，讓指針停在綠色區間越久越好。', key: '按住空白鍵' },
+  { name: '乾燥', how: '拖曳火力旋鈕，讓它跟上不斷移動的黃色目標溫度。', key: '← → 或 A D' },
+];
+const lvlOf = i => S.up[MKEY[i]];
 function startMake() {
   const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）');
   if (S.stock.length >= cap()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
-  S.gel[sp] -= 2; M.step = 0; M.prec = []; M.active = true; M.last = null; MK.bx = -6.4; nextStep(); renderHotbar(true); renderMake();
+  S.gel[sp] -= 2; M.step = 0; M.scores = []; M.active = true; M.last = null; MK.bx = -6.4; beginStep(); renderHotbar(true); renderMake();
 }
-function nextStep() { M.pos = 0; M.dir = 1; M.spd = 0.9 + 0.4 * M.step; M.c = rnd(.3, .7); }
-function stopBar() {
-  if (!M.active) return; const d = Math.abs(M.pos - M.c), w = zoneHalf(M.step);
-  const pr = d <= w ? 0.85 + 0.15 * (1 - d / w) : Math.max(0, 0.85 * (1 - (d - w) / 0.4));
-  M.prec.push(pr); sfx.machine(M.step); MK.pulse[M.step] = .7;
-  toast(`${STEPS[M.step]}：${pr > .95 ? '完美' : pr > .8 ? '很好' : pr > .5 ? '普通' : '偏了'}（${Math.round(pr * 100)}%）`); M.step++;
-  if (M.step >= 3) { M.active = false; const avg = M.prec.reduce((a, b) => a + b, 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg); S.stock.push(p); M.last = p; save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest(); }
-  else nextStep();
+function beginStep() {
+  M.phase = 'ready'; M.pt = 1.4; M.hold = false; M.kdir = 0; const lv = lvlOf(M.step);
+  if (M.step === 0) { const marks = []; for (let i = 0; i < 4; i++) marks.push(.15 + i * .22 + rnd(-.04, .04)); M.g = { t: 0, dur: 3.6, marks, hit: marks.map(() => null), tol: .045 + .012 * lv }; }
+  else if (M.step === 1) { const w = .2 + .035 * lv, c = rnd(.45, .7); M.g = { t: 0, dur: 5, thr: 0, v: 0, inz: 0, lo: c - w / 2, hi: c + w / 2 }; }
+  else M.g = { t: 0, dur: 5.5, knob: .5, err: 0, n: 0, tw: .07 + .015 * lv, seed: rnd(0, 10) };
+}
+const dryTarget = g => clamp(.5 + .28 * Math.sin(g.t * .9 + g.seed) + .12 * Math.sin(g.t * 2.3 + g.seed * 2), .08, .92);
+function makeAction(kind, val) {
+  if (!M.active) return; if (kind === 'hold') { M.hold = val; const b = $('#mgHold'); if (b) b.classList.toggle('on', !!val); return; }
+  if (M.phase !== 'run') return; const g = M.g;
+  if (M.step === 0 && kind === 'tap') {
+    const pos = g.t / g.dur; let best = -1, bd = 1; g.marks.forEach((m, i) => { if (g.hit[i] == null) { const d = Math.abs(pos - m); if (d < bd) { bd = d; best = i; } } });
+    MK.pulse[0] = .25; sfx.machine(0);
+    if (best >= 0 && bd < g.tol * 2.2) { g.hit[best] = clamp(1 - Math.max(0, bd - g.tol * .4) / (g.tol * 1.8), 0, 1); } else sfx.squish(.4);
+  }
+  if (M.step === 2 && kind === 'knob') g.knob = clamp(val, 0, 1);
+}
+function makeTick(dt) {
+  if (!M.active) return; const g = M.g;
+  if (M.phase === 'ready') { M.pt -= dt; if (M.pt <= 0) { M.phase = 'run'; renderMake(); } return; }
+  g.t += dt;
+  if (M.step === 0) { const pos = g.t / g.dur; g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) g.hit[i] = 0; }); }
+  if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
+  if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
+  if (g.t >= g.dur) finishStep(); else updMakeUI();
+}
+function finishStep() {
+  const g = M.g; let sc;
+  if (M.step === 0) sc = g.hit.reduce((a, b) => a + (b || 0), 0) / g.marks.length;
+  else if (M.step === 1) sc = clamp(g.inz / (g.dur * .8), 0, 1);
+  else sc = clamp(1 - (g.err / Math.max(g.n, .01)) / .25, 0, 1);
+  M.scores.push(sc); sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
+  toast(`${MG[M.step].name}：${sc > .9 ? '完美' : sc > .7 ? '很好' : sc > .45 ? '普通' : '失手了'}（${Math.round(sc * 100)}%）`);
+  M.step++;
+  if (M.step >= 3) { M.active = false; const avg = M.scores.reduce((a, b) => a + b, 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg); S.stock.push(p); M.last = p; save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest(); }
+  else beginStep();
   renderMake();
+}
+function updMakeUI() {
+  const g = M.g; if (!g) return; const tb = $('#mgTime'); if (tb) tb.style.width = clamp(g.t / g.dur, 0, 1) * 100 + '%';
+  if (M.step === 0) { const c = $('#mgCur'); if (c) c.style.left = clamp(g.t / g.dur, 0, 1) * 100 + '%'; $$('#mgTrack .mark').forEach((m, i) => m.className = 'mark' + (g.hit[i] == null ? '' : g.hit[i] > .3 ? ' ok' : ' bad')); }
+  if (M.step === 1) { const n = $('#mgNeedle'); if (n) n.style.left = g.v * 100 + '%'; }
+  if (M.step === 2) { const t = $('#mgTgt'), k = $('#mgKnob'), x = dryTarget(g); if (t) { t.style.left = (x - g.tw) * 100 + '%'; t.style.width = g.tw * 200 + '%'; } if (k) k.style.left = g.knob * 100 + '%'; }
 }
 function swatch(sp) { return sp.color2 ? `linear-gradient(135deg,${sp.color},${sp.color2})` : `radial-gradient(circle at 30% 30%,${rgba(sp.color, 1, .6)},${sp.color})`; }
 function renderMake() {
@@ -1276,15 +1330,32 @@ function renderMake() {
   $('#gelPick').innerHTML = unlockedSpecies().map(s => `<button class="zbtn ${M.sp === s.id ? 'on' : ''}" data-act="pickSp" data-id="${s.id}" ${M.active ? 'disabled' : ''}>${dot(s.color)}${short(s.id)}<br><small>凝膠 ${S.gel[s.id] || 0}</small></button>`).join('');
   const mini = $('#mini');
   if (M.active) {
-    const half = zoneHalf(M.step);
-    mini.innerHTML = `<div class="steps">${STEPS.map((s, i) => `<span class="${i === M.step ? 'on' : i < M.step ? 'done' : ''}">${i + 1}. ${s}</span>`).join('')}</div>
-    <div class="bar"><div class="zone" style="left:${(M.c - half) * 100}%;width:${half * 200}%"></div><div class="cur" id="mcur"></div></div>
-    <button class="btn big" style="width:100%" data-act="stopBar">停機${TOUCH ? '' : '（空白鍵）'}</button>`;
-  } else mini.innerHTML = `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`;
+    const g = M.g, st = `<div class="steps">${STEPS.map((x, i) => `<span class="${i === M.step ? 'on' : i < M.step ? 'done' : ''}">${i + 1}. ${x}${i < M.step ? ' ' + Math.round(M.scores[i] * 100) + '%' : ''}</span>`).join('')}</div>`;
+    const how = `<div class="mghow"><b>${UPS[MKEY[M.step]].name}</b>：${MG[M.step].how}${TOUCH ? '' : `<span style="color:var(--sub)">（${MG[M.step].key}）</span>`}${M.phase === 'ready' ? '<span class="ready">準備…</span>' : ''}</div>`;
+    let body = '';
+    if (M.step === 0) body = `<div class="track" id="mgTrack">${g.marks.map(m => `<i class="mark" style="left:${m * 100}%"></i>`).join('')}<i class="cur" id="mgCur" style="left:0"></i></div><button class="btn big" style="width:100%" data-mg="tap">切！</button>`;
+    else if (M.step === 1) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><button class="btn big hold" style="width:100%" id="mgHold" data-mg="hold">按住加速</button>`;
+    else body = `<div class="track dry" id="mgDry"><div class="tgt" id="mgTgt"></div><div class="knob" id="mgKnob" style="left:50%"></div></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0">左右拖曳火力旋鈕${TOUCH ? '' : '，或按 ← →'}</div>`;
+    mini.innerHTML = st + how + body; updMakeUI();
+  } else mini.innerHTML = `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">三台機器各有不同的操作：節奏切片、按住控速、拖曳控溫。庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`;
   const r = $('#makeResult');
   if (M.last && !M.active) { const p = M.last, pct = Math.round(p.crisp * 100); r.innerHTML = `<div class="card item" style="cursor:default"><div class="sw" style="background:${swatch(SP[p.sp])};width:52px;height:52px"></div><div class="grow"><b>${SP[p.sp].name} · 酥脆捏捏</b><br>酥脆度 <b style="color:var(--warn)">${pct}%</b>　${pct >= 90 ? '極品' : pct >= 70 ? '優良' : '再接再厲'}<br><small style="color:var(--sub)">已放入背包。可拿到裝飾桌加工，或到直播台販售。</small></div></div>`; }
   else r.innerHTML = '';
 }
+// 加工小遊戲的指標操作
+(() => {
+  const mini = document.getElementById('mini');
+  const knobAt = e => { const t = $('#mgDry'); if (!t) return; const b = t.getBoundingClientRect(); makeAction('knob', (e.clientX - b.left) / b.width); };
+  mini.addEventListener('pointerdown', e => {
+    const el = e.target.closest('[data-mg]'), dry = e.target.closest('#mgDry');
+    if (el && el.dataset.mg === 'tap') { e.preventDefault(); makeAction('tap'); }
+    if (el && el.dataset.mg === 'hold') { e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (_) { } makeAction('hold', true); }
+    if (dry) { e.preventDefault(); try { dry.setPointerCapture(e.pointerId); } catch (_) { } M.dragKnob = true; knobAt(e); }
+  });
+  mini.addEventListener('pointermove', e => { if (M.dragKnob) knobAt(e); });
+  const up = () => { if (M.hold) makeAction('hold', false); M.dragKnob = false; };
+  mini.addEventListener('pointerup', up); mini.addEventListener('pointercancel', up); mini.addEventListener('lostpointercapture', up);
+})();
 
 /* ---------- 庫存卡片 ---------- */
 function itemHTML(p, act, selId, extra = '') {
@@ -1314,23 +1385,29 @@ document.addEventListener('input', e => { const r = e.target.dataset && e.target
 
 /* ---------- 直播 ---------- */
 const liveSt = makeStage($('#liveCv'), 'squeeze');
-const L = { on: false, hype: 0, viewers: 0, combo: 0, lastC: 0, stageId: null, saleT: 0, req: null, reqT: 18, chatT: 0 };
+const L = { on: false, hype: 0, viewers: 0, combo: 0, lastC: 0, stageId: null, saleT: 0, req: null, reqT: 18, chatT: 0, watch: null, rv: new Set() };
 function chat(who, txt, cls) {
   const bx = $('#chat'), d = document.createElement('div'); d.innerHTML = `<b>${esc(who)}</b>：${esc(txt)}`; bx.appendChild(d); while (bx.children.length > 40) bx.firstChild.remove(); bx.scrollTop = bx.scrollHeight;
   if (tab === 'live' && (Math.random() < 0.45 || cls === 'dm')) { const dm = document.createElement('div'); dm.className = 'dmk'; dm.textContent = txt; dm.style.top = rnd(0, 75) + '%'; dm.style.color = pick(['#fff', '#fbbf24', '#22d3ee', '#e879f9']); $('#danmaku').appendChild(dm); setTimeout(() => dm.remove(), 7200); }
 }
-liveSt.onCrunch = () => {
-  if (!L.on) return; const now = performance.now(); L.combo = now - L.lastC < 1200 ? L.combo + 1 : 1; L.lastC = now; L.hype = Math.min(100, L.hype + 5 + Math.min(L.combo, 20) * .4);
+liveSt.onCrunch = (st, eff, info) => {
+  if (L.watch || !L.on) return;
+  if (NET.on && info) netEmit({ t: 'lcr', uv: info.uv, hit: info.hit, cr: info.cr, eff }); const now = performance.now(); L.combo = now - L.lastC < 1200 ? L.combo + 1 : 1; L.lastC = now; L.hype = Math.min(100, L.hype + 5 + Math.min(L.combo, 20) * .4);
   if (Math.random() < .4) chat(pick(NAMES), pick(CHAT_CRUNCH));
   if (Math.random() < .05 * clamp(L.viewers / 30, .3, 2)) { const n = Math.round(rnd(5, 30) * (1 + L.combo / 10)); addMoney(n); S.fans += 0.3; sfx.tick(); const e = document.createElement('div'); e.className = 'don'; e.textContent = `${pick(NAMES)} 斗內 ${fmt(n)}`; $('#donate').appendChild(e); setTimeout(() => e.remove(), 3000); while ($('#donate').children.length > 3) $('#donate').firstChild.remove(); }
   renderTop();
 };
 function renderLive() {
+  const others = NET.on ? [...NET.players.entries()].filter(([id, p]) => id !== NET.me && p.live && p.live.on) : [];
+  $('#liveOthers').innerHTML = others.length ? `<div class="card small row wrap"><span>其他玩家正在直播：</span>${others.map(([id, p]) => `<button class="btn sm ${L.watch && L.watch.id === id ? '' : 'ghost'}" data-act="watch" data-id="${esc(id)}">${esc(p.name)}（${p.live.viewers} 觀眾）</button>`).join('')}</div>` : '';
+  const w = !!L.watch; liveSt.watch = w; $('#watchBar').hidden = !w; $('#liveOwn').hidden = w; $('#livePriceFold').hidden = w;
+  if (w) { liveSt.set(L.watch.p); setTimeout(liveSt.resize, 0); updateLiveHUD(); return; }
   if (L.stageId && !stockById(L.stageId)) L.stageId = null; liveSt.set(stockById(L.stageId) || null); setTimeout(liveSt.resize, 0);
   $('#liveStock').innerHTML = S.stock.length ? S.stock.map(q => itemHTML(q, 'stageSel', L.stageId)).join('') : '<div class="empty">背包裡沒有捏捏，先到加工產線做一個。</div>';
   $('#livePrice').innerHTML = priceTable('live'); $('#btnLive').textContent = L.on ? '結束直播' : '開始直播'; updateLiveHUD();
 }
 function updateLiveHUD() {
+  if (L.watch) { const pl = NET.players.get(L.watch.id), lv = pl && pl.live; $('#liveBadge').textContent = 'LIVE'; $('#liveBadge').className = 'badge on'; $('#liveViewers').textContent = `${L.watch.name} 的直播 · ${lv ? lv.viewers : 0} 觀眾`; $('#hypeBar').style.width = (lv ? lv.hype : 0) + '%'; $('#comboTxt').textContent = ''; $('#reqBox').innerHTML = L.watch.p ? '' : '<span class="reqb">等待主播畫面…</span>'; return; }
   $('#liveBadge').textContent = L.on ? 'LIVE' : 'OFF AIR'; $('#liveBadge').className = 'badge' + (L.on ? ' on' : '');
   $('#liveViewers').textContent = Math.round(L.viewers) + ' 觀眾'; $('#hypeBar').style.width = L.hype + '%'; $('#comboTxt').textContent = L.combo > 2 && L.on ? `${L.combo} 連擊` : '';
   const p = liveSt.p;
@@ -1344,13 +1421,13 @@ function liveSale(p) {
   const gain = price * bonus; addMoney(gain); S.sales++; S.fans += 1 + L.hype / 30; S.stock = S.stock.filter(q => q !== p); sfx.pop();
   chat(pick(NAMES), `買了${short(p.sp)}捏捏！${fmt(gain)}`, 'dm'); toast(`直播成交 +${fmt(gain)}`);
   const next = S.stock.slice().sort((a, b) => (reqMatch(b) - reqMatch(a)) || (effCrisp(b) - effCrisp(a)))[0]; L.stageId = next ? next.id : null;
-  if (tab === 'live') renderLive(); renderTop(); renderHotbar(); save();
+  if (tab === 'live') renderLive(); renderTop(); renderHotbar(); save(); liveBroadcast();
 }
 function updateLive(dt) {
   const p = stockById(L.stageId);
   if (L.on) {
     L.hype = Math.max(0, L.hype - 3 * dt); if (performance.now() - L.lastC > 1500) L.combo = 0;
-    const tgt = (12 + S.fans * 0.8) * (1 + .15 * S.up.gear) * (.4 + L.hype / 60) * (p ? 1 : .5); L.viewers += (tgt - L.viewers) * dt * .8; L.saleT += dt;
+    const tgt = (12 + S.fans * 0.8) * (1 + .15 * S.up.gear) * (.4 + L.hype / 60) * (p ? 1 : .5) + L.rv.size * 15; L.viewers += (tgt - L.viewers) * dt * .8; L.saleT += dt;
     if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(getPrice('live', p.sp), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
     L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); chat(pick(NAMES), pick(CHAT_IDLE)); }
     if (L.req) { L.req.t -= dt; if (L.req.t <= 0) { L.req = null; chat('系統', '指定任務已結束', 'dm'); } }
@@ -1482,7 +1559,7 @@ function renderInv() {
   $('#invInfo').innerHTML = it ? (it.t === 'gel' ? `<b>${SP[it.sp].name}凝膠</b> × ${it.n}<br><span style="color:var(--sub)">帶到工坊的加工產線，每 2 份可做成 1 個酥脆捏捏。</span>` : `<b>${SP[it.p.sp].name} · 酥脆捏捏</b><br>酥脆 ${Math.round(effCrisp(it.p) * 100)}% · 耐久 ${Math.round(it.p.dur)}% · 裝飾 ${it.p.deco.length} · 合理價約 ${fmt(fair(it.p, 'live'))}<br><span style="color:var(--sub)">可到裝飾桌加上零件，或到直播台／工作電腦販售。</span>`) + `<div class="small" style="margin-top:6px;color:var(--sub)">點擊格子可放到快捷列第 ${S.hb + 1} 格選取。</div>` : `<span style="color:var(--sub)">背包：凝膠與捏捏都會顯示在這裡。庫存 ${S.stock.length}/${cap()}</span>`;
   renderQuest();
 }
-const RENDER = { make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderTop };
+const RENDER = { make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
 
 /* ---------- 點擊事件 ---------- */
 document.addEventListener('click', e => {
@@ -1496,13 +1573,26 @@ document.addEventListener('click', e => {
     case 'hb': { const i = +el.dataset.i; if (GUI.kind === 'inv') { invSel = i; if (i < 9) S.hb = i; renderInv(); } else S.hb = i; renderHotbar(true); break; }
     case 'pickSp': M.sp = id; M.last = null; renderMake(); break;
     case 'startMake': startMake(); break;
-    case 'stopBar': stopBar(); break;
     case 'decoSel': D.id = +id; renderDecor(); break;
     case 'addDeco': { const p = decorSt.p; if (!p) return; if (p.deco.length >= 6) return toast('最多 6 個零件'); p.deco.push({ k, x: rnd(-.45, .45), z: rnd(-.45, .45), s: 1, r: 0 }); decorSt.sel = p.deco.length - 1; decorSt.rebuildDeco(); sfx.tick(); renderDecorTools(); save(); break; }
     case 'delDeco': { const p = decorSt.p; if (p && decorSt.sel >= 0) { p.deco.splice(decorSt.sel, 1); decorSt.sel = -1; decorSt.rebuildDeco(); renderDecorTools(); save(); } break; }
     case 'photo': { if (!decorSt.ready) return; decorSt.selRing.visible = false; decorSt.v.render(); const a2 = document.createElement('a'); a2.download = 'squish-lab.png'; a2.href = decorSt.cv.toDataURL('image/png'); a2.click(); toast('已儲存圖片'); break; }
-    case 'toggleLive': L.on = !L.on; if (L.on) { chat('系統', '直播開始！歡迎大家', 'dm'); if (!liveSt.p) toast('先從下方選一個捏捏上台'); } else toast('直播結束'); renderLive(); break;
-    case 'stageSel': L.stageId = +id; renderLive(); break;
+    case 'toggleLive': L.on = !L.on; setTimeout(liveBroadcast, 50); if (L.on) { chat('系統', '直播開始！歡迎大家', 'dm'); if (!liveSt.p) toast('先從下方選一個捏捏上台'); } else toast('直播結束'); renderLive(); break;
+    case 'stageSel': L.stageId = +id; renderLive(); liveBroadcast(); break;
+    case 'watch': startWatch(id); break;
+    case 'unwatch': stopWatch(); renderLive(); break;
+    case 'lchatSend': sendLiveChat(); break;
+    case 'donate': donate(); break;
+    case 'chat': openChat(); break;
+    case 'saveNow': save(); S.savedAt = Date.now(); toast('遊戲已儲存'); renderPause(); break;
+    case 'toTitle': save(); netLeave(true); showTitle(); break;
+    case 'netLeave': netLeave(); renderPause(); break;
+    case 'tContinue': startPlay(); break;
+    case 'tNew': if (localStorage.getItem(SAVE_KEY)) modal('<h2>開始新遊戲？</h2><p>目前的存檔會被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定', f: newGame }]); else newGame(); break;
+    case 'tMulti': $('#titleMain').hidden = true; $('#titleMp').hidden = false; $('#mpName').value = S.name || ''; break;
+    case 'tBack': $('#titleMain').hidden = false; $('#titleMp').hidden = true; break;
+    case 'mpHost': netHost(); break;
+    case 'mpJoin': netJoin($('#mpCode').value); break;
     case 'list': { const p = stockById(id); if (!p) return; if (S.web.length >= slots()) return toast('貨架已滿，請升級網站伺服器'); S.stock = S.stock.filter(q => q !== p); S.web.push(p); renderWeb(); renderHotbar(); save(); break; }
     case 'unlist': { const p = S.web.find(q => q.id === +id); if (!p) return; if (S.stock.length >= cap()) return toast('庫存已滿'); S.web = S.web.filter(q => q !== p); S.stock.push(p); renderWeb(); renderHotbar(); save(); break; }
     case 'buyUp': { const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max) return; S.money -= c; S.up[k]++; sfx.pop(); renderUp(); renderTop(); save(); break; }
@@ -1513,11 +1603,11 @@ document.addEventListener('click', e => {
     case 'deliver': { const c = S.contracts.find(x => x.id === +id); if (!c) return; const it = contractItems(c); if (it.length < c.n) return; S.stock = S.stock.filter(p => !it.includes(p)); S.contracts = S.contracts.filter(x => x !== c); addMoney(c.reward); S.rep++; S.fans += 2; sfx.pop(); toast(`交貨完成 +${fmt(c.reward)}`); refresh(); save(); break; }
     case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
     case 'finish': finish(); break;
-    case 'sound': S.sound = !S.sound; renderTop(); save(); break;
+    case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
     case 'help': showHelp(); break;
     case 'home': P.x = 0; P.z = 31; P.y = G(0, 31); P.yaw = 0; closeGui(); toast('已傳送回工坊入口'); break;
-    case 'reset': modal('<h2>重置存檔？</h2><p>所有進度將被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定重置', f: () => { localStorage.removeItem(SAVE_KEY); S = fresh(); P = null; location.reload(); } }]); break;
+    case 'reset': modal('<h2>重置存檔？</h2><p>所有進度將被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定重置', f: newGame }]); break;
   }
 });
 function showHelp() {
@@ -1533,6 +1623,238 @@ function showIntro() {
   <p><b>探索</b>：森林被山脊環繞，東、北、西三座能量門通往海岸、火山與雪原。尋找線索、解開謎題，就能發現新區域。左上角會顯示目前目標，指南針會標出方向。</p>`, [{ t: '操作說明', ghost: true, f: showHelp }, { t: '開始探索' }]);
 }
 
+/* ============================================================
+   主選單（開始畫面）
+   ============================================================ */
+const TITLE = { on: false };
+function fmtTime(t) { if (!t) return '—'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+function renderTitle() {
+  const has = !!localStorage.getItem(SAVE_KEY) && S.seen;
+  $('#titleMain').innerHTML = (has ? `<button class="btn big" data-act="tContinue">繼續遊戲</button>` : `<button class="btn big" data-act="tContinue">開始遊戲</button>`) +
+    (has ? `<button class="btn big ghost" data-act="tNew">新遊戲</button>` : '') +
+    `<button class="btn big ghost" data-act="tMulti">多人遊戲</button>
+     <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="sound" id="tSound">音效：${S.sound ? '開' : '關'}</button></div>`;
+  $('#titleFoot').innerHTML = has ? `存檔：${fmtTime(S.last)} · ${fmt(S.money)} · 粉絲 ${Math.floor(S.fans)} · 已發現區域 ${S.zones.length}/4` : '月光谷正在等待新的工坊主人';
+  $('#titleMain').hidden = false; $('#titleMp').hidden = true;
+}
+function showTitle() {
+  if (GUI.kind) { GUI.kind = null; tab = ''; $('#gui').hidden = true; $$('.panel').forEach(p => p.classList.remove('on')); }
+  if (L.watch) L.watch = null; L.on = false; M.active = false;
+  unlockMouse(); TITLE.on = true; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
+}
+function startPlay() {
+  TITLE.on = false; document.body.classList.remove('titleon'); $('#title').hidden = true;
+  $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast('歡迎來到月光谷。左上角是目前目標。');
+  if (!S.seen) showIntro();
+}
+function newGame() { NOSAVE = true; netLeave(true); localStorage.removeItem(SAVE_KEY); sessionStorage.setItem('squish_autostart', '1'); location.reload(); }
+function titleStep(dt) {
+  W.t += dt; slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt);
+  const a = W.t * .04; W.cam.position.set(Math.sin(a) * 30, 13 + Math.sin(W.t * .1) * 2, Math.cos(a) * 30); W.cam.lookAt(0, 2.5, 0);
+  W.r.render(W.scene, W.cam);
+}
+function renderPause() {
+  renderTop();
+  $('#saveInfo').textContent = '上次儲存：' + fmtTime(S.last) + '　（按 Esc、切換畫面、開關介面時都會自動儲存）';
+  $('#pauseNet').innerHTML = NET.on ? `<div class="card small"><b>多人房間 ${esc(NET.room)}</b>${NET.host ? '（你是房主）' : ''}<br>把房間代碼分享給朋友，就能一起玩。<div style="margin:6px 0;color:var(--sub)">${[...NET.players.values()].map(p => `${dot(p.color || '#22d3ee')}${esc(p.name || '玩家')}${p.live && p.live.on ? ' · 直播中' : ''}`).join('<br>')}</div><button class="btn sm red" data-act="netLeave">離開房間</button></div>` : '';
+}
+
+/* ============================================================
+   聊天（多人）
+   ============================================================ */
+const CHAT = { open: false };
+function openChat() {
+  if (!NET.on || CHAT.open) return; CHAT.open = true; unlockMouse(); KEYS.clear();
+  const bar = $('#chatBar'), inp = $('#chatIn'); bar.hidden = false; inp.value = ''; setTimeout(() => inp.focus(), 30);
+}
+function closeChat() { CHAT.open = false; $('#chatBar').hidden = true; $('#chatIn').blur(); lockMouse(); $('#startHint').hidden = TOUCH || locked() || !!GUI.kind; }
+$('#chatIn').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') { const t = $('#chatIn').value.trim(); if (t) { netEmit({ t: 'chat', text: t.slice(0, 60) }); toast(`${NET.name}：${t.slice(0, 60)}`); } closeChat(); }
+  if (e.key === 'Escape') closeChat();
+});
+$('#lchatIn').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') sendLiveChat(); });
+
+/* ============================================================
+   多人連線（PeerJS 點對點；房主為權威端，負責史萊姆模擬與訊息轉發）
+   ============================================================ */
+const NET = { on: false, host: false, peer: null, conns: new Map(), hc: null, room: '', me: '', name: '', color: '', players: new Map(), sendT: 0 };
+const PCOL = ['#22d3ee', '#f472b6', '#a78bfa', '#fbbf24', '#34d399', '#fb923c', '#60a5fa'];
+const setMp = t => { const el = $('#mpStatus'); if (el) el.textContent = t; };
+function prepName() {
+  const n = ($('#mpName').value || S.name || '').trim().slice(0, 12) || ('玩家' + Math.floor(100 + Math.random() * 900));
+  S.name = n; NET.name = n; NET.color = PCOL[[...n].reduce((a, c) => a + c.charCodeAt(0), 0) % PCOL.length]; save(); return n;
+}
+function peerErr(e) {
+  const m = { 'unavailable-id': '房間代碼重複，請再試一次', 'peer-unavailable': '找不到這個房間，請確認代碼', network: '網路連線失敗', 'server-error': '連線伺服器無法使用，請稍後再試', 'browser-incompatible': '這個瀏覽器不支援多人連線' }[e && e.type] || ('連線錯誤：' + (e && e.type || '未知'));
+  setMp(m); toast(m);
+}
+function netHost() {
+  if (!window.Peer) return setMp('多人模組載入失敗'); netLeave(true); prepName();
+  const code = Array.from({ length: 5 }, () => 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
+  setMp('建立房間中…'); const peer = new Peer('squishlab-' + code.toLowerCase(), { debug: 0 }); NET.peer = peer;
+  peer.on('open', id => { NET.on = true; NET.host = true; NET.room = code; NET.me = id; NET.players.set(id, Object.assign(myState(), { id })); setMp('房間已建立：' + code); afterNet(); toast(`房間已建立，代碼 ${code}，分享給朋友一起玩`); });
+  peer.on('connection', c => {
+    c.on('open', () => NET.conns.set(c.peer, c));
+    c.on('data', d => { try { hostRecv(c.peer, d); } catch (err) { console.error(err); } });
+    c.on('close', () => dropPlayer(c.peer)); c.on('error', () => dropPlayer(c.peer));
+  });
+  peer.on('error', e => { peerErr(e); if (!NET.on) netLeave(true); });
+  peer.on('disconnected', () => { try { peer.reconnect(); } catch (_) { } });
+}
+function netJoin(code) {
+  code = String(code || '').trim().toUpperCase(); if (code.length < 4) return setMp('請輸入房間代碼');
+  if (!window.Peer) return setMp('多人模組載入失敗'); netLeave(true); prepName(); setMp('連線中…');
+  const peer = new Peer({ debug: 0 }); NET.peer = peer;
+  peer.on('open', id => {
+    NET.me = id; const c = peer.connect('squishlab-' + code.toLowerCase(), { reliable: true }); NET.hc = c;
+    const to = setTimeout(() => { if (!NET.on) { setMp('找不到房間或連線逾時'); netLeave(true); } }, 15000);
+    c.on('open', () => { clearTimeout(to); NET.on = true; NET.host = false; NET.room = code; c.send(Object.assign(myState(), { t: 'hello' })); setMp('已加入房間 ' + code); afterNet(); });
+    c.on('data', d => { try { clientRecv(d); } catch (err) { console.error(err); } });
+    c.on('close', () => { if (NET.on) { toast('與房主的連線中斷，已切換為單人模式'); netLeave(true); } });
+  });
+  peer.on('error', e => { peerErr(e); if (!NET.on) netLeave(true); });
+}
+function afterNet() { $('#btnChat').hidden = false; renderNetChip(); if (TITLE.on) startPlay(); }
+function netLeave(silent) {
+  const was = NET.on; if (was && L.on) { L.on = false; }
+  try { if (NET.peer) NET.peer.destroy(); } catch (_) { }
+  NET.peer = null; NET.on = false; NET.host = false; NET.hc = null; NET.conns.clear(); NET.players.clear(); L.rv.clear(); L.watch = null;
+  AV.forEach(a => W.scene && W.scene.remove(a.g)); AV.clear(); if (W.liveTag) W.liveTag.visible = false;
+  if (W.mirror) { W.slimes.forEach(s => W.scene.remove(s.m)); W.slimes = []; W.mirror = false; W.spawned.clear(); spawnAllSlimes(); }
+  $('#btnChat').hidden = true; if (CHAT.open) closeChat(); renderNetChip();
+  if (was && !silent) toast('已離開多人房間');
+}
+function renderNetChip() { const el = $('#sNet'); el.hidden = !NET.on; if (NET.on) el.textContent = `房間 ${NET.room} · ${Math.max(1, NET.players.size)} 人`; }
+const netSend = m => { if (!NET.on) return; if (NET.host) hostRecv(NET.me, m); else if (NET.hc && NET.hc.open) NET.hc.send(m); };
+function netEmit(m) { if (!NET.on) return; m.from = NET.me; m.name = NET.name; if (NET.host) bcast(m); else if (NET.hc && NET.hc.open) NET.hc.send(m); }
+function bcast(m, except) { NET.conns.forEach((c, id) => { if (id !== except && c.open) { try { c.send(m); } catch (_) { } } }); }
+function myState() {
+  const p = stockById(L.stageId);
+  return { t: 'st', name: NET.name, color: NET.color, x: +(P ? P.x : 0).toFixed(2), y: +(P ? P.y : 0).toFixed(2), z: +(P ? P.z : 0).toFixed(2), yaw: +(P ? P.yaw : 0).toFixed(2), zones: S.zones, live: L.on ? { on: true, hype: Math.round(L.hype), viewers: Math.round(L.viewers), sp: p ? p.sp : null } : null };
+}
+function hostRecv(id, m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'hello' || m.t === 'st') {
+    const isNew = !NET.players.has(id); NET.players.set(id, Object.assign(NET.players.get(id) || {}, m, { id }));
+    (m.zones || []).forEach(z => { if (ZONES.some(q => q.id === z) && !W.spawned.has(z)) spawnZone(z); });
+    if (m.t === 'hello' && isNew && id !== NET.me) { const c = NET.conns.get(id); if (c) c.send({ t: 'welcome', room: NET.room }); const j = { t: 'join', name: m.name, from: id }; onNet(j); bcast(j, id); }
+    return;
+  }
+  if (m.t === 'hit') { const sl = W.slimes.find(s => s.id === m.id), c = NET.conns.get(id); if (sl && c) c.send(Object.assign({ t: 'hitr', id: m.id }, slimeHitCore(sl))); return; }
+  bcast(m, id); onNet(m);
+}
+function clientRecv(m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'ps') { NET.players = new Map(Object.entries(m.p)); return; }
+  if (m.t === 'sl') { mirrorSlimes(m.a); return; }
+  if (m.t === 'hitr') { const sl = W.slimes.find(s => s.id === m.id); if (sl) applyHit(sl, m); return; }
+  if (m.t === 'welcome') { toast(`已加入房間 ${m.room}`); return; }
+  onNet(m);
+}
+function dropPlayer(id) {
+  NET.conns.delete(id); const p = NET.players.get(id); NET.players.delete(id); L.rv.delete(id);
+  if (p) { const m = { t: 'leave', name: p.name, from: id }; onNet(m); bcast(m); }
+}
+/* 每個節點收到的事件（除了發送者本人） */
+function onNet(m) {
+  switch (m.t) {
+    case 'chat': toast(`${m.name}：${m.text}`); break;
+    case 'join': toast(`${m.name} 加入了房間`); break;
+    case 'leave': toast(`${m.name} 離開了房間`); if (L.watch && L.watch.id === m.from) { stopWatch(true); toast('主播已離開'); if (tab === 'live') renderLive(); } break;
+    case 'lprod': if (L.watch && L.watch.id === m.from) { L.watch.p = m.p ? Object.assign({}, m.p, { deco: m.p.deco || [], cracks: (m.p.cracks || []).map(c => c.slice()) }) : null; if (tab === 'live') renderLive(); } break;
+    case 'lcr': if (L.watch && L.watch.id === m.from && tab === 'live') liveSt.remoteCrunch(m); break;
+    case 'lchat': if (m.to === NET.me && L.on) { chat(m.name, m.text, 'dm'); S.fans += .2; } else if (L.watch && L.watch.id === m.to && tab === 'live') chat(m.name, m.text, 'dm'); break;
+    case 'don': if (m.to === NET.me) { addMoney(m.amt); S.fans += 1; toast(`${m.name} 在直播中斗內你 ${fmt(m.amt)}`); chat(m.name, `斗內 ${fmt(m.amt)}！`, 'dm'); renderTop(); } else if (L.watch && L.watch.id === m.to) chat(m.name, `斗內 ${fmt(m.amt)}！`, 'dm'); break;
+    case 'watch': if (m.to === NET.me) { if (m.on) { L.rv.add(m.from); toast(`${m.name} 正在看你的直播`); chat('系統', `${m.name} 進入了直播間`, 'dm'); liveBroadcast(); } else L.rv.delete(m.from); } break;
+    case 'lreq': if (m.to === NET.me) liveBroadcast(); break;
+  }
+}
+function netTick(dt) {
+  if (!NET.on) return; NET.sendT += dt; if (NET.sendT < .1) return; NET.sendT = 0;
+  const st = myState();
+  if (NET.host) {
+    NET.players.set(NET.me, Object.assign(st, { id: NET.me }));
+    bcast({ t: 'ps', p: Object.fromEntries(NET.players) });
+    if (NET.conns.size) bcast({ t: 'sl', a: W.slimes.map(s => [s.id, SPECIES.indexOf(s.sp), +s.x.toFixed(2), +s.z.toFixed(2), s.cool > 0 ? 1 : 0, s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0]) });
+  } else if (NET.hc && NET.hc.open) NET.hc.send(st);
+}
+function mirrorSlimes(a) {
+  if (!W.mirror) { W.slimes.forEach(s => W.scene.remove(s.m)); W.slimes = []; W.mirror = true; }
+  const byId = new Map(W.slimes.map(s => [s.id, s])), seen = new Set();
+  a.forEach(([id, si, x, z, cool, hits, sq, sc, happy]) => {
+    seen.add(id); let s = byId.get(id);
+    if (!s) { const sp = SPECIES[si] || SPECIES[0], m = slimeMesh(sp); s = { id, sp, m, mirror: true, x, z, tx: x, tz: z, ph: rnd(0, 6), hits: 0, cool: 0, sq: 0, blink: rnd(1, 4), yaw: 0, sc: sc / 100, vx: 0, vz: 0 }; m.scale.setScalar(s.sc); m.userData.body.userData.sl = s; W.scene.add(m); W.slimes.push(s); }
+    s.tx = x; s.tz = z; s.cool = cool ? 1 : 0; s.hits = hits; if (sq) s.sq = 1; if (happy && !(s.happy > 0)) s.happy = .6;
+  });
+  W.slimes = W.slimes.filter(s => { if (seen.has(s.id)) return true; W.scene.remove(s.m); return false; });
+}
+
+/* ---------- 其他玩家的角色 ---------- */
+const AV = new Map();
+function avatarMesh(color) {
+  const g = new THREE.Group(), bodyM = new THREE.MeshStandardMaterial({ color, roughness: .45 }), skin = new THREE.MeshStandardMaterial({ color: '#fde2cf', roughness: .6 }), dark = new THREE.MeshStandardMaterial({ color: '#1e293b', roughness: .3 });
+  const body = mesh(new THREE.SphereGeometry(.42, 20, 14), bodyM, 0, .72, 0, g); body.scale.set(1, 1.15, .9);
+  mesh(new THREE.SphereGeometry(.36, 22, 16), skin, 0, 1.45, 0, g);
+  const hat = mesh(new THREE.SphereGeometry(.385, 20, 10, 0, PI2, 0, Math.PI / 2), bodyM, 0, 1.5, 0, g); hat.scale.set(1, .8, 1);
+  mesh(new THREE.SphereGeometry(.09, 10, 8), new THREE.MeshStandardMaterial({ color: '#ffffff' }), 0, 1.82, 0, g);
+  [-1, 1].forEach(s => {
+    mesh(new THREE.SphereGeometry(.055, 10, 8), dark, s * .13, 1.43, -.32, g);
+    mesh(new THREE.SphereGeometry(.018, 6, 4), new THREE.MeshBasicMaterial({ color: '#fff' }), s * .13 + .02, 1.46, -.37, g);
+    const ck = mesh(new THREE.CircleGeometry(.055, 12), new THREE.MeshBasicMaterial({ color: '#fb7185', transparent: true, opacity: .55 }), s * .21, 1.35, -.29, g); ck.rotation.y = Math.PI + s * .6;
+    mesh(new THREE.SphereGeometry(.13, 12, 10), bodyM, s * .2, .14, 0, g);
+    const arm = mesh(new THREE.SphereGeometry(.11, 10, 8), bodyM, s * .45, .8, 0, g); arm.scale.set(.8, 1.3, .8);
+  });
+  mesh(new THREE.BoxGeometry(.42, .46, .24), new THREE.MeshPhysicalMaterial({ color, transparent: true, opacity: .75, roughness: .1, clearcoat: 1 }), 0, .85, .38, g);
+  g.traverse(o => { if (o.isMesh) o.castShadow = !LOW; }); blobShadow(.6, g, .03); return g;
+}
+function avatarsStep(dt) {
+  if (!NET.on) return; const seen = new Set(); let liveName = null;
+  NET.players.forEach((p, id) => {
+    if (id === NET.me || p.x == null) return; seen.add(id); let a = AV.get(id);
+    if (!a) {
+      const g = avatarMesh(p.color || '#22d3ee'), tag = textSprite(p.name || '玩家', p.color || '#22d3ee'); tag.position.y = 2.3; tag.scale.set(1.8, .56, 1); g.add(tag);
+      const lt = textSprite('LIVE 直播中', '#fb7185'); lt.position.y = 2.85; lt.scale.set(1.7, .53, 1); lt.visible = false; g.add(lt);
+      g.position.set(p.x, p.y, p.z); W.scene.add(g); a = { g, lt, x: p.x, y: p.y, z: p.z, yaw: p.yaw, wasLive: false, bob: 0 }; AV.set(id, a);
+    }
+    const k = Math.min(1, dt * 10), ox = a.x, oz = a.z; a.x += (p.x - a.x) * k; a.y += (p.y - a.y) * k; a.z += (p.z - a.z) * k;
+    let d = p.yaw - a.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); a.yaw += d * k;
+    const sp = Math.hypot(a.x - ox, a.z - oz) / Math.max(dt, 1e-3); a.bob += dt * (sp > .4 ? 10 : 0);
+    a.g.position.set(a.x, a.y + Math.abs(Math.sin(a.bob)) * .09, a.z); a.g.rotation.y = a.yaw;
+    const live = !!(p.live && p.live.on); a.lt.visible = live; if (live) { liveName = p.name; a.lt.position.y = 2.85 + Math.sin(W.t * 3) * .06; }
+    if (live && !a.wasLive) toast(`${p.name} 開始直播了！到工坊的直播台可以觀看`); a.wasLive = live;
+  });
+  AV.forEach((a, id) => { if (!seen.has(id)) { W.scene.remove(a.g); AV.delete(id); } });
+  if (liveName && W.liveTagName !== liveName) { if (W.liveTag) W.scene.remove(W.liveTag); W.liveTag = textSprite('直播中：' + liveName, '#fb7185', '走近直播台即可觀看'); W.liveTag.position.set(9, WS_Y + 4.8, 3.5); W.liveTag.scale.set(3.2, 1, 1); W.scene.add(W.liveTag); W.liveTagName = liveName; }
+  if (W.liveTag) W.liveTag.visible = !!liveName; if (!liveName) W.liveTagName = null;
+}
+
+/* ---------- 直播同步：觀看、留言、斗內 ---------- */
+function liveBroadcast() {
+  if (!NET.on || !L.on) return; const p = stockById(L.stageId);
+  netEmit({ t: 'lprod', p: p ? { id: p.id, sp: p.sp, crisp: p.crisp, dur: p.dur, deco: p.deco, cracks: p.cracks } : null });
+}
+function startWatch(id) {
+  const pl = NET.players.get(id); if (!pl) return; if (L.watch) stopWatch(true);
+  if (L.on) { L.on = false; toast('已結束你自己的直播，開始觀看'); }
+  L.watch = { id, name: pl.name || '玩家', p: null }; $('#chat').innerHTML = '';
+  netEmit({ t: 'watch', to: id, on: true }); netEmit({ t: 'lreq', to: id }); chat('系統', `正在觀看 ${L.watch.name} 的直播`, 'dm'); renderLive();
+}
+function stopWatch(quiet) { if (!L.watch) return; netEmit({ t: 'watch', to: L.watch.id, on: false }); L.watch = null; liveSt.watch = false; if (!quiet) chat('系統', '已離開直播間', 'dm'); }
+function sendLiveChat() {
+  const inp = $('#lchatIn'), t = inp.value.trim(); if (!t || !L.watch) return; inp.value = '';
+  netEmit({ t: 'lchat', to: L.watch.id, text: t.slice(0, 40) }); chat(NET.name, t.slice(0, 40), 'dm');
+}
+function donate() {
+  if (!L.watch) return; if (S.money < 20) return toast('資金不足');
+  S.money -= 20; netEmit({ t: 'don', to: L.watch.id, amt: 20 }); chat(NET.name, '斗內 ¥20！', 'dm'); sfx.tick(); renderTop(); save();
+}
+function renderLiveOthersOnly() {
+  const others = [...NET.players.entries()].filter(([id, p]) => id !== NET.me && p.live && p.live.on);
+  $('#liveOthers').innerHTML = others.length ? `<div class="card small row wrap"><span>其他玩家正在直播：</span>${others.map(([id, p]) => `<button class="btn sm ${L.watch && L.watch.id === id ? '' : 'ghost'}" data-act="watch" data-id="${esc(id)}">${esc(p.name)}（${p.live.viewers} 觀眾）</button>`).join('')}</div>` : '';
+  if (L.watch && !others.some(([id]) => id === L.watch.id)) { stopWatch(true); toast('主播已結束直播'); renderLive(); }
+}
+
 /* ---------- 主迴圈 ---------- */
 let lastT = performance.now(), secAcc = 0, webAcc = 0, farmAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
 const tmpC = new THREE.Color(), tmpC2 = new THREE.Color();
@@ -1546,7 +1868,7 @@ function envStep(dt) {
 }
 function worldStep(dt) {
   W.t += dt; if (!GUI.kind) playerStep(dt);
-  slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt);
+  slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); avatarsStep(dt);
   if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = targetLabel(TARGET); $('#prompt').innerHTML = lbl; $('#cross').classList.toggle('on', !!TARGET); }
   else if (GUI.kind) { $('#prompt').innerHTML = ''; }
   W.r.render(W.scene, W.cam);
@@ -1558,14 +1880,16 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); }
+  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
-    if (W.ready && (!g || g === 'line')) { worldStep(dt); renderCompass(); }
-    if (tab === 'make' && M.active) { M.pos += M.dir * M.spd * dt; if (M.pos > 1) { M.pos = 1; M.dir = -1; } if (M.pos < 0) { M.pos = 0; M.dir = 1; } const cur = $('#mcur'); if (cur) cur.style.left = M.pos * 100 + '%'; }
+    if (W.ready && TITLE.on) titleStep(dt);
+    else if (W.ready && (!g || g === 'line')) { worldStep(dt); renderCompass(); }
+    netTick(dt);
+    if (M.active) makeTick(dt);
     if (tab === 'decor') decorSt.step(dt);
-    else if (tab === 'live') { liveSt.step(dt); $('#hypeBar').style.width = L.hype + '%'; $('#liveViewers').textContent = Math.round(L.viewers) + ' 觀眾'; if (++hudN % 15 === 0) updateLiveHUD(); }
+    else if (tab === 'live') { liveSt.step(dt); if (!L.watch) { $('#hypeBar').style.width = L.hype + '%'; $('#liveViewers').textContent = Math.round(L.viewers) + ' 觀眾'; } if (++hudN % 15 === 0) updateLiveHUD(); }
     else if (tab === 'branch' && S.branch === 'factory') facStep(dt);
   } catch (err) { console.error(err); }
   requestAnimationFrame(loop);
@@ -1578,11 +1902,8 @@ function offlineCatchUp() {
 
 /* ---------- 啟動 ---------- */
 offlineCatchUp(); trend.sp = pick(unlockedSpecies()).id; renderTop();
-if (initWorld()) {
-  renderHotbar(true); renderXP(); renderObjective(); renderQuest();
-  $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動 · I 背包 · Esc 選單'; $('#startHint').hidden = TOUCH;
-  toast('歡迎來到月光谷。左上角是目前目標。');
-}
-if (!S.seen) showIntro();
+if (initWorld()) { renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動 · I 背包 · Esc 選單'; }
 addEventListener('beforeunload', save);
+document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+if (sessionStorage.getItem('squish_autostart')) { sessionStorage.removeItem('squish_autostart'); startPlay(); } else showTitle();
 requestAnimationFrame(loop);

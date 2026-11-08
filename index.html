@@ -21,6 +21,7 @@
       <span class="hchip money" id="sMoney">¥0</span>
       <span class="hchip" id="sFans">粉絲 0</span>
       <span class="hchip" id="sTrend">流行 —</span>
+      <span class="hchip net" id="sNet" hidden></span>
     </div>
     <div id="objective"></div>
     <div id="cross"></div>
@@ -32,6 +33,7 @@
       <div id="hotbar"></div>
     </div>
     <div id="topbtns">
+      <button class="hbtn" data-act="chat" id="btnChat" aria-label="聊天" hidden><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
       <button class="hbtn" data-act="inv" aria-label="背包"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5h6v2M4 12h16"/></svg></button>
       <button class="hbtn" data-act="pause" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     </div>
@@ -42,6 +44,7 @@
       <button class="tbtn" id="btnRun" aria-label="奔跑"><svg viewBox="0 0 24 24"><path d="M13 4l-3 7h5l-4 9"/></svg></button>
     </div>
     <div id="startHint" hidden></div>
+    <div id="chatBar" hidden><input id="chatIn" maxlength="60" placeholder="輸入訊息，Enter 送出，Esc 取消" autocomplete="off"></div>
   </div>
 
   <!-- ===== 介面視窗（工作站 / 背包 / 選單） ===== -->
@@ -64,6 +67,7 @@
         </section>
 
         <section class="panel" id="p-live">
+          <div id="liveOthers"></div>
           <div class="stagewrap live" id="liveWrap">
             <canvas id="liveCv"></canvas>
             <div class="ov tl"><span class="badge" id="liveBadge">OFF AIR</span> <span id="liveViewers">0 觀眾</span></div>
@@ -72,13 +76,21 @@
             <div class="ov dm" id="danmaku"></div>
             <div class="ov bl" id="donate"></div>
           </div>
-          <div class="row liverow">
-            <button class="btn big" data-act="toggleLive" id="btnLive">開始直播</button>
-            <div id="stageInfo" class="grow small"></div>
+          <div class="row watchbar" id="watchBar" hidden>
+            <input id="lchatIn" maxlength="40" placeholder="傳訊息給主播…" autocomplete="off">
+            <button class="btn sm" data-act="lchatSend">送出</button>
+            <button class="btn sm ghost" data-act="donate">斗內 ¥20</button>
+            <button class="btn sm red" data-act="unwatch">離開</button>
           </div>
-          <div id="liveStock" class="strip"></div>
+          <div id="liveOwn">
+            <div class="row liverow">
+              <button class="btn big" data-act="toggleLive" id="btnLive">開始直播</button>
+              <div id="stageInfo" class="grow small"></div>
+            </div>
+            <div id="liveStock" class="strip"></div>
+          </div>
           <div id="chat" class="chat"></div>
-          <details class="fold">
+          <details class="fold" id="livePriceFold">
             <summary>直播定價</summary>
             <div class="hint">直播為主動銷售：單價較高（×1.4），但需要你親自捏出人氣。價格過高需求下降，過低則利潤不足。</div>
             <div id="livePrice"></div>
@@ -115,11 +127,12 @@
         <section class="panel" id="p-pause">
           <div class="menu">
             <button class="btn big" data-act="closeGui">回到遊戲</button>
-            <button class="btn big ghost" data-act="sound" id="btnSound">音效：開</button>
-            <button class="btn big ghost" data-act="sens" id="btnSens">視角靈敏度：中</button>
-            <button class="btn big ghost" data-act="help">操作說明</button>
-            <button class="btn big ghost" data-act="home">傳送回工坊</button>
-            <button class="btn big red" data-act="reset">重置存檔</button>
+            <button class="btn big ghost" data-act="saveNow">儲存遊戲</button>
+            <div id="pauseNet"></div>
+            <div class="row"><button class="btn ghost grow" data-act="sound" id="btnSound">音效：開</button><button class="btn ghost grow" data-act="sens" id="btnSens">靈敏度：中</button></div>
+            <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="home">傳送回工坊</button></div>
+            <button class="btn big red" data-act="toTitle">儲存並回到主選單</button>
+            <div class="small" id="saveInfo" style="text-align:center;color:var(--sub)"></div>
           </div>
         </section>
 
@@ -128,6 +141,22 @@
   </div>
 </div>
 
+<div id="title" hidden>
+  <div class="tbox">
+    <div class="tlogo"><i class="logo"></i>SQUISH LAB</div>
+    <div class="tsub">史萊姆捏捏工坊</div>
+    <div id="titleMain" class="tmenu"></div>
+    <div id="titleMp" class="tmenu" hidden>
+      <label class="small">玩家名稱<input id="mpName" maxlength="12" placeholder="你的名字" autocomplete="off"></label>
+      <button class="btn big" data-act="mpHost">建立房間</button>
+      <div class="row"><input id="mpCode" maxlength="6" placeholder="輸入房間代碼" autocomplete="off" style="text-transform:uppercase;margin:0"><button class="btn" data-act="mpJoin">加入</button></div>
+      <div id="mpStatus" class="small" style="min-height:18px;color:var(--warn)"></div>
+      <button class="btn ghost" data-act="tBack">返回</button>
+      <div class="hint" style="margin:0">多人連線透過 PeerJS 公共伺服器建立點對點連線。每位玩家保有自己的存檔；玩家位置、世界中的史萊姆與直播狀態會即時同步。</div>
+    </div>
+    <div class="tfoot" id="titleFoot"></div>
+  </div>
+</div>
 <div id="modal" hidden><div class="mbox" id="mbox"></div></div>
 <div id="login" hidden>
   <div class="mbox">
@@ -139,6 +168,7 @@
   </div>
 </div>
 <script src="vendor/three.min.js"></script>
+<script src="vendor/peerjs.min.js"></script>
 <script src="gate.js"></script>
 </body>
 </html>
