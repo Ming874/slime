@@ -124,13 +124,17 @@
           <div id="questBox" class="card quest"></div>
         </section>
 
+        <section class="panel" id="p-bench"><div id="benchBody"></div></section>
+
+        <section class="panel" id="p-mapg"><div id="mapBody"></div></section>
+
         <section class="panel" id="p-pause">
           <div class="menu">
             <button class="btn big" data-act="closeGui">回到遊戲</button>
             <button class="btn big ghost" data-act="saveNow">儲存遊戲</button>
             <div id="pauseNet"></div>
             <div class="row"><button class="btn ghost grow" data-act="sound" id="btnSound">音效：開</button><button class="btn ghost grow" data-act="sens" id="btnSens">靈敏度：中</button></div>
-            <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="home">傳送回工坊</button></div>
+            <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="home">回到中央平地</button></div>
             <button class="btn big red" data-act="toTitle">儲存並回到主選單</button>
             <div class="small" id="saveInfo" style="text-align:center;color:var(--sub)"></div>
           </div>
@@ -157,6 +161,7 @@
     <div class="tfoot" id="titleFoot"></div>
   </div>
 </div>
+<div id="fade" hidden></div>
 <div id="modal" hidden><div class="mbox" id="mbox"></div></div>
 <div id="login" hidden>
   <div class="login-card">

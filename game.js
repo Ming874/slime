@@ -59,12 +59,12 @@ const DECO = {
 const PACKS = { metal: { name: '金屬零件包', cost: 200 }, glass: { name: '水晶零件包', cost: 500 }, neon: { name: '霓虹零件包', cost: 1500 }, prism: { name: '稜鏡零件包', cost: 3000 } };
 const UPS = {
   net: { name: '採集吸取器', desc: '每次採集多得 1 份凝膠', base: 120, max: 4 },
-  slicer: { name: '切片機', desc: '切片步驟的甜蜜區更寬', base: 150, max: 5, mach: 1 },
-  coater: { name: '糖晶滾筒機', desc: '裹糖晶步驟的甜蜜區更寬', base: 180, max: 5, mach: 1 },
-  dryer: { name: '乾燥烘箱', desc: '乾燥步驟的甜蜜區更寬', base: 210, max: 5, mach: 1 },
+  slicer: { name: '切片機升級', desc: '切片的判定範圍更寬', base: 150, max: 5, mach: 1, need: 'slicer' },
+  coater: { name: '糖晶滾筒機升級', desc: '綠色控速區間更寬', base: 180, max: 5, mach: 1, need: 'coater' },
+  dryer: { name: '乾燥烘箱升級', desc: '目標溫度區間更寬', base: 210, max: 5, mach: 1, need: 'dryer' },
   cap: { name: '倉儲貨架', desc: '庫存上限 +6', base: 100, max: 5 },
   shelf: { name: '網站伺服器', desc: '網站貨架 +2 格', base: 200, max: 5 },
-  gear: { name: '直播燈光設備', desc: '直播基礎觀眾 +15%', base: 250, max: 5 },
+  gear: { name: '直播燈光設備', desc: '直播基礎觀眾 +15%', base: 250, max: 5, need: 'live' },
   farm: { name: '養殖槽', desc: '每 12 秒自動產出凝膠（可再生養殖）', base: 300, max: 5 },
   boots: { name: '輕量跑鞋', desc: '移動速度 +10%', base: 160, max: 3 },
 };
@@ -88,7 +88,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null,
+    pos: null, hb: 0, sens: 1, q: null, own: {},
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -122,7 +122,7 @@ function load() {
   try { const o = JSON.parse(localStorage.getItem(SAVE_KEY)); if (o && typeof o === 'object') return sanitize(o); } catch (e) { console.warn('存檔讀取失敗，將開始新遊戲', e); }
   return null;
 }
-let S = load() || fresh(), resetting = false;
+let S = load() || fresh(), resetting = false; if (!S.own) S.own = {};
 let NOSAVE = false;
 function save() { if (NOSAVE || resetting) return; S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } }
 
@@ -133,7 +133,8 @@ const slots = () => 4 + S.up.shelf * 2;
 const effCrisp = p => p.crisp * (0.35 + 0.65 * p.dur / 100);
 const decoBonus = p => p.deco.reduce((a, d) => a + (DECO[d.k] ? DECO[d.k].v : 0), 0);
 const CH = { live: 1.4, web: 0.9, shop: 1.25, corp: 1.5 };
-function fair(p, ch) { const sp = SP[p.sp]; return sp.price * (0.4 + 1.1 * effCrisp(p)) * (1 + decoBonus(p)) * (trend.sp === p.sp ? 1.35 : 1) * (CH[ch] || 1); }
+const priceOf = (p, ch) => p.crude ? 10 : getPrice(ch, p.sp);
+function fair(p, ch) { if (p.crude) return 12; const sp = SP[p.sp]; return sp.price * (0.4 + 1.1 * effCrisp(p)) * (1 + decoBonus(p)) * (trend.sp === p.sp ? 1.35 : 1) * (CH[ch] || 1); }
 const defPrice = (spId, ch) => Math.round(SP[spId].price * 1.28 * CH[ch]);
 const getPrice = (ch, spId) => S.price[ch][spId] ?? defPrice(spId, ch);
 const demand = (price, f) => clamp(1.5 - 0.75 * price / Math.max(1, f), 0, 1.3);
@@ -141,7 +142,7 @@ const demandLabel = d => d > 0.95 ? ['熱賣', '#fb923c'] : d > 0.55 ? ['穩定'
 const unlockedSpecies = () => SPECIES.filter(s => S.zones.includes(s.zone));
 function addMoney(n) { S.money += n; if (n > 0) S.earned += n; }
 function discover(id) { if (!S.codex[id]) S.codex[id] = { seen: true, made: 0 }; }
-function makeProduct(spId, crisp) { const p = { id: S.nextId++, sp: spId, crisp, dur: 100, deco: [], cracks: [] }; discover(spId); S.codex[spId].made++; return p; }
+function makeProduct(spId, crisp, crude) { const p = { id: S.nextId++, sp: spId, crisp, dur: 100, deco: [], cracks: [] }; if (crude) p.crude = true; discover(spId); S.codex[spId].made++; return p; }
 
 /* ---------- 音效 ---------- */
 let AC = null, NB = null, master = null;
@@ -459,7 +460,7 @@ function makeStage(cv, mode) {
     const p = st.p, q = st.ptr; if (!p || !q) return;
     if (p.dur <= 0) { sfx.squish(1); popAt(cv.parentElement, q.px, q.py, '扁扁…', '#94a3b8'); st.onFlat && st.onFlat(); return; }
     if (mode === 'squeeze') popAt(cv.parentElement, q.px, q.py, pick(['喀滋', '咔嚓', '啵滋', '喀啦', '酥～']), pick(['#fde047', '#22d3ee', '#f0abfc', '#ffffff']));
-    const eff = effCrisp(p); sfx.crunch(.6 + eff * .6, eff); if (navigator.vibrate) navigator.vibrate(12); p.dur = Math.max(0, p.dur - 2.2);
+    const eff = effCrisp(p); sfx.crunch(.6 + eff * .6, eff); if (navigator.vibrate) navigator.vibrate(12); p.dur = Math.max(0, p.dur - 2.2); p.played = true;
     let u = q.uv.x, v = q.uv.y, a = rnd(0, PI2); const cr = [u, v];
     for (let k = 0; k < 4; k++) { a += rnd(-.8, .8); const l = rnd(.03, .08); u += Math.cos(a) * l; v += Math.sin(a) * l; cr.push(u, v); }
     p.cracks.push(cr); if (p.cracks.length > 30) p.cracks.shift(); jellyTexture(st.J, p);
@@ -502,12 +503,16 @@ const ZONE3D = {
   snow: { top: '#7fa9d8', fog: '#e3edf7', sun: '#ffffff', hemiS: '#eef6ff', hemiG: '#8aa0b8', pal: ['#f3f7fb', '#e5edf6', '#d7e3f0', '#7f8c9e', '#ffffff'] },
 };
 const BIOMES = ['forest', 'coast', 'volcano', 'snow'];
-function biomeW(x, z) {
+const K = 1.6, CITY = { x: 4000, z: 0 }, kk = ([x, z]) => [x * K, z * K];
+const inCity = (x = P ? P.x : 0) => x > 1500;
+function biomeW(x, z) { return biomeW0(x / K, z / K); }
+function biomeW0(x, z) {
   const c = smooth(44, 60, x), v = smooth(44, 60, -z), s = smooth(44, 60, -x), f = Math.max(0, 1 - c - v - s), t = f + c + v + s;
   return [f / t, c / t, v / t, s / t];
 }
 const domBiome = (x, z) => { const w = biomeW(x, z); return BIOMES[w.indexOf(Math.max(...w))]; };
-function H(x, z) {
+function H(x, z) { if (x > 1500) return 0; return H0(x / K, z / K) * K; }
+function H0(x, z) {
   const ax = Math.abs(x), az = Math.abs(z), r = Math.max(ax, az);
   let h = (fbm(x * .045, z * .045, 3) - .45) * 3.2 + (vnoise(x * .2, z * .2, 11) - .5) * .35;
   const fl = 1 - smooth(16, 26, Math.hypot(x, z)); h = h * (1 - fl) + .25 * fl;
@@ -520,8 +525,8 @@ function H(x, z) {
   h += smooth(60, 80, -x) * fbm(x * .06, z * .06, 21) * 7;
   return h;
 }
-const WS_R = 16.3, WS_Y = .45;
-function G(x, z) { const h = H(x, z); return Math.hypot(x, z) < WS_R ? Math.max(h, WS_Y) : h; }
+const WS_R = 16, WS_Y = .4;
+function G(x, z) { return H(x, z); }
 
 const W = { ready: false, anim: [], inter: [], t: 0, cols: new Map(), gates: {}, slimes: [], puz: [], labels: [], sid: 0, spawned: new Set(), mirror: false };
 function addCol(c) {
@@ -537,23 +542,23 @@ function initWorld() {
   try { W.r = new THREE.WebGLRenderer({ canvas: cv, antialias: !LOW, powerPreference: 'high-performance' }); } catch (e) { modal('<h2>無法啟動 3D</h2><p>你的瀏覽器或裝置不支援 WebGL，請改用較新的 Chrome、Edge 或 Safari。</p>'); return false; }
   W.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW ? 1.25 : 1.75)); W.r.toneMapping = THREE.ACESFilmicToneMapping; W.r.toneMappingExposure = 1;
   if (!LOW) { W.r.shadowMap.enabled = true; W.r.shadowMap.type = THREE.PCFSoftShadowMap; }
-  const sc = W.scene = new THREE.Scene(); sc.background = new THREE.Color('#cfe6dc'); sc.fog = new THREE.Fog('#cfe6dc', 45, LOW ? 120 : 165); sc.environment = makeEnv(W.r);
-  W.cam = new THREE.PerspectiveCamera(72, 1, .08, 450); W.cam.rotation.order = 'YXZ';
+  const sc = W.scene = new THREE.Scene(); sc.background = new THREE.Color('#cfe6dc'); sc.fog = new THREE.Fog('#cfe6dc', 60, LOW ? 150 : 220); sc.environment = makeEnv(W.r);
+  W.cam = new THREE.PerspectiveCamera(72, 1, .08, 700); W.cam.rotation.order = 'YXZ';
   W.hemi = new THREE.HemisphereLight('#d8f0ff', '#2d4a2f', 1); sc.add(W.hemi);
   W.sun = new THREE.DirectionalLight('#fff3d6', 2.6); W.sun.castShadow = !LOW; sc.add(W.sun); sc.add(W.sun.target);
   if (!LOW) { const sh = W.sun.shadow; sh.mapSize.set(2048, 2048); Object.assign(sh.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 1, far: 140 }); sh.bias = -.0004; sh.normalBias = .05; sh.camera.updateProjectionMatrix(); }
   // 天空（漸層 shader）
-  W.sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), new THREE.ShaderMaterial({
+  W.sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
     uniforms: { top: { value: new THREE.Color('#5ea7d6') }, bot: { value: new THREE.Color('#cfe6dc') } }, side: THREE.BackSide, depthWrite: false, fog: false,
     vertexShader: 'varying float vh; void main(){ vh = normalize(position).y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; varying float vh; void main(){ gl_FragColor = vec4(mix(bot, top, smoothstep(0.0, 0.45, vh)), 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
-  buildTerrain(); buildWater(); buildProps(); buildWorkshop(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
+  buildTerrain(); buildWater(); buildProps(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
   W.C = makeCrumbs(sc, 180, .14);
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); W.ready = true; return true;
 }
 function buildTerrain() {
-  const N = LOW ? 150 : 210, size = 280, geo = new THREE.PlaneGeometry(size, size, N, N); geo.rotateX(-Math.PI / 2);
+  const N = LOW ? 190 : 260, size = 280 * K, geo = new THREE.PlaneGeometry(size, size, N, N); geo.rotateX(-Math.PI / 2);
   const p = geo.attributes.position, n = p.count, hs = new Float32Array(n), row = N + 1, cell = size / N;
   for (let i = 0; i < n; i++) { hs[i] = H(p.getX(i), p.getZ(i)); p.setY(i, hs[i]); }
   const pal = BIOMES.map(b => ZONE3D[b].pal.map(c => new THREE.Color(c))), cols = new Float32Array(n * 3), c = new THREE.Color(), t = new THREE.Color(), wet = new THREE.Color('#a8956a');
@@ -574,23 +579,23 @@ function buildTerrain() {
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 })); m.receiveShadow = true; W.scene.add(m);
 }
 function buildWater() {
-  const geo = new THREE.PlaneGeometry(220, 300, LOW ? 30 : 60, LOW ? 40 : 80), m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#0e7490', roughness: .08, metalness: .2, transparent: true, opacity: .9 }));
-  m.rotation.x = -Math.PI / 2; m.position.set(180, -.9, 0); m.receiveShadow = true; W.scene.add(m);
+  const geo = new THREE.PlaneGeometry(220 * K, 300 * K, LOW ? 30 : 60, LOW ? 40 : 80), m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#0e7490', roughness: .08, metalness: .2, transparent: true, opacity: .9 }));
+  m.rotation.x = -Math.PI / 2; m.position.set(180 * K, -.9 * K, 0); m.receiveShadow = true; W.scene.add(m);
   const wp = geo.attributes.position, base = Float32Array.from(wp.array);
-  W.anim.push((dt, t) => { if (P.x < 40) return; for (let i = 0; i < wp.count; i++) { const x = base[i * 3], y = base[i * 3 + 1]; wp.setZ(i, Math.sin(x * .3 + t * 1.2) * .1 + Math.cos(y * .4 + t * .9) * .1); } wp.needsUpdate = true; geo.computeVertexNormals(); });
+  W.anim.push((dt, t) => { if (P.x < 40 * K || inCity()) return; for (let i = 0; i < wp.count; i++) { const x = base[i * 3], y = base[i * 3 + 1]; wp.setZ(i, Math.sin(x * .3 + t * 1.2) * .1 + Math.cos(y * .4 + t * .9) * .1); } wp.needsUpdate = true; geo.computeVertexNormals(); });
 }
 /* 植被與岩石：每種道具合併成單一幾何後以 InstancedMesh 大量擺放 */
 function buildProps() {
   const rd = seeded(77), lists = {}, push = (k, o) => (lists[k] = lists[k] || []).push(o);
   const avoid = (x, z) => {
-    if (Math.hypot(x, z) < 24) return true;
-    if (Math.abs(z) < 10 && Math.abs(Math.abs(x) - 54) < 9) return true;
-    if (Math.abs(x) < 10 && Math.abs(z + 54) < 9) return true;
+    if (Math.hypot(x, z) < 26) return true;
+    if (Math.abs(z) < 10 * K && Math.abs(Math.abs(x) - 54 * K) < 9 * K) return true;
+    if (Math.abs(x) < 10 * K && Math.abs(z + 54 * K) < 9 * K) return true;
     return PUZ_SPOTS.some(([px, pz]) => Math.hypot(x - px, z - pz) < 4.5);
   };
-  const tries = LOW ? 2600 : 4200;
+  const tries = LOW ? 6000 : 10500;
   for (let i = 0; i < tries; i++) {
-    const x = (rd() - .5) * 250, z = (rd() - .5) * 250, h = H(x, z); if (h < -.3 || h > 26 || avoid(x, z)) continue;
+    const x = (rd() - .5) * 250 * K, z = (rd() - .5) * 250 * K, h = H(x, z); if (h < -.3 || h > 26 * K || avoid(x, z)) continue;
     const sl = Math.abs(H(x + 1, z) - H(x - 1, z)) + Math.abs(H(x, z + 1) - H(x, z - 1)); if (sl > 1.5) continue;
     const b = domBiome(x, z), s = .75 + rd() * .8, ry = rd() * 6.28, k = rd(), o = { x, y: h - .12 - sl * .3, z, s, ry };
     let col = 0;
@@ -598,7 +603,7 @@ function buildProps() {
     else if (b === 'coast') { if (k < .45) { push('palm', o); col = .3; } else if (k < .7) { push('rockF', o); col = .8; } else push('bushC', o); }
     else if (b === 'volcano') { if (k < .45) { push('rockV', o); col = .8; } else if (k < .7) { push('dead', o); col = .25; } else push('obsid', o); }
     else { if (k < .55) { push('pineS', o); col = .35; } else if (k < .75) { push('rockS', o); col = .8; } else push('ice', o); }
-    if (col && Math.max(Math.abs(x), Math.abs(z)) < 110) addCol({ x, z, r: col * s + .1 });
+    if (col && Math.max(Math.abs(x), Math.abs(z)) < 110 * K) addCol({ x, z, r: col * s + .1 });
   }
   const flatM = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 });
   const cone = (r, h, y, c, sd) => [jit(new THREE.ConeGeometry(r, h, 9, 3), .22, sd), c, M4(0, y, 0)];
@@ -623,10 +628,10 @@ function buildProps() {
   // 草叢與花（成片分布）
   const grass = [], flowers = [], gc = [new THREE.Color('#4f9a45'), new THREE.Color('#8cc265'), new THREE.Color('#9a9a55'), new THREE.Color('#cfc47a')];
   const fcol = ['#f9a8d4', '#fde68a', '#ffffff', '#c4b5fd', '#fca5a5'].map(c => new THREE.Color(c));
-  for (let i = 0; i < (LOW ? 170 : 340); i++) {
-    const cx = (rd() - .5) * 220, cz = (rd() - .5) * 220, b = domBiome(cx, cz); if (b === 'volcano' || b === 'snow') continue;
+  for (let i = 0; i < (LOW ? 420 : 820); i++) {
+    const cx = (rd() - .5) * 220 * K, cz = (rd() - .5) * 220 * K, b = domBiome(cx, cz); if (b === 'volcano' || b === 'snow') continue;
     for (let j = 0; j < (LOW ? 14 : 22); j++) {
-      const x = cx + (rd() - .5) * 7, z = cz + (rd() - .5) * 7, h = H(x, z); if (h < .05 || h > 6 || Math.hypot(x, z) < WS_R + 1) continue; if (Math.abs(H(x + .8, z) - H(x - .8, z)) + Math.abs(H(x, z + .8) - H(x, z - .8)) > .5) continue;
+      const x = cx + (rd() - .5) * 7, z = cz + (rd() - .5) * 7, h = H(x, z); if (h < .05 || h > 6 * K || Math.hypot(x, z) < 20) continue; if (Math.abs(H(x + .8, z) - H(x - .8, z)) + Math.abs(H(x, z + .8) - H(x, z - .8)) > .5) continue;
       const c = b === 'coast' ? gc[2].clone().lerp(gc[3], rd()) : gc[0].clone().lerp(gc[1], rd());
       grass.push({ x, y: h, z, s: .8 + rd() * .7, ry: rd() * 6.28, rx: (rd() - .5) * .4, c });
       if (b === 'forest' && rd() < .09) flowers.push({ x: x + .2, y: h, z, s: .8 + rd() * .5, ry: rd() * 6, c: pick(fcol) });
@@ -638,16 +643,16 @@ function buildProps() {
   W.scene.add(instances(fg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6, flatShading: true }), flowers, false));
 }
 function buildVolcanoFx() {
-  const y = H(0, -96) + .3, lava = mesh(new THREE.CircleGeometry(4.6, 32), new THREE.MeshBasicMaterial({ color: '#fb923c' }), 0, y, -96, W.scene); lava.rotation.x = -Math.PI / 2;
+  const VZ = -96 * K, y = H(0, VZ) + .3, lava = mesh(new THREE.CircleGeometry(4.6 * K, 32), new THREE.MeshBasicMaterial({ color: '#fb923c' }), 0, y, VZ, W.scene); lava.rotation.x = -Math.PI / 2;
   const smokeG = new THREE.IcosahedronGeometry(2, 1), smokeM = new THREE.MeshStandardMaterial({ color: '#3f3a3a', roughness: 1, transparent: true, opacity: .5, flatShading: true }), puffs = [];
-  for (let i = 0; i < 12; i++) { const m = mesh(smokeG, smokeM, 0, y, -96, W.scene); m.userData.o = i / 12; puffs.push(m); }
+  for (let i = 0; i < 12; i++) { const m = mesh(smokeG, smokeM, 0, y, VZ, W.scene); m.userData.o = i / 12; puffs.push(m); }
   const pools = [], rd = seeded(5);
   for (let i = 0; i < 9; i++) {
-    const x = (rd() - .5) * 80, z = -62 - rd() * 18; if (Math.hypot(x, z + 96) < 33) continue; const hy = H(x, z) + .05, r = 1.2 + rd() * 1.4;
+    const x = (rd() - .5) * 80 * K, z = (-62 - rd() * 18) * K; if (Math.hypot(x, z - VZ) < 33 * K) continue; const hy = H(x, z) + .05, r = 1.2 + rd() * 1.4;
     const a = mesh(new THREE.CircleGeometry(r, 28), new THREE.MeshBasicMaterial({ color: '#ea580c' }), x, hy, z, W.scene); a.rotation.x = -Math.PI / 2;
     const b = mesh(new THREE.CircleGeometry(r * .6, 24), new THREE.MeshBasicMaterial({ color: '#fde047' }), x, hy + .01, z, W.scene); b.rotation.x = -Math.PI / 2; pools.push(b);
   }
-  W.anim.push((dt, t) => { pools.forEach((b, i) => b.scale.setScalar(.85 + Math.sin(t * 2 + i) * .15)); puffs.forEach(m => { const k = (t * .04 + m.userData.o) % 1; m.position.set(Math.sin(k * 6 + m.userData.o * 9) * 3 + k * 8, y + 2 + k * 30, -96 + k * 4); m.scale.setScalar(.6 + k * 3); }); });
+  W.anim.push((dt, t) => { pools.forEach((b, i) => b.scale.setScalar(.85 + Math.sin(t * 2 + i) * .15)); puffs.forEach(m => { const k = (t * .04 + m.userData.o) % 1; m.position.set(Math.sin(k * 6 + m.userData.o * 9) * 3 + k * 8, y + 2 + k * 30, VZ + k * 4); m.scale.setScalar(.6 + k * 3); }); });
 }
 function buildClouds() {
   const cg = new THREE.IcosahedronGeometry(1, 1), cm = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true, transparent: true, opacity: .92, fog: false }), clouds = [], rd = seeded(9);
@@ -692,106 +697,100 @@ const MK = { pulse: [0, 0, 0], bx: -6.4, t: 0 };
 function addInter(hit, kind, id, name, extra = {}) { hit.material = hit.material || new THREE.MeshBasicMaterial(); hit.material.visible = false; const it = Object.assign({ hit, kind, id, name }, extra); hit.userData.it = it; W.inter.push(it); return it; }
 function hitBox(w, h, d, x, y, z, parent) { return box(w, h, d, new THREE.MeshBasicMaterial({ visible: false }), x, y, z, parent); }
 function buildWorkshop() {
-  const g = new THREE.Group(); W.scene.add(g); W.ws = g;
-  const dark = std('#1e293b', { metalness: .6, roughness: .4 }), white = std('#e2e8f0', { roughness: .35 }), steel = std('#94a3b8', { metalness: .9, roughness: .2 });
-  // 平台與地面燈環
-  const plat = cyl(WS_R, WS_R + .4, .44, 72, std('#273244', { roughness: .55, metalness: .3 }), 0, WS_Y - .22, 0, g); plat.receiveShadow = true;
-  const ring = mesh(new THREE.TorusGeometry(WS_R - .4, .06, 8, 140), glow('#22d3ee'), 0, WS_Y + .01, 0, g); ring.rotation.x = Math.PI / 2;
-  for (let i = 0; i < 6; i++) { const t = mesh(new THREE.TorusGeometry(6 + i * 1.6, .015, 4, 90), new THREE.MeshBasicMaterial({ color: '#334155' }), 0, WS_Y + .005, 0, g); t.rotation.x = Math.PI / 2; }
-  // 天棚
-  [[-12, -10], [12, -10], [-12, 0], [12, 0], [-12, 9], [12, 9]].forEach(([x, z]) => { cyl(.16, .16, 5.6, 12, white, x, WS_Y + 2.8, z, g); addCol({ x, z, r: .35 }); });
-  box(25, .35, 20.5, white, 0, WS_Y + 5.75, -.5, g);
-  [-6, -2, 2, 6].forEach(z => box(22, .06, .25, glow('#e0f2fe'), 0, WS_Y + 5.55, z, g));
-  box(25.2, .12, .2, glow('#22d3ee'), 0, WS_Y + 5.95, 9.75, g);
-  // 1) 加工產線
-  const line = new THREE.Group(); line.position.set(0, WS_Y, -6.5); g.add(line); buildLine(line);
-  addCol({ box: [-7.8, -7.7, 9.3, -5.3] }); addCol({ x: -7.4, z: -8.1, r: .8 });
-  addInter(hitBox(17.5, 3.2, 3.2, .7, 1.6, 0, line), 'station', 'line', '加工產线'.replace('线', '線'));
-  const lb = textSprite('加工產線', '#22d3ee', '捕捉的凝膠在這裡加工'); lb.position.set(0, WS_Y + 4.3, -6.5); g.add(lb);
-  // 2) 裝飾桌
-  const dt = new THREE.Group(); dt.position.set(-9, WS_Y, 3.5); dt.rotation.y = .5; g.add(dt);
+  const g = new THREE.Group(); W.scene.add(g); W.ws = g; W.slotCol = {}; W.slotMark = {}; W.slotInter = {};
+  const at = (o, [x, z], ry = 0) => { o.position.set(x, G(x, z), z); o.rotation.y = ry; g.add(o); return o; };
+  const dark = std('#1e293b', { metalness: .6, roughness: .4 }), white = std('#e2e8f0', { roughness: .35 }), steel = std('#94a3b8', { metalness: .9, roughness: .2 }), wood = std('#a07850', { roughness: .8 }), woodD = std('#6b4d33', { roughness: .85 });
+  const label = (txt, c, sub, x, y, z) => { const sp = textSprite(txt, c, sub); sp.position.set(x, y, z); g.add(sp); return sp; };
+  // 工作電腦（戶外桌與遮陽傘）
+  const pc = at(new THREE.Group(), BASE.pc);
+  box(2.4, .1, 1.1, white, 0, .95, 0, pc); [-1.1, 1.1].forEach(x => box(.08, .95, 1, dark, x, .47, 0, pc));
+  box(1.5, .9, .06, dark, 0, 1.55, -.3, pc); cyl(.05, .08, .35, 10, dark, 0, 1.12, -.3, pc);
+  const sc = document.createElement('canvas'); sc.width = 512; sc.height = 300; const sg = sc.getContext('2d');
+  sg.fillStyle = '#0b1220'; sg.fillRect(0, 0, 512, 300); sg.fillStyle = '#22d3ee'; sg.font = 'bold 34px sans-serif'; sg.fillText('SQUISH SHOP', 24, 50);
+  sg.fillStyle = '#334155'; for (let i = 0; i < 3; i++) sg.fillRect(24 + i * 160, 80, 140, 150); sg.fillStyle = '#34d399'; for (let i = 0; i < 3; i++) sg.fillRect(24 + i * 160, 240, 140, 30);
+  const stx = new THREE.CanvasTexture(sc); stx.colorSpace = THREE.SRGBColorSpace;
+  mesh(new THREE.PlaneGeometry(1.4, .8), new THREE.MeshBasicMaterial({ map: stx }), 0, 1.55, -.265, pc);
+  box(.9, .03, .3, dark, 0, 1.02, .15, pc);
+  const chair = new THREE.Group(); chair.position.set(0, 0, .9); pc.add(chair); cyl(.3, .3, .08, 20, dark, 0, .55, 0, chair); box(.55, .6, .06, dark, 0, .9, .28, chair); cyl(.04, .04, .5, 8, steel, 0, .28, 0, chair);
+  cyl(.04, .04, 2.6, 8, steel, 1.4, 1.3, .1, pc); mesh(new THREE.ConeGeometry(1.7, .6, 12, 1, true), std('#22d3ee', { side: THREE.DoubleSide, roughness: .6 }), 1.4, 2.7, .1, pc);
+  addCol({ box: [BASE.pc[0] - 1.3, BASE.pc[1] - .7, BASE.pc[0] + 1.3, BASE.pc[1] + .5] });
+  addInter(hitBox(2.6, 2.2, 1.6, 0, 1.1, 0, pc), 'station', 'pc', '工作電腦'); label('工作電腦', '#818cf8', '把捏捏上架到網站販售', BASE.pc[0], pc.position.y + 3.4, BASE.pc[1]);
+  // 手作台
+  const bn = at(new THREE.Group(), BASE.bench);
+  box(2.2, .12, 1.2, wood, 0, .9, 0, bn); [[-1, -.5], [1, -.5], [-1, .5], [1, .5]].forEach(([x, z]) => box(.1, .9, .1, woodD, x, .45, z, bn));
+  box(.9, .04, .6, std('#f5efe6', { roughness: .7 }), -.3, .98, 0, bn);
+  mesh(new THREE.SphereGeometry(.22, 16, 8, 0, PI2, Math.PI / 2, Math.PI / 2), std('#cbd5e1', { side: THREE.DoubleSide }), .6, 1.18, -.1, bn);
+  mesh(new THREE.SphereGeometry(.16, 14, 10), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1 }), .6, 1.02, -.1, bn).scale.y = .5;
+  const pin = cyl(.05, .05, .7, 12, woodD, -.3, 1.06, 0, bn); pin.rotation.z = Math.PI / 2;
+  addCol({ x: BASE.bench[0], z: BASE.bench[1], r: 1.2 }); addInter(hitBox(2.4, 2, 1.6, 0, 1, 0, bn), 'station', 'bench', '手作台'); label('手作台', '#fbbf24', '手工做出粗製捏捏', BASE.bench[0], bn.position.y + 3, BASE.bench[1]);
+  // 加工產線（買了哪台才出現哪台）
+  const line = at(new THREE.Group(), BASE.line); W.lineG = line; buildLine(line);
+  W.slotCol.line = { box: [BASE.line[0] - 7.8, BASE.line[1] - 1.2, BASE.line[0] + 9.3, BASE.line[1] + 1.2] };
+  W.slotInter.line = addInter(hitBox(17.5, 3.2, 3.2, .7, 1.6, 0, line), 'station', 'line', '加工產線');
+  W.slotMark.line = slotMark(g, BASE.line, '加工產線空地', '到大城市機械行購買機器', 7);
+  // 裝飾桌
+  const dt = at(new THREE.Group(), BASE.decor, .5); W.decorG = dt;
   box(2.6, .12, 1.5, white, 0, .95, 0, dt); [[-1.2, -.65], [1.2, -.65], [-1.2, .65], [1.2, .65]].forEach(([x, z]) => box(.08, .95, .08, dark, x, .47, z, dt));
   cyl(.5, .55, .1, 32, steel, 0, 1.06, 0, dt);
   const sample = makeJelly(6, true); sample.group.scale.setScalar(.28); sample.group.position.set(0, 1.4, 0); sample.ov.visible = false; jellyColors(sample, SP.honey); dt.add(sample.group); W.sample = sample.group;
   [['#e879f9', -.8], ['#22d3ee', -.55], ['#fbbf24', .75]].forEach(([c, x]) => mesh(new THREE.OctahedronGeometry(.08), glow(c), x, 1.1, .4, dt));
-  cyl(.06, .1, .05, 12, dark, .95, 1.03, -.45, dt); const arm = cyl(.025, .025, .8, 8, steel, .95, 1.42, -.45, dt); arm.rotation.z = .3;
-  const shade = mesh(new THREE.ConeGeometry(.2, .25, 20, 1, true), std('#334155', { side: THREE.DoubleSide }), .8, 1.85, -.45, dt); shade.rotation.z = .5;
-  mesh(new THREE.SphereGeometry(.07, 10, 8), glow('#fef3c7'), .76, 1.78, -.45, dt);
-  addCol({ x: -9, z: 3.5, r: 1.5 }); addInter(hitBox(3, 2, 2, 0, 1, 0, dt), 'station', 'decor', '裝飾桌');
-  const db = textSprite('裝飾桌', '#e879f9', '替捏捏加上裝飾零件'); db.position.set(-9, WS_Y + 3, 3.5); g.add(db);
-  // 3) 直播台
-  const lv = new THREE.Group(); lv.position.set(9, WS_Y, 3.5); lv.rotation.y = -.5; g.add(lv);
+  W.slotCol.decor = { x: BASE.decor[0], z: BASE.decor[1], r: 1.5 };
+  W.slotInter.decor = addInter(hitBox(3, 2, 2, 0, 1, 0, dt), 'station', 'decor', '裝飾桌');
+  W.slotMark.decor = slotMark(g, BASE.decor, '裝飾桌空地', '到大城市器材行購買', 2);
+  // 直播台
+  const lv = at(new THREE.Group(), BASE.live, -.5); W.liveG = lv;
   cyl(1.6, 1.7, .18, 40, dark, 0, .09, 0, lv); const lr = mesh(new THREE.TorusGeometry(1.62, .03, 6, 60), glow('#e879f9'), 0, .19, 0, lv); lr.rotation.x = Math.PI / 2;
   cyl(.35, .4, .9, 24, white, 0, .63, 0, lv);
   const lj = makeJelly(6, true); lj.group.scale.setScalar(.3); lj.group.position.set(0, 1.4, 0); lj.ov.visible = false; jellyColors(lj, SP.grass); lv.add(lj.group); W.liveSample = lj.group;
   box(3.6, 3, .12, std('#0f0d1f', { roughness: .8 }), 0, 1.6, -1.8, lv);
   W.neon = [['#22d3ee', -1.4], ['#818cf8', -.5], ['#e879f9', .5], ['#fbbf24', 1.4]].map(([c, x]) => box(.08, 2.4, .06, glow(c), x, 1.6, -1.72, lv));
-  const rl = mesh(new THREE.TorusGeometry(.45, .04, 10, 40), glow('#f8fafc'), -1.4, 1.9, 1.2, lv); rl.lookAt(lv.localToWorld(new THREE.Vector3(0, 1.4, 0)));
+  const rl = mesh(new THREE.TorusGeometry(.45, .04, 10, 40), glow('#f8fafc'), -1.4, 1.9, 1.2, lv); rl.rotation.y = .6;
   cyl(.03, .03, 1.9, 8, steel, -1.4, .95, 1.2, lv);
-  const camG = new THREE.Group(); camG.position.set(1.4, 1.5, 1.4); lv.add(camG); box(.45, .3, .35, dark, 0, 0, 0, camG); const lens = cyl(.1, .13, .25, 16, std('#0f172a', { metalness: .9, roughness: .15 }), 0, 0, -.28, camG); lens.rotation.x = Math.PI / 2;
-  W.recLed = mesh(new THREE.SphereGeometry(.035, 8, 6), new THREE.MeshBasicMaterial({ color: '#fb7185' }), .16, .1, -.18, camG); camG.lookAt(9, WS_Y + 1.4, 3.5);
-  [[-.25, 0], [.25, 0], [0, .3]].forEach(([x, z]) => { const l = cyl(.02, .02, 1.5, 6, steel, 1.4 + x, .75, 1.4 + z, lv); l.rotation.z = x; });
-  addCol({ x: 9, z: 3.5, r: 1.8 }); addInter(hitBox(3.6, 2.6, 3.6, 0, 1.3, 0, lv), 'station', 'live', '直播台');
-  const lvb = textSprite('直播台', '#fb7185', '開直播、捏捏、販售'); lvb.position.set(9, WS_Y + 3.6, 3.5); g.add(lvb);
-  // 4) 工作電腦
-  const pc = new THREE.Group(); pc.position.set(0, WS_Y, 6); g.add(pc);
-  box(2.6, .1, 1.1, white, 0, .95, 0, pc); [[-1.2, 0], [1.2, 0]].forEach(([x]) => box(.08, .95, 1, dark, x, .47, 0, pc));
-  box(1.6, .95, .06, dark, 0, 1.6, -.3, pc); cyl(.05, .08, .4, 10, dark, 0, 1.15, -.3, pc);
-  const sc = document.createElement('canvas'); sc.width = 512; sc.height = 300; const sg = sc.getContext('2d');
-  sg.fillStyle = '#0b1220'; sg.fillRect(0, 0, 512, 300); sg.fillStyle = '#22d3ee'; sg.font = 'bold 34px sans-serif'; sg.fillText('SQUISH LAB', 24, 50);
-  sg.strokeStyle = '#34d399'; sg.lineWidth = 4; sg.beginPath(); [0, 1, 2, 3, 4, 5, 6, 7].forEach(i => sg.lineTo(30 + i * 60, 240 - Math.sin(i * .9) * 40 - i * 14)); sg.stroke();
-  sg.fillStyle = '#818cf8'; [0, 1, 2, 3].forEach(i => sg.fillRect(330 + i * 40, 160 - i * 22, 26, 80 + i * 22));
-  const st = new THREE.CanvasTexture(sc); st.colorSpace = THREE.SRGBColorSpace;
-  mesh(new THREE.PlaneGeometry(1.5, .85), new THREE.MeshBasicMaterial({ map: st }), 0, 1.6, -.265, pc).rotation.y = 0;
-  box(.9, .03, .3, dark, 0, 1.02, .15, pc);
-  const chair = new THREE.Group(); chair.position.set(0, 0, .9); pc.add(chair); cyl(.3, .3, .08, 20, dark, 0, .55, 0, chair); box(.55, .6, .06, dark, 0, .9, .28, chair); cyl(.04, .04, .5, 8, steel, 0, .28, 0, chair);
-  addCol({ box: [-1.4, 5.4, 1.4, 6.6] }); addInter(hitBox(2.8, 2.2, 1.6, 0, 1.1, 0, pc), 'station', 'pc', '工作電腦');
-  const pb = textSprite('工作電腦', '#818cf8', '網站、升級、事業、圖鑑'); pb.position.set(0, WS_Y + 3.1, 6); g.add(pb);
-  // 凝膠儲槽（裝飾）
-  [[-13.2, -4, '#6ee7a8'], [-13.2, -1.5, '#fbbf24'], [13.2, -4, '#38bdf8'], [13.2, -1.5, '#fb7185']].forEach(([x, z, c]) => {
-    cyl(.6, .6, .15, 24, dark, x, WS_Y + .08, z, g); mesh(new THREE.CylinderGeometry(.55, .55, 2.2, 24, 1, true), new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: .25, roughness: .05, side: THREE.DoubleSide }), x, WS_Y + 1.25, z, g);
-    cyl(.5, .5, 1.6, 24, new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: .35, roughness: .2, transparent: true, opacity: .85 }), x, WS_Y + .95, z, g); cyl(.6, .6, .15, 24, steel, x, WS_Y + 2.4, z, g); addCol({ x, z, r: .7 });
-  });
-  // 入口招牌
-  const sign = new THREE.Group(); sign.position.set(0, G(0, 18.5), 18.5); W.scene.add(sign);
-  [-3.2, 3.2].forEach(x => { cyl(.12, .12, 3.4, 12, dark, x, 1.7, 0, sign); addCol({ x, z: 18.5, r: .3 }); });
-  const sc2 = document.createElement('canvas'); sc2.width = 1024; sc2.height = 200; const s2 = sc2.getContext('2d');
-  s2.fillStyle = '#0b1220'; s2.fillRect(0, 0, 1024, 200); s2.fillStyle = '#22d3ee'; s2.font = 'bold 84px Inter,sans-serif'; s2.textAlign = 'center'; s2.fillText('SQUISH LAB', 512, 105); s2.fillStyle = '#cbd5e1'; s2.font = '44px "Noto Sans TC","Microsoft JhengHei",sans-serif'; s2.fillText('史萊姆捏捏工坊', 512, 170);
-  const t2 = new THREE.CanvasTexture(sc2); t2.colorSpace = THREE.SRGBColorSpace;
-  box(6.8, 1.4, .14, dark, 0, 3.1, 0, sign); mesh(new THREE.PlaneGeometry(6.6, 1.3), new THREE.MeshBasicMaterial({ map: t2 }), 0, 3.1, .08, sign);
+  const camG = new THREE.Group(); camG.position.set(1.4, 1.5, 1.4); lv.add(camG); box(.45, .3, .35, dark, 0, 0, 0, camG);
+  const lens = cyl(.1, .13, .25, 16, std('#0f172a', { metalness: .9, roughness: .15 }), 0, 0, -.28, camG); lens.rotation.x = Math.PI / 2; camG.rotation.y = -2.4;
+  W.recLed = mesh(new THREE.SphereGeometry(.035, 8, 6), new THREE.MeshBasicMaterial({ color: '#fb7185' }), .16, .1, -.18, camG);
+  W.slotCol.live = { x: BASE.live[0], z: BASE.live[1], r: 1.8 };
+  W.slotInter.live = addInter(hitBox(3.6, 2.6, 3.6, 0, 1.3, 0, lv), 'station', 'live', '直播台');
+  W.slotMark.live = slotMark(g, BASE.live, '直播台空地', '到大城市器材行購買直播設備', 2.2);
+  // 計程車（出生點左邊）
+  const tx = at(makeTaxi('#facc15', true), BASE.taxi, Math.PI / 2);
+  addCol({ box: [BASE.taxi[0] - 1, BASE.taxi[1] - 2, BASE.taxi[0] + 1, BASE.taxi[1] + 2] });
+  addInter(hitBox(4.2, 2.2, 2, 0, 1, 0, tx), 'station', 'taxi', '計程車'); label('計程車', '#facc15', '前往大城市購買設備', BASE.taxi[0], tx.position.y + 3, BASE.taxi[1]);
   g.traverse(o => { if (o.isMesh && o.material.visible !== false) { o.castShadow = !LOW; o.receiveShadow = true; } });
+  refreshBase();
 }
 function buildLine(G0) {
   const dark = std('#1e293b', { metalness: .7, roughness: .35 }), steel = std('#94a3b8', { metalness: .9, roughness: .2 }), panel = std('#334155', { metalness: .5, roughness: .4 });
-  box(15, .35, 1.7, dark, 0, .45, 0, G0); box(15, .08, 1.5, std('#0b0f17', { roughness: .9 }), 0, .66, 0, G0); [-.9, .9].forEach(z => box(15, .12, .1, steel, 0, .72, z, G0));
-  MK.rollers = []; for (let i = 0; i < 14; i++) { const r = cyl(.14, .14, 1.8, 12, steel, -6.5 + i, .45, 0, G0); r.rotation.x = Math.PI / 2; MK.rollers.push(r); }
-  [-6.8, -2.3, 2.3, 6.8].forEach(x => [-.7, .7].forEach(z => box(.15, .3, .15, dark, x, .15, z, G0)));
-  MK.belt = []; for (let i = 0; i < 30; i++) MK.belt.push(box(.06, .02, 1.4, std('#22d3ee', { emissive: '#22d3ee', emissiveIntensity: .25 }), -7.25 + i * .5, .71, 0, G0));
-  const leds = x => { const a = []; for (let i = 0; i < 5; i++) a.push(box(.14, .08, .04, new THREE.MeshBasicMaterial({ color: '#1e293b' }), x - .36 + i * .18, .3, 1.21, G0)); return a; };
+  const LP = W.lineParts = { belt: new THREE.Group(), m: [new THREE.Group(), new THREE.Group(), new THREE.Group()] }; G0.add(LP.belt); LP.m.forEach(m => G0.add(m)); const B = LP.belt;
+  box(15, .35, 1.7, dark, 0, .45, 0, B); box(15, .08, 1.5, std('#0b0f17', { roughness: .9 }), 0, .66, 0, B); [-.9, .9].forEach(z => box(15, .12, .1, steel, 0, .72, z, B));
+  MK.rollers = []; for (let i = 0; i < 14; i++) { const r = cyl(.14, .14, 1.8, 12, steel, -6.5 + i, .45, 0, B); r.rotation.x = Math.PI / 2; MK.rollers.push(r); }
+  [-6.8, -2.3, 2.3, 6.8].forEach(x => [-.7, .7].forEach(z => box(.15, .3, .15, dark, x, .15, z, B)));
+  MK.belt = []; for (let i = 0; i < 30; i++) MK.belt.push(box(.06, .02, 1.4, std('#22d3ee', { emissive: '#22d3ee', emissiveIntensity: .25 }), -7.25 + i * .5, .71, 0, B));
+  const leds = (x, par) => { const a = []; for (let i = 0; i < 5; i++) a.push(box(.14, .08, .04, new THREE.MeshBasicMaterial({ color: '#1e293b' }), x - .36 + i * .18, .3, 1.21, par)); return a; };
   MK.leds = [];
-  const x0 = MX[0]; [-1, 1].forEach(s => [-1.05, 1.05].forEach(z => box(.22, 2.6, .22, dark, x0 + s * .9, 1.3, z, G0)));
-  box(2.2, .3, 2.4, panel, x0, 2.65, 0, G0); box(1.2, .5, .8, dark, x0, 3.05, 0, G0);
-  MK.blades = [-.35, 0, .35].map(dx => box(.04, .7, 1.5, steel, x0 + dx, 2.1, 0, G0)); box(1, .55, .1, panel, x0, .3, 1.15, G0); MK.leds[0] = leds(x0);
-  const x1 = MX[1]; MK.drum = new THREE.Group(); MK.drum.position.set(x1, 1.25, 0); G0.add(MK.drum);
+  const A = LP.m[0], x0 = MX[0]; [-1, 1].forEach(s => [-1.05, 1.05].forEach(z => box(.22, 2.6, .22, dark, x0 + s * .9, 1.3, z, A)));
+  box(2.2, .3, 2.4, panel, x0, 2.65, 0, A); box(1.2, .5, .8, dark, x0, 3.05, 0, A);
+  MK.blades = [-.35, 0, .35].map(dx => box(.04, .7, 1.5, steel, x0 + dx, 2.1, 0, A)); box(1, .55, .1, panel, x0, .3, 1.15, A); MK.leds[0] = leds(x0, A);
+  const Bm = LP.m[1], x1 = MX[1]; MK.drum = new THREE.Group(); MK.drum.position.set(x1, 1.25, 0); Bm.add(MK.drum);
   const glass = mesh(new THREE.CylinderGeometry(.95, .95, 2, 32, 1, true), new THREE.MeshStandardMaterial({ color: '#c7f9ff', transparent: true, opacity: .28, roughness: .05, side: THREE.DoubleSide }), 0, 0, 0, MK.drum); glass.rotation.z = Math.PI / 2;
   for (let i = 0; i < 6; i++) { const a = i / 6 * PI2, vb = box(1.9, .04, .25, steel, 0, Math.cos(a) * .82, Math.sin(a) * .82, MK.drum); vb.rotation.x = -a; }
-  [-1, 1].forEach(s => { const r = mesh(new THREE.TorusGeometry(.97, .06, 10, 40), steel, x1 + s, 1.25, 0, G0); r.rotation.y = Math.PI / 2; box(.2, 1.2, .2, dark, x1 + s, .6, -.9, G0); box(.2, 1.2, .2, dark, x1 + s, .6, .9, G0); });
-  const hop = mesh(new THREE.ConeGeometry(.6, .9, 4, 1, true), std('#334155', { side: THREE.DoubleSide }), x1, 2.85, 0, G0); hop.rotation.x = Math.PI;
-  MK.sugar = []; for (let i = 0; i < 14; i++) MK.sugar.push(box(.05, .05, .05, new THREE.MeshBasicMaterial({ color: '#ffffff' }), x1 + rnd(-.15, .15), 2.4, rnd(-.15, .15), G0));
-  box(1, .55, .1, panel, x1, .3, 1.15, G0); MK.leds[1] = leds(x1);
-  const x2 = MX[2]; box(2.6, .5, 2.2, panel, x2, 2.3, 0, G0); [-1, 1].forEach(s => box(2.6, 1.6, .2, dark, x2, 1.25, s, G0));
-  MK.heat = [-.6, 0, .6].map(dz => { const h = cyl(.05, .05, 2.3, 10, new THREE.MeshStandardMaterial({ color: '#7c2d12', emissive: '#fb923c', emissiveIntensity: .2 }), x2, 1.95, dz, G0); h.rotation.z = Math.PI / 2; return h; });
-  cyl(.5, .5, .2, 24, dark, x2, 2.65, 0, G0); MK.fan = new THREE.Group(); MK.fan.position.set(x2, 2.8, 0); G0.add(MK.fan); for (let i = 0; i < 4; i++) { const bl = box(.75, .03, .16, steel, 0, 0, 0, MK.fan); bl.rotation.y = i * Math.PI / 4; }
-  box(1, .55, .1, panel, x2, .3, 1.15, G0); MK.leds[2] = leds(x2);
-  MK.tank = cyl(.55, .55, 1.8, 28, new THREE.MeshStandardMaterial({ color: '#6ee7a8', emissive: '#6ee7a8', emissiveIntensity: .25, roughness: .15, transparent: true, opacity: .85 }), -7.4, 1.5, -1.6, G0);
-  cyl(.6, .6, .12, 28, steel, -7.4, .6, -1.6, G0); cyl(.6, .6, .12, 28, steel, -7.4, 2.45, -1.6, G0);
-  const pipe = cyl(.07, .07, 1.6, 10, steel, -7.0, 2.5, -.8, G0); pipe.rotation.x = Math.PI / 2.6;
-  MK.turn = cyl(.9, 1, .2, 36, std('#111827', { metalness: .8, roughness: .2 }), 8.2, .1, 0, G0);
-  const tr = mesh(new THREE.TorusGeometry(.95, .025, 8, 60), glow('#22d3ee'), 8.2, .21, 0, G0); tr.rotation.x = Math.PI / 2;
+  [-1, 1].forEach(s => { const r = mesh(new THREE.TorusGeometry(.97, .06, 10, 40), steel, x1 + s, 1.25, 0, Bm); r.rotation.y = Math.PI / 2; box(.2, 1.2, .2, dark, x1 + s, .6, -.9, Bm); box(.2, 1.2, .2, dark, x1 + s, .6, .9, Bm); });
+  const hop = mesh(new THREE.ConeGeometry(.6, .9, 4, 1, true), std('#334155', { side: THREE.DoubleSide }), x1, 2.85, 0, Bm); hop.rotation.x = Math.PI;
+  MK.sugar = []; for (let i = 0; i < 14; i++) MK.sugar.push(box(.05, .05, .05, new THREE.MeshBasicMaterial({ color: '#ffffff' }), x1 + rnd(-.15, .15), 2.4, rnd(-.15, .15), Bm));
+  box(1, .55, .1, panel, x1, .3, 1.15, Bm); MK.leds[1] = leds(x1, Bm);
+  const Cm = LP.m[2], x2 = MX[2]; box(2.6, .5, 2.2, panel, x2, 2.3, 0, Cm); [-1, 1].forEach(s => box(2.6, 1.6, .2, dark, x2, 1.25, s, Cm));
+  MK.heat = [-.6, 0, .6].map(dz => { const h = cyl(.05, .05, 2.3, 10, new THREE.MeshStandardMaterial({ color: '#7c2d12', emissive: '#fb923c', emissiveIntensity: .2 }), x2, 1.95, dz, Cm); h.rotation.z = Math.PI / 2; return h; });
+  cyl(.5, .5, .2, 24, dark, x2, 2.65, 0, Cm); MK.fan = new THREE.Group(); MK.fan.position.set(x2, 2.8, 0); Cm.add(MK.fan); for (let i = 0; i < 4; i++) { const bl = box(.75, .03, .16, steel, 0, 0, 0, MK.fan); bl.rotation.y = i * Math.PI / 4; }
+  box(1, .55, .1, panel, x2, .3, 1.15, Cm); MK.leds[2] = leds(x2, Cm);
+  MK.tank = cyl(.55, .55, 1.8, 28, new THREE.MeshStandardMaterial({ color: '#6ee7a8', emissive: '#6ee7a8', emissiveIntensity: .25, roughness: .15, transparent: true, opacity: .85 }), -7.4, 1.5, -1.6, B);
+  cyl(.6, .6, .12, 28, steel, -7.4, .6, -1.6, B); cyl(.6, .6, .12, 28, steel, -7.4, 2.45, -1.6, B);
+  const pipe = cyl(.07, .07, 1.6, 10, steel, -7.0, 2.5, -.8, B); pipe.rotation.x = Math.PI / 2.6;
+  MK.turn = cyl(.9, 1, .2, 36, std('#111827', { metalness: .8, roughness: .2 }), 8.2, .1, 0, B);
+  const tr = mesh(new THREE.TorusGeometry(.95, .025, 8, 60), glow('#22d3ee'), 8.2, .21, 0, B); tr.rotation.x = Math.PI / 2;
   MK.J = makeJelly(8, true); MK.J.group.scale.setScalar(.42); MK.J.group.position.set(-6.4, 1.14, 0); MK.J.ov.visible = false; G0.add(MK.J.group);
 }
 function lineStep(dt) {
-  MK.t += dt; const t = MK.t, act = i => (M.active && M.step === i && M.phase === 'run') || MK.pulse[i] > 0, run = i => M.active && M.step === i && M.phase === 'run';
+  if (!MK.J) return; MK.t += dt; const t = MK.t, act = i => (M.active && M.step === i && M.phase === 'run') || MK.pulse[i] > 0, run = i => M.active && M.step === i && M.phase === 'run';
   MK.pulse = MK.pulse.map(p => Math.max(0, p - dt));
   MK.blades.forEach((b, k) => b.position.y = MK.pulse[0] > 0 ? 1.55 + .45 * Math.cos(MK.pulse[0] * 25 + k * .9) : run(0) ? 2.0 : 2.1);
   MK.drum.rotation.x += dt * (run(1) ? 1 + (MK.drumSpd || 0) * 12 : act(1) ? 5 : .3);
@@ -801,7 +800,7 @@ function lineStep(dt) {
   const moving = M.active || MK.bx < 7.9; MK.rollers.forEach(r => r.rotation.y += dt * (moving ? 3 : 0));
   MK.belt.forEach(b => { b.position.x += dt * (moving ? .8 : 0); if (b.position.x > 7.4) b.position.x -= 15; });
   const J = MK.J, spId = M.active ? M.sp : (M.last ? M.last.sp : M.sp);
-  J.group.visible = M.active || !!M.last; if (spId) { jellyColors(J, SP[spId]); MK.tank.material.color.set(SP[spId].color); MK.tank.material.emissive.set(SP[spId].color); }
+  J.group.visible = ownAny() && (M.active || !!M.last); if (spId) { jellyColors(J, SP[spId]); MK.tank.material.color.set(SP[spId].color); MK.tank.material.emissive.set(SP[spId].color); }
   const tx = M.active ? MX[M.step] : (M.last ? 8.2 : -6.4); MK.bx += (tx - MK.bx) * Math.min(1, dt * 3); const onTurn = !M.active && M.last && MK.bx > 7.6;
   J.group.position.set(MK.bx + (M.active && act(M.step) ? Math.sin(t * 40) * .01 : 0), onTurn ? 1.15 + Math.sin(t * 2) * .05 : 1.14, 0);
   J.group.rotation.y = onTurn ? t * .8 : 0; MK.turn.rotation.y = t * .8; J.group.scale.set(.42, .42 * (M.active && M.step >= 1 ? .92 : 1), .42);
@@ -812,16 +811,24 @@ function lineStep(dt) {
 /* ============================================================
    能量門與探索謎題
    ============================================================ */
-const GATES = { coast: { x: 54, z: 0, ax: 'x', title: '散落的地圖碎片' }, volcano: { x: 0, z: -54, ax: 'z', title: '潮汐石陣' }, snow: { x: -54, z: 0, ax: 'x', title: '三座熔岩柱' } };
+const GATES = { coast: { x: 54 * K, z: 0, ax: 'x', title: '破碎的古地圖' }, volcano: { x: 0, z: -54 * K, ax: 'z', title: '潮汐石陣' }, snow: { x: -54 * K, z: 0, ax: 'x', title: '四座熔岩柱' } };
 const QUEST = {
-  coast: { from: 'forest', title: '散落的地圖碎片', need: 1, hint: '森林裡藏著 3 片發光的地圖碎片，找齊後東邊的能量門就會開啟。留意遠方的微光。' },
-  volcano: { from: 'coast', title: '潮汐石陣', need: 3, hint: '海灘上的漂流瓶夾著一張紙條。讀完後，依照謎語點亮海邊的四顆潮汐石，北方之門就會開啟。' },
-  snow: { from: 'volcano', title: '三座熔岩柱', need: 3, hint: '熔岩柱旁的石碑刻著古老的文字。點擊熔岩柱可以改變頂端晶石的顏色，西方之門將會開啟。' },
+  coast: { from: 'forest', title: '破碎的古地圖', need: 2, hint: '森林各處藏著 5 片古地圖碎片，只有靠近時才會微微發光。集齊後，到東方能量門前的古地圖石台，把地圖拼回原狀。' },
+  volcano: { from: 'coast', title: '潮汐石陣', need: 4, hint: '海灘上散落著 3 張被撕碎的紙條。拼湊出完整的謎語後，依序點亮六顆潮汐石中的四顆，順序錯了會重來。' },
+  snow: { from: 'volcano', title: '四座熔岩柱', need: 4, hint: '火山腳下的石碑刻著一道邏輯謎題。推理出四根熔岩柱該有的顏色，西方之門才會開啟。' },
 };
-const FRAG_SPOTS = [[-32, 30], [38, -34], [-12, -42]], BOTTLE = [72, 16], TIDE_SPOTS = [[66, -18], [70, -18], [74, -18], [78, -18]], TABLET = [-16, -63], PILLARS = [[-6, -67], [0, -69], [6, -67]];
-const PUZ_SPOTS = [...FRAG_SPOTS, BOTTLE, ...TIDE_SPOTS, TABLET, ...PILLARS];
-const TIDE = [{ c: '#ef4444' }, { c: '#facc15' }, { c: '#22c55e' }, { c: '#3b82f6' }], PILLAR = ['ice', 'grass', 'coral', 'lava'];
-function qState() { if (!S.q) S.q = { frags: [], tide: [], pil: [3, 3, 3], read: {} }; return S.q; }
+const FRAG_SPOTS = [[-34, 30], [38, -34], [-14, -42], [22, 38], [-41, -16]].map(kk), ALTAR = kk([44, 5]), NOTES = [[66, 22], [81, -4], [71, -32]].map(kk);
+const TIDE_SPOTS = [[63, -15], [66.5, -18], [70, -15], [73.5, -18], [77, -15], [80.5, -18]].map(kk), TABLET = kk([-16, -63]), PILLARS = [[-10, -67], [-3.5, -69], [3.5, -69], [10, -67]].map(kk);
+const PUZ_SPOTS = [...FRAG_SPOTS, ALTAR, ...NOTES, ...TIDE_SPOTS, TABLET, ...PILLARS];
+const TIDE = [{ c: '#ef4444', n: '紅' }, { c: '#f97316', n: '橘' }, { c: '#facc15', n: '黃' }, { c: '#22c55e', n: '綠' }, { c: '#3b82f6', n: '藍' }, { c: '#a855f7', n: '紫' }];
+const TIDE_ORDER = [1, 4, 0, 3], TIDE_LAYOUT = [3, 0, 5, 1, 4, 2];
+const PILLAR = ['ice', 'grass', 'salt', 'coral', 'lava', 'honey'], PILLAR_ANS = [0, 1, 2, 3];
+const NOTE_TXT = ['……當潮水退去，第一個醒來的，是熔岩史萊姆身上燃燒的顏色……', '……第二個，是海鹽史萊姆的顏色；第三個，是彩虹最外圈的那一道……', '……最後醒來的，是青草史萊姆的顏色。其餘的石頭，千萬不要碰。'];
+const TABLET_TXT = '寒冰之心立於最左，<br>海底之花守在最右。<br>海鹽從不與寒冰比鄰，<br>剩下的那一根，長出初春的嫩草。';
+function qState() {
+  if (!S.q) S.q = {}; const q = S.q; q.frags = q.frags || []; q.notes = q.notes || []; q.tide = q.tide || []; q.read = q.read || {};
+  if (!q.pil || q.pil.length !== 4) q.pil = [4, 4, 4, 4]; if (!q.map || q.map.length !== 9) q.map = [1, 3, 2, 0, 1, 2, 3, 1, 2]; return q;
+}
 const madeIn = zid => SPECIES.filter(s => s.zone === zid).reduce((a, s) => a + (S.codex[s.id] ? S.codex[s.id].made : 0), 0);
 const questReady = k => madeIn(QUEST[k].from) >= QUEST[k].need;
 const nextQuest = () => Object.keys(QUEST).find(k => !S.zones.includes(k));
@@ -833,13 +840,13 @@ function buildGates() {
     gateTex = new THREE.CanvasTexture(c); gateTex.wrapS = gateTex.wrapT = THREE.RepeatWrapping; gateTex.repeat.set(4, 2);
   }
   Object.keys(GATES).forEach(k => {
-    if (S.zones.includes(k)) return; const d = GATES[k], g = new THREE.Group(), y = H(d.x, d.z); g.position.set(d.x, y, d.z); if (d.ax === 'z') g.rotation.y = Math.PI / 2; W.scene.add(g);
+    if (S.zones.includes(k)) return; const d = GATES[k], g = new THREE.Group(), y = H(d.x, d.z); g.position.set(d.x, y, d.z); g.scale.setScalar(K); if (d.ax === 'z') g.rotation.y = Math.PI / 2; W.scene.add(g);
     const rockM = std('#475569', { flatShading: true, roughness: .9 });
     [-7.5, 7.5].forEach(o => { const r = mesh(jit(new THREE.CylinderGeometry(1, 1.4, 9, 7, 3), .25, o + 3), rockM, 0, 4, o, g); r.castShadow = !LOW; });
     const mat = new THREE.MeshBasicMaterial({ color: '#a78bfa', map: gateTex, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const wall = mesh(new THREE.PlaneGeometry(14, 8), mat, 0, 4, 0, g); wall.rotation.y = Math.PI / 2;
     const run = textSprite('能量門', '#c4b5fd', '需解開：' + d.title); run.position.set(0, 9.2, 0); g.add(run);
-    const col = addCol({ box: d.ax === 'x' ? [d.x - 1, -8, d.x + 1, 8] : [-8, d.z - 1, 8, d.z + 1] });
+    const col = addCol({ box: d.ax === 'x' ? [d.x - K, -8 * K, d.x + K, 8 * K] : [-8 * K, d.z - K, 8 * K, d.z + K] });
     const it = addInter(hitBox(1, 8, 14, 0, 4, 0, g), 'gate', k, '能量門');
     W.gates[k] = { g, mat, col, it, fade: 0 };
   });
@@ -853,38 +860,40 @@ function openGate(k) {
 function discoverZone(k) {
   if (S.zones.includes(k)) return; S.zones.push(k); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
-  const txt = { coast: '地圖碎片拼在一起，指出森林盡頭有一條通往大海的小徑。', volcano: '潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '三根熔岩柱的光芒交會，冰冷的風從西方山脊吹來，雪原的入口出現了。' }[k];
+  const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '四根熔岩柱的光芒交會，冰冷的風從西方山脊吹來，雪原的入口出現了。' }[k];
   modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p><p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`, [{ t: '出發' }]);
   toast(`發現新區域：${z.name}`); renderQuest();
 }
 function buildPuzzles() {
   const q = qState(), W0 = W.scene;
   const add = (obj, pz, name, r = 1) => { const h = mesh(new THREE.SphereGeometry(r, 8, 6), new THREE.MeshBasicMaterial({ visible: false }), 0, 0, 0, obj); const it = addInter(h, 'puzzle', pz.type, name, { pz, obj }); W.puz.push(it); return it; };
-  // 森林：地圖碎片（附淡淡光柱）
-  const fragM = new THREE.MeshStandardMaterial({ color: '#fde68a', emissive: '#fbbf24', emissiveIntensity: 1.3, side: THREE.DoubleSide, flatShading: true });
-  FRAG_SPOTS.forEach(([x, z], i) => {
-    if (q.frags.includes(i) || S.zones.includes('coast')) return; const g = new THREE.Group(); g.position.set(x, H(x, z) + 1, z); W0.add(g);
-    const shape = new THREE.Shape([new THREE.Vector2(-.4, -.3), new THREE.Vector2(.35, -.4), new THREE.Vector2(.45, .25), new THREE.Vector2(-.1, .4), new THREE.Vector2(-.45, .1)]);
-    g.userData.spin = mesh(new THREE.ExtrudeGeometry(shape, { depth: .05, bevelEnabled: false }), fragM, 0, 0, 0, g);
-    mesh(new THREE.CylinderGeometry(.25, .25, 7, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#fde68a', transparent: true, opacity: .13, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 0, 3, 0, g);
-    add(g, { type: 'frag', i }, '發光的地圖碎片', 1.1);
-  });
-  // 海岸：漂流瓶＋潮汐石
+  if (!S.zones.includes('coast')) {
+    FRAG_SPOTS.forEach(([x, z], i) => {
+      if (q.frags.includes(i)) return; const g = new THREE.Group(); g.position.set(x, H(x, z) + .08, z); W0.add(g);
+      const shape = new THREE.Shape([new THREE.Vector2(-.4, -.3), new THREE.Vector2(.35, -.4), new THREE.Vector2(.45, .25), new THREE.Vector2(-.1, .4), new THREE.Vector2(-.45, .1)]);
+      const m = mesh(new THREE.ExtrudeGeometry(shape, { depth: .03, bevelEnabled: false }), new THREE.MeshStandardMaterial({ color: '#e9d8a6', emissive: '#fbbf24', emissiveIntensity: .03, side: THREE.DoubleSide, flatShading: true, roughness: .85 }), 0, 0, 0, g);
+      m.rotation.set(-Math.PI / 2 + .2, 0, i * 1.3); g.userData.frag = m; add(g, { type: 'frag', i }, '古地圖碎片', .9);
+    });
+    const al = new THREE.Group(); al.position.set(ALTAR[0], H(...ALTAR), ALTAR[1]); W0.add(al);
+    const stoneM = std('#78716c', { flatShading: true, roughness: .95 });
+    cyl(.9, 1.1, .9, 8, stoneM, 0, .45, 0, al); box(1.6, .12, 1.6, stoneM, 0, .96, 0, al);
+    al.userData.plate = box(1.3, .03, 1.3, new THREE.MeshStandardMaterial({ color: '#e9d8a6', emissive: '#fbbf24', emissiveIntensity: .2 }), 0, 1.03, 0, al);
+    const lb = textSprite('古地圖石台', '#fde68a', '集齊 5 片碎片後拼回地圖'); lb.position.set(0, 2.6, 0); al.add(lb);
+    addCol({ x: ALTAR[0], z: ALTAR[1], r: 1.2 }); add(al, { type: 'altar' }, '古地圖石台', 1.3);
+  }
   if (!S.zones.includes('volcano')) {
-    const b = new THREE.Group(); b.position.set(BOTTLE[0], H(...BOTTLE) + .15, BOTTLE[1]); b.rotation.set(0, .6, Math.PI / 2.3); W0.add(b);
-    const gm = new THREE.MeshStandardMaterial({ color: '#86efac', transparent: true, opacity: .7, roughness: .05 });
-    mesh(new THREE.CylinderGeometry(.16, .16, .55, 16), gm, 0, 0, 0, b); mesh(new THREE.CylinderGeometry(.06, .1, .2, 12), gm, 0, .36, 0, b); mesh(new THREE.CylinderGeometry(.05, .05, .08, 10), std('#a07850'), 0, .48, 0, b);
-    mesh(new THREE.CylinderGeometry(.09, .09, .3, 10), std('#fef3c7', { emissive: '#fef3c7', emissiveIntensity: .4 }), 0, 0, 0, b);
-    add(b, { type: 'bottle' }, '漂流瓶', .9);
-    const order = [2, 0, 3, 1];
-    order.forEach((ci, i) => {
+    NOTES.forEach(([x, z], i) => {
+      if (q.notes.includes(i)) return; const g = new THREE.Group(); g.position.set(x, H(x, z) + .02, z); W0.add(g);
+      box(.5, .01, .36, std('#fef3c7', { roughness: .9 }), 0, .02, 0, g).rotation.y = i; mesh(new THREE.DodecahedronGeometry(.12), std('#94a3b8', { flatShading: true }), .1, .1, .05, g);
+      add(g, { type: 'note', i }, '被撕碎的紙條', .8);
+    });
+    TIDE_LAYOUT.forEach((ci, i) => {
       const [x, z] = TIDE_SPOTS[i], g = new THREE.Group(); g.position.set(x, H(x, z), z); W0.add(g);
       const stn = mesh(jit(new THREE.DodecahedronGeometry(.7, 1), .25, i + 5), std('#64748b', { flatShading: true, roughness: .9 }), 0, .5, 0, g); stn.scale.set(1, 1.3, 1); stn.castShadow = !LOW;
       g.userData.gem = mesh(new THREE.OctahedronGeometry(.25), new THREE.MeshStandardMaterial({ color: TIDE[ci].c, emissive: TIDE[ci].c, emissiveIntensity: q.tide.includes(ci) ? 1.8 : .15, roughness: .2 }), 0, 1.55, 0, g);
       addCol({ x, z, r: .8 }); add(g, { type: 'tide', c: ci, g }, '潮汐石', 1.2);
     });
   }
-  // 火山：石碑＋熔岩柱
   if (!S.zones.includes('snow')) {
     const t = new THREE.Group(); t.position.set(TABLET[0], H(...TABLET), TABLET[1]); t.rotation.y = .5; W0.add(t);
     box(1.3, 1.7, .3, std('#57534e', { flatShading: true, roughness: .95 }), 0, .85, 0, t); box(1.0, 1.2, .02, new THREE.MeshStandardMaterial({ color: '#1c1917', emissive: '#f97316', emissiveIntensity: .4 }), 0, .95, .16, t);
@@ -894,57 +903,59 @@ function buildPuzzles() {
       mesh(new THREE.CylinderGeometry(.45, .55, 2.6, 6), std('#1c1917', { flatShading: true, roughness: .8 }), 0, 1.3, 0, g);
       mesh(new THREE.CylinderGeometry(.48, .48, .12, 6), glow('#ea580c'), 0, .8, 0, g);
       const cr = mesh(new THREE.OctahedronGeometry(.32), new THREE.MeshStandardMaterial({ color: '#fff', emissive: '#fff', emissiveIntensity: .7, roughness: .2 }), 0, 2.95, 0, g); cr.scale.y = 1.4; g.userData.cr = cr;
-      setPillar(g, q.pil[i]); addCol({ x, z, r: .7 }); add(g, { type: 'pillar', i, g }, `熔岩柱 ${['左', '中', '右'][i]}`, 1.4);
+      setPillar(g, q.pil[i]); addCol({ x, z, r: .7 }); add(g, { type: 'pillar', i, g }, `熔岩柱（第 ${i + 1} 根）`, 1.4);
     });
   }
   W.anim.push((dt, t) => W.puz.forEach((it, i) => {
-    const o = it.obj; if (it.pz.type === 'frag') { o.userData.spin.rotation.y = t * 1.5 + i; o.userData.spin.position.y = Math.sin(t * 2 + i) * .15; }
+    const o = it.obj, d = Math.hypot(o.position.x - P.x, o.position.z - P.z);
+    if (it.pz.type === 'frag') o.userData.frag.material.emissiveIntensity = d < 14 ? .3 + (Math.sin(t * 3 + i) + 1) * .35 * (1 - d / 14) : .03;
     if (it.pz.type === 'pillar') o.userData.cr.rotation.y = t;
-    if (it.pz.type === 'tide' && !qState().tide.includes(it.pz.c)) o.userData.gem.material.emissiveIntensity = .15 + (Math.sin(t * 2 + i) + 1) * .12;
+    if (it.pz.type === 'tide' && !qState().tide.includes(it.pz.c)) o.userData.gem.material.emissiveIntensity = .15 + (Math.sin(t * 2 + i) + 1) * .1;
+    if (it.pz.type === 'altar') o.userData.plate.material.emissiveIntensity = qState().frags.length >= 5 ? .5 + Math.sin(t * 3) * .3 : .1;
   }));
 }
 function setPillar(g, v) { const c = SP[PILLAR[v]].color; g.userData.cr.material.color.set(c); g.userData.cr.material.emissive.set(c); }
 function removePuz(it) { W.scene.remove(it.obj); W.puz = W.puz.filter(x => x !== it); W.inter = W.inter.filter(x => x !== it); }
 function puzzleTap(it) {
   const q = qState(), pz = it.pz; sfx.tick();
-  const zoneOf = { frag: 'coast', bottle: 'volcano', tide: 'volcano', tablet: 'snow', pillar: 'snow' }[pz.type];
-  if (!questReady(zoneOf) && pz.type !== 'bottle' && pz.type !== 'tablet') {
-    const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`);
-  }
+  const zoneOf = { frag: 'coast', altar: 'coast', note: 'volcano', tide: 'volcano', tablet: 'snow', pillar: 'snow' }[pz.type];
+  if (!questReady(zoneOf) && pz.type !== 'tablet') { const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`); }
   if (pz.type === 'frag') {
-    if (!q.frags.includes(pz.i)) q.frags.push(pz.i); fx3(it.obj.position.clone().setY(it.obj.position.y + 1), `地圖碎片 ${q.frags.length}/3`, '#fde68a');
-    removePuz(it); sfx.pop(); save(); renderQuest(); toast(`取得地圖碎片（${q.frags.length}/3）`);
-    if (q.frags.length >= 3) setTimeout(() => discoverZone('coast'), 600);
-  } else if (pz.type === 'bottle') {
-    q.read.bottle = true; save(); renderQuest();
-    modal(`<h2>漂流瓶裡的紙條</h2><div class="riddle">當潮水退去，石頭會依序醒來。<br>先喚醒夕陽，再喚醒正午的太陽，<br>接著是森林，最後是深海。</div><p class="small" style="color:var(--sub)">點擊漂流瓶附近的四顆潮汐石，依照謎語的順序點亮它們。順序錯了會重來。</p>`);
+    if (!q.frags.includes(pz.i)) q.frags.push(pz.i); fx3(it.obj.position.clone().setY(it.obj.position.y + 1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
+    removePuz(it); sfx.pop(); save(); renderQuest(); toast(q.frags.length >= 5 ? '五片碎片都找到了！到東方能量門前的古地圖石台把地圖拼回原狀。' : `取得古地圖碎片（${q.frags.length}/5）`);
+  } else if (pz.type === 'altar') openAltar();
+  else if (pz.type === 'note') {
+    if (!q.notes.includes(pz.i)) q.notes.push(pz.i); removePuz(it); sfx.pop(); save(); renderQuest();
+    modal(`<h2>撕碎的紙條（${q.notes.length}/3）</h2><div class="riddle">${NOTE_TXT[pz.i]}</div><p class="small" style="color:var(--sub)">收集到的紙條可以在背包的探索日誌重新閱讀。</p>`);
   } else if (pz.type === 'tide') {
+    if (q.notes.length < 3) return toast('潮汐石毫無反應……也許要先弄清楚紙條上的完整謎語。');
     q.tide.push(pz.c); pz.g.userData.gem.material.emissiveIntensity = 1.8;
-    if (!q.tide.every((c, i) => c === i)) { q.tide = []; sfx.squish(1); toast('石頭的光熄滅了……順序似乎不對'); W.puz.forEach(p => p.pz.type === 'tide' && (p.pz.g.userData.gem.material.emissiveIntensity = .15)); }
-    else if (q.tide.length === 4) setTimeout(() => discoverZone('volcano'), 500); else sfx.machine(0);
+    if (!q.tide.every((c, i) => c === TIDE_ORDER[i])) { q.tide = []; sfx.squish(1); toast('潮汐石的光一起熄滅了……順序不對。'); W.puz.forEach(p => p.pz.type === 'tide' && (p.pz.g.userData.gem.material.emissiveIntensity = .15)); }
+    else if (q.tide.length === TIDE_ORDER.length) setTimeout(() => discoverZone('volcano'), 500); else sfx.machine(0);
     save(); renderQuest();
   } else if (pz.type === 'tablet') {
     q.read.tablet = true; save(); renderQuest();
-    modal(`<h2>古老的石碑</h2><div class="riddle">左柱化為寒冰之心，<br>中柱長出初春的嫩草，<br>右柱綻放海底的花。<br>三色並立之時，西方之門將開。</div><p class="small" style="color:var(--sub)">點擊熔岩柱可以切換頂端晶石的顏色。這些顏色都和某種史萊姆有關，可以翻翻圖鑑。</p>`);
+    modal(`<h2>古老的石碑</h2><div class="riddle">${TABLET_TXT}</div><p class="small" style="color:var(--sub)">四根熔岩柱由左到右排列（面向北方）。點擊熔岩柱可以切換頂端晶石的顏色，每種顏色都屬於一種史萊姆。</p>`);
   } else if (pz.type === 'pillar') {
-    q.pil[pz.i] = (q.pil[pz.i] + 1) % 4; setPillar(pz.g, q.pil[pz.i]); sfx.machine(2); save();
-    if (q.pil[0] === 0 && q.pil[1] === 1 && q.pil[2] === 2) setTimeout(() => discoverZone('snow'), 500);
+    if (!q.read.tablet) return toast('熔岩柱燙得無法靠近……也許附近有什麼線索。');
+    q.pil[pz.i] = (q.pil[pz.i] + 1) % PILLAR.length; setPillar(pz.g, q.pil[pz.i]); sfx.machine(2); save();
+    if (q.pil.every((v, i) => v === PILLAR_ANS[i])) setTimeout(() => discoverZone('snow'), 500);
   }
 }
 function questTarget() {
-  const k = nextQuest(); if (!k) return null; const q = qState();
-  if (!S.zones.includes(QUEST[k].from)) return null;
-  if (k === 'coast') { const i = [0, 1, 2].find(i => !q.frags.includes(i)); return i == null ? null : { x: FRAG_SPOTS[i][0], z: FRAG_SPOTS[i][1], n: '地圖碎片' }; }
-  if (k === 'volcano') return q.read.bottle ? { x: 72, z: -18, n: '潮汐石' } : { x: BOTTLE[0], z: BOTTLE[1], n: '漂流瓶' };
-  if (k === 'snow') return q.read.tablet ? { x: 0, z: -68, n: '熔岩柱' } : { x: TABLET[0], z: TABLET[1], n: '石碑' };
+  const k = nextQuest(); if (!k || !S.zones.includes(QUEST[k].from)) return null; const q = qState();
+  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台' } : null;
+  if (k === 'volcano') return q.notes.length >= 3 ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣' } : null;
+  if (k === 'snow') return q.read.tablet ? { x: 0, z: PILLARS[1][1], n: '熔岩柱' } : null;
+  return null;
 }
 function renderQuest() {
   const el = $('#questBox'); if (!el) return; const k = nextQuest(), q = qState();
   if (!k) { el.innerHTML = '<b>探索日誌</b><div class="small" style="color:var(--sub);margin-top:4px">你已經發現了月光谷的所有區域。</div>'; return; }
-  const Q = QUEST[k], ready = questReady(k), made = madeIn(Q.from);
-  let prog = '';
-  if (k === 'coast') prog = `<div class="qprog">${[0, 1, 2].map(i => `<i class="${q.frags.includes(i) ? 'on' : ''}"></i>`).join('')}</div>`;
-  if (k === 'volcano') prog = `<div class="qprog">${[0, 1, 2, 3].map(i => `<i class="${i < q.tide.length ? 'on' : ''}"></i>`).join('')}</div>`;
+  const Q = QUEST[k], ready = questReady(k), made = madeIn(Q.from); let prog = '';
+  if (k === 'coast') prog = `<div class="qprog">${[0, 1, 2, 3, 4].map(i => `<i class="${q.frags.includes(i) ? 'on' : ''}"></i>`).join('')}</div><div class="small" style="margin-top:4px">古地圖碎片 ${q.frags.length}/5</div>`;
+  if (k === 'volcano') prog = `<div class="small" style="margin-top:6px">紙條 ${q.notes.length}/3</div>` + q.notes.slice().sort().map(i => `<div class="riddle" style="font-size:13px;margin-top:4px">${NOTE_TXT[i]}</div>`).join('');
+  if (k === 'snow' && q.read.tablet) prog = `<div class="riddle" style="font-size:13px;margin-top:6px">${TABLET_TXT}</div>`;
   el.innerHTML = `<b>探索日誌：${Q.title}</b><div class="small" style="color:var(--sub);margin-top:4px;line-height:1.6">${Q.hint}${ready ? '' : `<br>（線索目前被封印：先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏，目前 ${made}/${Q.need}）`}</div>${prog}`;
 }
 
@@ -1032,13 +1043,13 @@ function slimeMesh(sp) {
 function zoneSpawn(zid) {
   for (let k = 0; k < 80; k++) {
     let x, z;
-    if (zid === 'forest') { x = rnd(-44, 44); z = rnd(-44, 44); if (Math.hypot(x, z) < WS_R + 4) continue; }
-    else if (zid === 'coast') { x = rnd(62, 82); z = rnd(-38, 38); }
-    else if (zid === 'volcano') { x = rnd(-40, 40); z = rnd(-60, -76); if (Math.hypot(x, z + 96) < 33) continue; }
-    else { x = rnd(-62, -96); z = rnd(-38, 38); }
-    const h = H(x, z); if (h < 0 || h > 10) continue; return [x, z];
+    if (zid === 'forest') { x = rnd(-44, 44) * K; z = rnd(-44, 44) * K; if (Math.hypot(x, z) < 22) continue; }
+    else if (zid === 'coast') { x = rnd(62, 82) * K; z = rnd(-38, 38) * K; }
+    else if (zid === 'volcano') { x = rnd(-40, 40) * K; z = rnd(-60, -76) * K; if (Math.hypot(x, z + 96 * K) < 33 * K) continue; }
+    else { x = rnd(-62, -96) * K; z = rnd(-38, 38) * K; }
+    const h = H(x, z); if (h < 0 || h > 10 * K) continue; return [x, z];
   }
-  return [0, 25];
+  return [0, 30];
 }
 function spawnSlime(zid, home) {
   const list = SPECIES.filter(s => s.zone === zid); let r = Math.random() * list.reduce((a, s) => a + s.w, 0), sp = list[0];
@@ -1047,7 +1058,7 @@ function spawnSlime(zid, home) {
   const sl = { id: ++W.sid, sc: rnd(.66, .86), sp, m, zid, hx, hz, x: hx + rnd(-3, 3), z: hz + rnd(-3, 3), vx: 0, vz: 0, ph: rnd(0, 6), hits: 0, cool: 0, sq: 0, blink: rnd(1, 4), yaw: rnd(0, 6), turn: rnd(1, 4), flee: 0 };
   m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); return sl;
 }
-function spawnZone(zid) { if (W.spawned.has(zid)) return; W.spawned.add(zid); const n = LOW ? 10 : 15; for (let i = 0; i < n; i++) spawnSlime(zid); }
+function spawnZone(zid) { if (W.spawned.has(zid)) return; W.spawned.add(zid); const n = LOW ? 14 : 22; for (let i = 0; i < n; i++) spawnSlime(zid); }
 function spawnAllSlimes() { S.zones.forEach(spawnZone); }
 function slimeStep(dt, t) {
   W.slimes.forEach(s => {
@@ -1089,8 +1100,8 @@ let P = null;
 const KEYS = new Set(), IN = { joy: null, jx: 0, jy: 0, run: false, look: null, drag: null };
 const SENS = [.0016, .0025, .0038], SENS_N = ['低', '中', '高'];
 function initPlayer() {
-  const sp = S.pos || { x: 0, z: 31, yaw: 0 };
-  P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, yaw: sp.yaw, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0 };
+  const sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
+  P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0 };
 }
 const locked = () => document.pointerLockElement === $('#worldCv');
 function lockMouse() { if (TOUCH || GUI.kind || TITLE.on || CHAT.open || !$('#modal').hidden) return; try { const r = $('#worldCv').requestPointerLock(); if (r && r.catch) r.catch(() => { }); } catch (e) { } }
@@ -1124,6 +1135,7 @@ function bindInput() {
   cv.addEventListener('pointerdown', e => {
     try { audio(); } catch (_) { }
     if (GUI.kind || TITLE.on) return;
+    if (e.pointerType === 'touch') return;
     if (e.pointerType === 'mouse') {
       if (locked()) { if (e.button === 0 || e.button === 2) act(); return; }
       IN.drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; lockMouse(); return;
@@ -1133,12 +1145,15 @@ function bindInput() {
     if (!IN.joy && e.clientX < w * .45 && e.clientY > h * .4) { IN.joy = { id: e.pointerId, x0: e.clientX, y0: e.clientY }; const jb = $('#joyBase'); jb.style.left = (e.clientX - 60) + 'px'; jb.style.top = (e.clientY - 60) + 'px'; jb.classList.add('on'); }
     else if (!IN.look) IN.look = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: 0 };
   });
+  bindTouch(cv);
   addEventListener('pointermove', e => {
+    if (e.pointerType === 'touch') return;
     if (IN.joy && e.pointerId === IN.joy.id) { let dx = e.clientX - IN.joy.x0, dy = e.clientY - IN.joy.y0; const l = Math.hypot(dx, dy), m = 50; if (l > m) { dx *= m / l; dy *= m / l; } IN.jx = dx / m; IN.jy = dy / m; $('#joyKnob').style.transform = `translate(${dx}px,${dy}px)`; }
     if (IN.look && e.pointerId === IN.look.id) { const dx = e.clientX - IN.look.x, dy = e.clientY - IN.look.y; IN.look.x = e.clientX; IN.look.y = e.clientY; IN.look.moved += Math.abs(dx) + Math.abs(dy); const s = SENS[S.sens] * 2.2; P.yaw -= dx * s; P.pitch = clamp(P.pitch - dy * s, -1.5, 1.5); }
     if (IN.drag && e.pointerId === IN.drag.id && !locked()) { const s = SENS[S.sens] * 1.6, dx = e.movementX || 0, dy = e.movementY || 0; IN.drag.moved += Math.abs(dx) + Math.abs(dy); P.yaw -= dx * s; P.pitch = clamp(P.pitch - dy * s, -1.5, 1.5); }
   });
   const up = e => {
+    if (e.pointerType === 'touch') return;
     if (IN.joy && e.pointerId === IN.joy.id) { IN.joy = null; IN.jx = IN.jy = 0; $('#joyKnob').style.transform = ''; $('#joyBase').classList.remove('on'); }
     if (IN.look && e.pointerId === IN.look.id) { const L0 = IN.look; IN.look = null; if (L0.moved < 12 && performance.now() - L0.t < 350 && !GUI.kind) actAt(L0.sx, L0.sy); }
     if (IN.drag && e.pointerId === IN.drag.id) { const d = IN.drag; IN.drag = null; if (d.moved < 6 && !locked() && !GUI.kind) actAt(d.x, d.y); }
@@ -1159,7 +1174,8 @@ function tryMove(dx, dz) {
     if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
   }
-  if (Math.max(Math.abs(nx), Math.abs(nz)) > 125) return false;
+  if (inCity(nx)) { if (Math.abs(nx - CITY.x) > 58 || Math.abs(nz - CITY.z) > 30) return false; }
+  else if (Math.max(Math.abs(nx), Math.abs(nz)) > 125 * K) return false;
   P.x = nx; P.z = nz; return true;
 }
 function playerStep(dt) {
@@ -1183,8 +1199,8 @@ function playerStep(dt) {
 // 產線特寫鏡頭：放在天棚下方（原本在屋頂上方，畫面被屋頂整片擋住），
 // 並依畫面比例拉遠，讓整條產線出現在下方介面之上的區域
 function lineViewPose() {
-  const vf = W.cam.fov * Math.PI / 180, dist = clamp(9.6 / (Math.tan(vf / 2) * W.cam.aspect), 8, 19), y = WS_Y + 4.7;
-  const p = new THREE.Vector3(.4, y, -6.5 + dist), pitch = Math.atan2(y - (WS_Y + 1.5), dist) + vf * .24;
+  const vf = W.cam.fov * Math.PI / 180, dist = clamp(9.6 / (Math.tan(vf / 2) * W.cam.aspect), 8, 19), ly = W.lineG ? W.lineG.position.y : WS_Y, lz = W.lineG ? W.lineG.position.z : -8, y = ly + 4.7;
+  const p = new THREE.Vector3(.4, y, lz + dist), pitch = Math.atan2(y - (ly + 1.5), dist) + vf * .24;
   return { p, t: p.clone().add(new THREE.Vector3(0, -Math.sin(pitch), -Math.cos(pitch))) };
 }
 function cameraStep(dt) {
@@ -1205,7 +1221,7 @@ function pickAt(ndcX, ndcY) {
   RAY.setFromCamera(new THREE.Vector2(ndcX, ndcY), W.cam); RAY.far = 7.5;
   const objs = [];
   W.slimes.forEach(s => { if (s.m.visible && Math.hypot(s.x - P.x, s.z - P.z) < 9) objs.push(s.m.userData.body); });
-  W.inter.forEach(it => { const p = it.hit.getWorldPosition(new THREE.Vector3()); if (Math.hypot(p.x - P.x, p.z - P.z) < 14) objs.push(it.hit); });
+  W.inter.forEach(it => { if (it.off) return; const p = it.hit.getWorldPosition(new THREE.Vector3()); if (Math.hypot(p.x - P.x, p.z - P.z) < 14) objs.push(it.hit); });
   const h = RAY.intersectObjects(objs, false); RAY.far = Infinity; if (!h.length) return null;
   const o = h[0].object; if (o.userData.sl) return { type: 'slime', sl: o.userData.sl, d: h[0].distance };
   const it = o.userData.it; if (!it) return null; if (it.kind === 'station' && h[0].distance > 5.5) return null; return { type: it.kind, it, d: h[0].distance };
@@ -1224,7 +1240,7 @@ function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeigh
 function doAct(t) {
   if (!t) return;
   if (t.type === 'slime') hitSlime(t.sl);
-  else if (t.type === 'station') openGui(t.it.id);
+  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) openGui('shop', id.slice(5)); else if (id === 'altar') openAltar(); else openGui(id); }
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
 }
@@ -1254,9 +1270,14 @@ function fx3(pos, txt, color = '#fff', cls = '') {
 }
 function objective() {
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
+  if (inCity()) {
+    if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee' };
+    return { t: '逛逛大城市', d: '機械行、生活百貨、器材行都在路的北側。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15' };
+  }
   if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。' };
-  if (!S.stock.length && !S.sales) return { t: '加工第一個捏捏', d: '回到工坊，使用「加工產線」。', x: 0, z: -6.5, c: '#22d3ee' };
-  if (!S.sales) return { t: '開直播賣出', d: '走到「直播台」，開直播並擠壓捏捏累積人氣。', x: 9, z: 3.5, c: '#fb7185' };
+  if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24' };
+  if (!S.sales) return { t: '上架到網站', d: '到「工作電腦」把沒玩過的捏捏上架到網站，等顧客下單。', x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8' };
+  if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)} 後，搭出生點左邊的計程車到大城市購買切片機（目前 ${fmt(S.money)}）。`, x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15' };
   const k = nextQuest(), qt = questTarget();
   if (k) return { t: QUEST[k].title, d: questReady(k) ? (qt ? `前往${qt.n}。` : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd' };
   return { t: '開設夢想捏捏博物館', d: '累積粉絲與營收，到工作電腦的圖鑑頁完成夢想。' };
@@ -1298,9 +1319,9 @@ function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'up', 'branch', 'codex'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
+  pc: { t: '工作電腦', tabs: ['web', 'branch', 'codex'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
 };
-const TABN = { make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
+const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', mapg: '拼回地圖', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
 function openGui(kind, sec) {
   const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now();
@@ -1314,7 +1335,8 @@ function openGui(kind, sec) {
 }
 function guiTabs() { const g = GUIS[GUI.kind]; return g.tabs.filter(t => t !== 'branch' || S.branch || branchReady()); }
 function renderGuiTabs() { const tabs = guiTabs(); $('#gtabs').innerHTML = tabs.length > 1 ? tabs.map(t => `<button class="${t === tab ? 'on' : ''}" data-act="sec" data-sec="${t}">${TABN[t]}${t === 'branch' && !S.branch ? ' ●' : ''}</button>`).join('') : ''; }
-function showSec(sec) { tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + sec)); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
+const PANEL = { mach: 'up', gear: 'up', mall: 'up' };
+function showSec(sec) { tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
 function closeGui() {
   if (!GUI.kind) return; if (GUI.kind === 'line' && M.active) { toast('產線還在運轉，請先完成這一輪加工。'); return; }
   if (L.watch) stopWatch();
@@ -1332,9 +1354,11 @@ const MG = [
 ];
 const lvlOf = i => S.up[MKEY[i]];
 function startMake() {
+  if (!ownAny()) return toast('還沒有任何加工機器，先搭計程車到大城市的機械行購買');
   const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）');
   if (S.stock.length >= cap()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
-  S.gel[sp] -= 2; M.step = 0; M.scores = []; M.active = true; M.last = null; MK.bx = -6.4; beginStep(); renderHotbar(true); renderMake();
+  S.gel[sp] -= 2; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
+  M.active = true; M.last = null; MK.bx = -6.4; beginStep(); renderHotbar(true); renderMake();
 }
 function beginStep() {
   M.phase = 'ready'; M.pt = 1.4; M.hold = false; M.kdir = 0; const lv = lvlOf(M.step);
@@ -1367,11 +1391,13 @@ function finishStep() {
   if (M.step === 0) sc = g.hit.reduce((a, b) => a + (b || 0), 0) / g.marks.length;
   else if (M.step === 1) sc = clamp(g.inz / (g.dur * .8), 0, 1);
   else sc = clamp(1 - (g.err / Math.max(g.n, .01)) / .25, 0, 1);
-  M.scores.push(sc); sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
+  M.scores[M.step] = sc; sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
   toast(`${MG[M.step].name}：${sc > .9 ? '完美' : sc > .7 ? '很好' : sc > .45 ? '普通' : '失手了'}（${Math.round(sc * 100)}%）`);
-  M.step++;
-  if (M.step >= 3) { M.active = false; const avg = M.scores.reduce((a, b) => a + b, 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg); S.stock.push(p); M.last = p; save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest(); }
-  else beginStep();
+  M.si++;
+  if (M.si >= M.steps.length) {
+    M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
+    S.stock.push(p); M.last = p; save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
+  } else { M.step = M.steps[M.si]; beginStep(); }
   renderMake();
 }
 function updMakeUI() {
@@ -1387,14 +1413,14 @@ function renderMake() {
   $('#gelPick').innerHTML = unlockedSpecies().map(s => `<button class="zbtn ${M.sp === s.id ? 'on' : ''}" data-act="pickSp" data-id="${s.id}" ${M.active ? 'disabled' : ''}>${dot(s.color)}${short(s.id)}<br><small>凝膠 ${S.gel[s.id] || 0}</small></button>`).join('');
   const mini = $('#mini');
   if (M.active) {
-    const g = M.g, st = `<div class="steps">${STEPS.map((x, i) => `<span class="${i === M.step ? 'on' : i < M.step ? 'done' : ''}">${i + 1}. ${x}${i < M.step ? ' ' + Math.round(M.scores[i] * 100) + '%' : ''}</span>`).join('')}</div>`;
+    const g = M.g, st = `<div class="steps">${STEPS.map((x, i) => { const own = S.own[MKEY[i]], done = M.scores[i] != null && i !== M.step; return `<span class="${!own ? 'off' : i === M.step ? 'on' : done ? 'done' : ''}">${i + 1}. ${x}${!own ? '（未購買）' : done ? ' ' + Math.round(M.scores[i] * 100) + '%' : ''}</span>`; }).join('')}</div>`;
     const how = `<div class="mghow"><b>${UPS[MKEY[M.step]].name}</b>：${MG[M.step].how}${TOUCH ? '' : `<span style="color:var(--sub)">（${MG[M.step].key}）</span>`}${M.phase === 'ready' ? '<span class="ready">準備…</span>' : ''}</div>`;
     let body = '';
     if (M.step === 0) body = `<div class="track" id="mgTrack">${g.marks.map(m => `<i class="mark" style="left:${m * 100}%"></i>`).join('')}<i class="cur" id="mgCur" style="left:0"></i></div><button class="btn big" style="width:100%" data-mg="tap">切！</button>`;
     else if (M.step === 1) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><button class="btn big hold" style="width:100%" id="mgHold" data-mg="hold">按住加速</button>`;
     else body = `<div class="track dry" id="mgDry"><div class="tgt" id="mgTgt"></div><div class="knob" id="mgKnob" style="left:50%"></div></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0">左右拖曳火力旋鈕${TOUCH ? '' : '，或按 ← →'}</div>`;
     mini.innerHTML = st + how + body; updMakeUI();
-  } else mini.innerHTML = `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">三台機器各有不同的操作：節奏切片、按住控速、拖曳控溫。庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`;
+  } else mini.innerHTML = `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">${ownAny() ? '已擁有：' + MKEY.filter(k => S.own[k]).map(k => UPS[k].name).join('、') + '。缺少的機器步驟以 0 分計算。' : '尚未購買任何機器。'}庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`;
   const r = $('#makeResult');
   if (M.last && !M.active) { const p = M.last, pct = Math.round(p.crisp * 100); r.innerHTML = `<div class="card item" style="cursor:default"><div class="sw" style="background:${swatch(SP[p.sp])};width:52px;height:52px"></div><div class="grow"><b>${SP[p.sp].name} · 酥脆捏捏</b><br>酥脆度 <b style="color:var(--warn)">${pct}%</b>　${pct >= 90 ? '極品' : pct >= 70 ? '優良' : '再接再厲'}<br><small style="color:var(--sub)">已放入背包。可拿到裝飾桌加工，或到直播台販售。</small></div></div>`; }
   else r.innerHTML = '';
@@ -1417,7 +1443,7 @@ function renderMake() {
 /* ---------- 庫存卡片 ---------- */
 function itemHTML(p, act, selId, extra = '') {
   const sp = SP[p.sp];
-  return `<div class="card item ${selId === p.id ? 'sel' : ''}" data-act="${act}" data-id="${p.id}"><div class="sw" style="background:${swatch(sp)}"></div><div><div class="nm">${short(p.sp)}</div><div class="meta">酥脆 ${Math.round(effCrisp(p) * 100)}% · 耐久 ${Math.round(p.dur)}%</div><div class="meta">${p.deco.length ? '裝飾 ' + p.deco.length : '無裝飾'} · 約 ${fmt(fair(p, 'live'))}${extra}</div></div></div>`;
+  return `<div class="card item ${selId === p.id ? 'sel' : ''}" data-act="${act}" data-id="${p.id}"><div class="sw" style="background:${swatch(sp)}"></div><div><div class="nm">${p.crude ? '粗製' : ''}${short(p.sp)}</div><div class="meta">酥脆 ${Math.round(effCrisp(p) * 100)}% · 耐久 ${Math.round(p.dur)}%</div><div class="meta">${p.deco.length ? '裝飾 ' + p.deco.length : '無裝飾'} · 約 ${fmt(fair(p, 'live'))}${extra}</div></div></div>`;
 }
 const stockById = id => S.stock.find(p => p.id === +id);
 
@@ -1472,12 +1498,12 @@ function updateLiveHUD() {
   $('#liveBadge').textContent = L.on ? 'LIVE' : 'OFF AIR'; $('#liveBadge').className = 'badge' + (L.on ? ' on' : '');
   $('#liveViewers').textContent = Math.round(L.viewers) + ' 觀眾'; $('#hypeBar').style.width = L.hype + '%'; $('#comboTxt').textContent = L.combo > 2 && L.on ? `${L.combo} 連擊` : '';
   const p = liveSt.p;
-  $('#stageInfo').innerHTML = p ? `上台：<b>${SP[p.sp].name}</b>　酥脆 ${Math.round(effCrisp(p) * 100)}%　耐久 ${Math.round(p.dur)}%<br>售價 <b>${fmt(getPrice('live', p.sp))}</b>（合理價 ${fmt(fair(p, 'live'))}）` : '從下方選一個捏捏上台，按住它擠壓、滑動連續捏';
+  $('#stageInfo').innerHTML = p ? `上台：<b>${SP[p.sp].name}</b>　酥脆 ${Math.round(effCrisp(p) * 100)}%　耐久 ${Math.round(p.dur)}%<br>售價 <b>${fmt(priceOf(p, 'live'))}</b>（合理價 ${fmt(fair(p, 'live'))}）` : '從下方選一個捏捏上台，按住它擠壓、滑動連續捏';
   $('#reqBox').innerHTML = L.req && L.on ? `<span class="reqb">觀眾指定：${L.req.text}　剩 ${Math.ceil(L.req.t)}s　（成交 ×1.8）</span>` : '';
 }
 function reqMatch(p) { return L.req && (L.req.kind === 'sp' ? p.sp === L.req.sp : effCrisp(p) >= .7); }
 function liveSale(p) {
-  let price = getPrice('live', p.sp), bonus = 1;
+  let price = priceOf(p, 'live'), bonus = 1;
   if (reqMatch(p)) { bonus = 1.8; L.req = null; S.fans += 3; chat('系統', '指定任務完成！限時銷售成交！', 'dm'); }
   const gain = price * bonus; addMoney(gain); S.sales++; S.fans += 1 + L.hype / 30; S.stock = S.stock.filter(q => q !== p); sfx.coin();
   if (L.ss) { L.ss.sales++; L.ss.income += gain; }
@@ -1492,7 +1518,7 @@ function updateLive(dt) {
   if (L.on) {
     L.hype = Math.max(0, L.hype - 3 * dt); if (performance.now() - L.lastC > 1500) L.combo = 0;
     const tgt = (12 + S.fans * 0.8) * (1 + .15 * S.up.gear) * (.4 + L.hype / 60) * (p ? 1 : .5) + L.rv.size * 15; L.viewers += (tgt - L.viewers) * dt * .8; L.saleT += dt;
-    if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(getPrice('live', p.sp), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
+    if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(priceOf(p, 'live'), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
     L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); chat(pick(NAMES), pick(CHAT_IDLE)); }
     if (L.req) { L.req.t -= dt; if (L.req.t <= 0) { L.req = null; chat('系統', '指定任務已結束', 'dm'); } }
     else { L.reqT -= dt; if (L.reqT <= 0) { L.reqT = rnd(25, 40); if (Math.random() < .6) { const has = [...new Set(S.stock.map(p => p.sp))], id = has.length && Math.random() < .7 ? pick(has) : pick(unlockedSpecies()).id; L.req = { kind: 'sp', sp: id, t: 40, text: `要「${SP[id].name}」` }; } else L.req = { kind: 'cr', t: 40, text: '要酥脆度 ≥ 70% 的' }; chat('系統', '新的觀眾指定：' + L.req.text, 'dm'); } }
@@ -1525,7 +1551,7 @@ document.addEventListener('change', e => { const t = e.target; if (!t.dataset ||
 const rating = () => { const a = S.rate.slice(-20); return a.reduce((x, y) => x + y, 0) / a.length; };
 function webTick() {
   if (!S.web.length || Math.random() > clamp(0.25 + S.fans / 400 + (rating() - 3) * .1, .05, .9)) return null;
-  const p = pick(S.web), f = fair(p, 'web'), price = getPrice('web', p.sp); if (Math.random() > demand(price, f) * .7) return null;
+  const p = pick(S.web), f = fair(p, 'web'), price = priceOf(p, 'web'); if (Math.random() > demand(price, f) * .7) return null;
   addMoney(price); S.sales++; S.fans += .3; S.web = S.web.filter(q => q !== p);
   const stars = clamp(Math.round(1 + 2.2 * effCrisp(p) + 1.8 * clamp(f / price, 0, 1.3)), 1, 5); S.rate.push(stars); if (S.rate.length > 40) S.rate.shift();
   S.reviews.unshift({ s: stars, t: pick(REVIEWS[stars]), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars };
@@ -1533,8 +1559,8 @@ function webTick() {
 function renderWeb() {
   const r = rating();
   setHTML($('#webInfo'), `<div class="row"><div class="grow">店鋪評分 <b class="stars">${'★'.repeat(Math.round(r))}${'☆'.repeat(5 - Math.round(r))}</b> ${r.toFixed(1)}　粉絲 ${Math.floor(S.fans)}</div><div class="small">貨架 ${S.web.length}/${slots()}</div></div>`);
-  setHTML($('#webShelf'), S.web.length ? S.web.map(p => itemHTML(p, 'unlist', null, ` · 售 ${fmt(getPrice('web', p.sp))}`)).join('') : '<div class="empty">貨架空空如也，從下方上架商品。</div>');
-  setHTML($('#webStock'), S.stock.length ? S.stock.map(p => itemHTML(p, 'list', null)).join('') : '<div class="empty">背包裡沒有捏捏。</div>');
+  setHTML($('#webShelf'), S.web.length ? S.web.map(p => itemHTML(p, 'unlist', null, ` · 售 ${fmt(priceOf(p, 'web'))}`)).join('') : '<div class="empty">貨架空空如也，從下方上架商品。</div>');
+  setHTML($('#webStock'), S.stock.length ? S.stock.map(p => itemHTML(p, 'list', null, p.played || p.dur < 100 ? ' · 已玩過，不能上架' : '')).join('') : '<div class="empty">背包裡沒有捏捏。</div>');
   if (!$('#webPrice').contains(document.activeElement)) setHTML($('#webPrice'), priceTable('web'));
   setHTML($('#reviews'), S.reviews.length ? S.reviews.map(v => `<div><span class="stars">${'★'.repeat(v.s)}</span> ${esc(v.who)}：${esc(v.t)} <small style="color:var(--sub)">（${esc(v.sp)}）</small></div>`).join('') : '尚無評價');
 }
@@ -1647,7 +1673,7 @@ function renderInv() {
   $('#invInfo').innerHTML = it ? (it.t === 'gel' ? `<b>${SP[it.sp].name}凝膠</b> × ${it.n}<br><span style="color:var(--sub)">帶到工坊的加工產線，每 2 份可做成 1 個酥脆捏捏。</span>` : `<b>${SP[it.p.sp].name} · 酥脆捏捏</b><br>酥脆 ${Math.round(effCrisp(it.p) * 100)}% · 耐久 ${Math.round(it.p.dur)}% · 裝飾 ${it.p.deco.length} · 合理價約 ${fmt(fair(it.p, 'live'))}<br><span style="color:var(--sub)">可到裝飾桌加上零件，或到直播台／工作電腦販售。</span>`) + `<div class="small" style="margin-top:6px;color:var(--sub)">點擊格子可放到快捷列第 ${S.hb + 1} 格選取。</div>` : `<span style="color:var(--sub)">背包：凝膠與捏捏都會顯示在這裡。庫存 ${S.stock.length}/${cap()}</span>`;
   renderQuest();
 }
-const RENDER = { make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
+const RENDER = { bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), mapg: renderMapGame, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
 
 /* ---------- 點擊事件 ---------- */
 document.addEventListener('click', e => {
@@ -1659,7 +1685,7 @@ document.addEventListener('click', e => {
     case 'inv': GUI.kind === 'inv' ? closeGui() : openGui('inv'); break;
     case 'pause': GUI.kind === 'pause' ? closeGui() : openGui('pause'); break;
     case 'hb': { const i = +el.dataset.i; if (GUI.kind === 'inv') { invSel = i; if (i < 9) S.hb = i; renderInv(); } else S.hb = i; renderHotbar(true); break; }
-    case 'pickSp': M.sp = id; M.last = null; renderMake(); break;
+    case 'pickSp': M.sp = id; M.last = null; tab === 'bench' ? renderBench() : renderMake(); break;
     case 'startMake': startMake(); break;
     case 'decoSel': D.id = +id; renderDecor(); break;
     case 'addDeco': { const p = decorSt.p; if (!p) return; if (p.deco.length >= 6) return toast('最多 6 個零件'); p.deco.push({ k, x: rnd(-.45, .45), z: rnd(-.45, .45), s: 1, r: 0 }); decorSt.sel = p.deco.length - 1; decorSt.rebuildDeco(); sfx.tick(); renderDecorTools(); save(); break; }
@@ -1681,10 +1707,14 @@ document.addEventListener('click', e => {
     case 'tBack': $('#titleMain').hidden = false; $('#titleMp').hidden = true; break;
     case 'mpHost': netHost(); break;
     case 'mpJoin': netJoin($('#mpCode').value); break;
-    case 'list': { const p = stockById(id); if (!p) return; if (S.web.length >= slots()) return toast('貨架已滿，請升級網站伺服器'); S.stock = S.stock.filter(q => q !== p); S.web.push(p); renderWeb(); renderHotbar(); save(); break; }
+    case 'list': { const p = stockById(id); if (!p) return; if (p.played || p.dur < 100) return toast('玩過的捏捏不能上架到網站，只能在直播或其他通路販售'); if (S.web.length >= slots()) return toast('貨架已滿，請升級網站伺服器'); S.stock = S.stock.filter(q => q !== p); S.web.push(p); renderWeb(); renderHotbar(); save(); break; }
     case 'unlist': { const p = S.web.find(q => q.id === +id); if (!p) return; if (S.stock.length >= cap()) return toast('庫存已滿'); S.web = S.web.filter(q => q !== p); S.stock.push(p); renderWeb(); renderHotbar(); save(); break; }
-    case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); renderUp(); renderTop(); save(); break; }
-    case 'buyPack': { const pk = PACKS[k]; if (!pk || S.packs.includes(k) || S.money < pk.cost) return; S.money -= pk.cost; S.packs.push(k); sfx.level(); toast(`已解鎖${pk.name}`); renderUp(); renderTop(); save(); break; }
+    case 'buyOwn': buyOwn(k); break;
+    case 'benchMake': benchMake(); break;
+    case 'taxiGo': taxiRide(); break;
+    case 'mapRot': mapRotate(+el.dataset.i); break;
+    case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max || (UPS[k].need && !S.own[UPS[k].need])) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); save(); break; }
+    case 'buyPack': { const pk = PACKS[k]; if (!pk || S.packs.includes(k) || S.money < pk.cost) return; S.money -= pk.cost; S.packs.push(k); sfx.level(); toast(`已解鎖${pk.name}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); save(); break; }
     case 'chooseBranch': chooseBranch(k); break;
     case 'hire': { const c = Math.round(400 * Math.pow(1.5, S.workers)); if (S.money >= c) { S.money -= c; S.workers++; renderBranch(); renderTop(); save(); } break; }
     case 'auto': { const c = Math.round(600 * Math.pow(1.8, S.auto)); if (S.money >= c) { S.money -= c; S.auto++; renderBranch(); renderTop(); save(); } break; }
@@ -1694,7 +1724,7 @@ document.addEventListener('click', e => {
     case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
     case 'help': showHelp(); break;
-    case 'home': P.x = 0; P.z = 31; P.y = G(0, 31); P.yaw = 0; closeGui(); toast('已傳送回工坊入口'); break;
+    case 'home': P.x = 0; P.z = 16; P.y = G(0, 16); P.yaw = 0; closeGui(); toast('已傳送回中央平地入口'); break;
     case 'reset': modal('<h2>重置存檔？</h2><p>所有進度將被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定重置', f: newGame }]); break;
   }
 });
@@ -1707,8 +1737,8 @@ function showHelp() {
 }
 function showIntro() {
   S.seen = true; save();
-  modal(`<h2>歡迎來到月光谷</h2><p>月光谷的史萊姆誕生於月光與露水交融之處。你繼承了奶奶留下的捏捏工坊，要把史萊姆的可再生凝膠，做成世上最療癒的酥脆捏捏。</p>
-  <p><b>怎麼玩</b>：在森林裡自由走動，對準史萊姆採集凝膠；回到中央的工坊，走到工作站前使用它們：加工產線、裝飾桌、直播台、工作電腦。</p>
+  modal(`<h2>歡迎來到月光谷</h2><p>月光谷的史萊姆誕生於月光與露水交融之處。你繼承了奶奶留下的一塊空地和一台舊電腦，要從零開始，把史萊姆的可再生凝膠做成世上最療癒的酥脆捏捏。</p>
+  <p><b>怎麼玩</b>：在森林裡自由走動，對準史萊姆採集凝膠；回到中央平地，用手作台做出粗製捏捏，再用工作電腦把它們掛到網站上賣（一個 ¥10）。存到錢後，搭出生點左邊的計程車到大城市，購買加工機器、裝飾桌與直播設備。</p>
   <p><b>探索</b>：森林被山脊環繞，東、北、西三座能量門通往海岸、火山與雪原。尋找線索、解開謎題，就能發現新區域。左上角會顯示目前目標，指南針會標出方向。</p>`, [{ t: '操作說明', ghost: true, f: showHelp }, { t: '開始探索' }]);
 }
 
@@ -1944,6 +1974,185 @@ function renderLiveOthersOnly() {
   if (L.watch && !others.some(([id]) => id === L.watch.id)) { stopWatch(true); toast('主播已結束直播'); renderLive(); }
 }
 
+/* ============================================================
+   基地、計程車、大城市、商店、手作台、古地圖拼圖、觸控
+   ============================================================ */
+const BASE = { line: [0, -9], decor: [-11, 1], live: [11, 1], pc: [4.5, 7], bench: [-4.5, 7], taxi: [-9, 15] };
+const OWN = {
+  slicer: { name: '切片機', cost: 200, shop: 'mach', desc: '加工產線的第一台機器（節奏切片）。購買後產線會出現在中央平地。' },
+  coater: { name: '糖晶滾筒機', cost: 450, shop: 'mach', desc: '幫捏捏裹上糖晶，提高酥脆度（按住控速）。' },
+  dryer: { name: '乾燥烘箱', cost: 800, shop: 'mach', desc: '烘乾定型，品質再升一級（拖曳控溫）。' },
+  decor: { name: '裝飾桌', cost: 350, shop: 'gear', desc: '在捏捏上擺放裝飾零件，提高售價與人氣。' },
+  live: { name: '直播設備組', cost: 600, shop: 'gear', desc: '補光環燈、攝影機與舞台。可以開直播販售捏捏。' },
+};
+const SHOP_UPS = { mach: ['slicer', 'coater', 'dryer'], gear: ['gear'], mall: ['cap', 'shelf', 'boots', 'net', 'farm'] };
+function ownAny() { return !!(S.own.slicer || S.own.coater || S.own.dryer); }
+function slotMark(parent, [x, z], t, sub, r) {
+  const m = new THREE.Group(); m.position.set(x, G(x, z) + .04, z); parent.add(m);
+  const ring = mesh(new THREE.RingGeometry(r - .1, r, 56), new THREE.MeshBasicMaterial({ color: '#cbd5e1', transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false }), 0, 0, 0, m); ring.rotation.x = -Math.PI / 2;
+  const s = textSprite(t, '#cbd5e1', sub); s.position.y = 2.2; m.add(s); return m;
+}
+function refreshBase() {
+  if (!W.lineParts) return; const o = S.own, anyM = ownAny();
+  W.lineParts.belt.visible = anyM; W.lineParts.m.forEach((g, i) => g.visible = !!o[MKEY[i]]);
+  W.decorG.visible = !!o.decor; W.liveG.visible = !!o.live;
+  const show = { line: anyM, decor: !!o.decor, live: !!o.live };
+  Object.keys(show).forEach(k => { W.slotMark[k].visible = !show[k]; W.slotInter[k].off = !show[k]; if (show[k] && !W.slotCol[k].added) { addCol(W.slotCol[k]); W.slotCol[k].added = true; } });
+}
+function makeTaxi(color = '#facc15', sign = true) {
+  const g = new THREE.Group(), yel = std(color, { roughness: .35, metalness: .3 }), dk = std('#111827', { roughness: .3, metalness: .4 }), gl = std('#1e3a5f', { roughness: .08, metalness: .6 }), wh = std('#e5e7eb', { metalness: .6, roughness: .3 });
+  box(3.9, .62, 1.7, yel, 0, .72, 0, g); box(2.1, .6, 1.56, yel, -.2, 1.32, 0, g);
+  [-.79, .79].forEach(z => box(1.9, .4, .02, gl, -.2, 1.36, z, g)); box(.02, .42, 1.42, gl, .86, 1.34, 0, g); box(.02, .42, 1.42, gl, -1.26, 1.34, 0, g);
+  if (sign) box(3.92, .1, 1.72, dk, 0, .92, 0, g);
+  [[1.25, .82], [-1.25, .82], [1.25, -.82], [-1.25, -.82]].forEach(([x, z]) => { const w = cyl(.36, .36, .26, 20, dk, x, .36, z, g); w.rotation.x = Math.PI / 2; const h = cyl(.18, .18, .27, 12, wh, x, .36, z, g); h.rotation.x = Math.PI / 2; });
+  [-.55, .55].forEach(z => { box(.05, .14, .3, glow('#fef9c3'), 1.96, .78, z, g); box(.05, .12, .26, glow('#ef4444'), -1.96, .8, z, g); });
+  if (sign) {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 96; const x = c.getContext('2d'); x.fillStyle = '#fef08a'; x.fillRect(0, 0, 256, 96); x.fillStyle = '#111827'; x.font = 'bold 64px Inter,sans-serif'; x.textAlign = 'center'; x.fillText('TAXI', 128, 72);
+    const tt = new THREE.CanvasTexture(c); tt.colorSpace = THREE.SRGBColorSpace;
+    box(.75, .28, .32, new THREE.MeshStandardMaterial({ map: tt, emissive: '#fef08a', emissiveIntensity: .4, emissiveMap: tt }), -.2, 1.76, 0, g);
+  }
+  g.traverse(o => { if (o.isMesh) o.castShadow = !LOW; });
+  return g;
+}
+/* ---------- 大城市 ---------- */
+function buildCity() {
+  const g = new THREE.Group(); g.position.set(CITY.x, 0, CITY.z); W.scene.add(g); W.city = g;
+  const asph = std('#3b4250', { roughness: .95 }), walk = std('#a3a8b0', { roughness: .9 }), wline = new THREE.MeshBasicMaterial({ color: '#f1f5f9' }), ylw = new THREE.MeshBasicMaterial({ color: '#facc15' });
+  const flat = (geo, mat, x, y, z) => { const m = mesh(geo, mat, x, y, z, g); m.rotation.x = -Math.PI / 2; m.receiveShadow = true; return m; };
+  flat(new THREE.PlaneGeometry(300, 240), walk, 0, -.02, 0); flat(new THREE.PlaneGeometry(300, 14), asph, 0, .005, 0);
+  for (let x = -140; x < 140; x += 6) if (Math.abs(x) > 14) flat(new THREE.PlaneGeometry(3, .25), ylw, x, .02, 0);
+  for (let z = -6; z <= 6; z += 1.3) [-11, 11].forEach(x => flat(new THREE.PlaneGeometry(3.2, .6), wline, x, .02, z));
+  const winTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#1f2937'; x.fillRect(0, 0, 64, 128); for (let i = 0; i < 4; i++) for (let j = 0; j < 8; j++) { x.fillStyle = Math.random() < .5 ? '#fde68a' : '#475569'; x.fillRect(4 + i * 15, 4 + j * 15.5, 10, 11); } const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; })();
+  const bld = (x, z, w, d, h, col, solid = true) => {
+    const t = winTex.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, Math.round(w / 4)), Math.max(1, Math.round(h / 7)));
+    const b = box(w, h, d, new THREE.MeshStandardMaterial({ color: col, map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: .22, roughness: .7 }), x, h / 2, z, g);
+    b.castShadow = !LOW; b.receiveShadow = true; if (solid) addCol({ box: [CITY.x + x - w / 2, CITY.z + z - d / 2, CITY.x + x + w / 2, CITY.z + z + d / 2] }); return b;
+  };
+  const rd = seeded(31), cols = ['#64748b', '#475569', '#94a3b8', '#7c8aa0', '#5b6b80', '#a1a1aa'];
+  [-46, -34, 34, 46].forEach(x => bld(x, -21, 11, 14, 12 + rd() * 14, pick(cols)));
+  for (let x = -60; x <= 60; x += 13) bld(x + rd() * 3, -42 - rd() * 8, 11, 14, 18 + rd() * 30, pick(cols));
+  for (let x = -60; x <= 60; x += 13) { if (Math.abs(x) < 10) continue; bld(x + rd() * 2, 24, 11, 12, 10 + rd() * 20, pick(cols)); }
+  for (let i = 0; i < 26; i++) { const a = i / 26 * PI2, r = 110 + rd() * 30; bld(Math.cos(a) * r, Math.sin(a) * r, 14, 14, 30 + rd() * 50, pick(cols), false); }
+  // 商店（路北側）
+  const shop = (id, x, w, col, name, sub, accent) => {
+    const b = bld(x, -20, w, 12, 8, col); b.material.emissiveIntensity = .12;
+    mesh(new THREE.PlaneGeometry(w - 2.4, 3.2), new THREE.MeshStandardMaterial({ color: '#7dd3fc', emissive: '#7dd3fc', emissiveIntensity: .35, roughness: .1 }), x, 1.9, -13.94, g);
+    box(w - 1, .18, 1.8, std(accent, { roughness: .6 }), x, 3.75, -13.2, g).rotation.x = .18;
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128; const t = c.getContext('2d'); t.fillStyle = '#0b1220'; t.fillRect(0, 0, 512, 128); t.fillStyle = accent; t.font = 'bold 64px "Noto Sans TC","Microsoft JhengHei",sans-serif'; t.textAlign = 'center'; t.fillText(name, 256, 86);
+    const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; mesh(new THREE.PlaneGeometry(w - 2, 2), new THREE.MeshBasicMaterial({ map: tx }), x, 5.6, -13.9, g);
+    const hb = hitBox(w - 2, 3.4, 2.2, x, 1.7, -12.6, g); addInter(hb, 'station', 'shop:' + id, name);
+    const lb = textSprite(name, accent, sub); lb.position.set(x, 9.2, -13.5); g.add(lb);
+  };
+  shop('mach', -18, 12, '#334155', '機械行', '加工機器與升級', '#22d3ee');
+  shop('mall', 0, 13, '#475569', '生活百貨', '倉儲、網路、跑鞋', '#34d399');
+  shop('gear', 18, 12, '#3f3f63', '器材行', '直播設備、裝飾桌', '#e879f9');
+  // 路燈、行道樹、長椅
+  const pole = std('#334155', { metalness: .7, roughness: .4 }), leaf = std('#4c9440', { flatShading: true }), pot = std('#57534e');
+  for (let x = -52; x <= 52; x += 13) [-8.6, 8.6].forEach(z => { if (Math.abs(x) < 5) return; cyl(.08, .1, 5, 8, pole, x, 2.5, z, g); box(1.1, .12, .3, glow('#fef9c3'), x + .4 * Math.sign(-z), 5, z - .4 * Math.sign(z), g); });
+  for (let x = -45.5; x <= 45.5; x += 13) [-10.5, 10.5].forEach(z => { if (Math.abs(x) < 8) return; cyl(.7, .6, .6, 12, pot, x, .3, z, g); mesh(jit(new THREE.IcosahedronGeometry(1.1, 1), .3, x), leaf, x, 2, z, g); cyl(.1, .14, 1.2, 6, std('#5b4030'), x, 1, z, g); addCol({ x: CITY.x + x, z: CITY.z + z, r: .8 }); });
+  // 停放的車與計程車招呼站
+  [[-30, 4.5, '#ef4444'], [26, -4.5, '#3b82f6'], [40, 4.5, '#e5e7eb']].forEach(([x, z, c]) => { const car = makeTaxi(c, false); car.position.set(x, 0, z); g.add(car); addCol({ box: [CITY.x + x - 2, CITY.z + z - 1, CITY.x + x + 2, CITY.z + z + 1] }); });
+  const tx = makeTaxi('#facc15', true); tx.position.set(7, 0, 12); g.add(tx); addCol({ box: [CITY.x + 5, CITY.z + 11, CITY.x + 9, CITY.z + 13] });
+  addInter(hitBox(4.2, 2.2, 2, 7, 1, 12, g), 'station', 'taxi', '計程車');
+  const tl = textSprite('計程車招呼站', '#facc15', '回到月光谷'); tl.position.set(7, 3.4, 12); g.add(tl);
+}
+function taxiAsk() {
+  const toCity = !inCity();
+  modal(`<h2>${toCity ? '前往大城市' : '回到月光谷'}</h2><p>${toCity ? '大城市裡有機械行、器材行與生活百貨，可以購買加工機器、直播設備與各種升級。' : '搭計程車回到月光谷的中央平地。'}</p>`, [{ t: '取消', ghost: true }, { t: '出發', f: taxiRide }]);
+}
+function taxiRide() {
+  const toCity = !inCity(), f = $('#fade'); f.textContent = toCity ? '計程車駛向大城市…' : '計程車駛回月光谷…'; f.hidden = false; requestAnimationFrame(() => f.classList.add('on')); sfx.open();
+  setTimeout(() => {
+    if (toCity) { P.x = CITY.x; P.z = CITY.z + 10; } else { P.x = BASE.taxi[0] + 3; P.z = BASE.taxi[1]; }
+    P.yaw = 0; P.pitch = -.05; P.y = G(P.x, P.z); P.camY = P.y; P.vy = 0; W.camAway = false; save();
+  }, 700);
+  setTimeout(() => { f.classList.remove('on'); setTimeout(() => f.hidden = true, 500); toast(toCity ? '抵達大城市。機械行、生活百貨、器材行都在路的北側。' : '回到月光谷。'); }, 1500);
+}
+/* ---------- 商店 ---------- */
+function buyOwn(k) {
+  const o = OWN[k]; if (!o || S.own[k]) return; if (S.money < o.cost) return toast('資金不足');
+  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); renderShop(tab); renderTop(); save(); toast(`已購買${o.name}，已經送到月光谷的中央平地`);
+}
+function renderShop(kind) {
+  const intro = { mach: '加工機器與機器升級。買了才會出現在基地的產線上，每台機器對應一道加工流程。', gear: '直播設備、裝飾桌與裝飾零件。', mall: '倉儲、網站伺服器與生活用品。' }[kind];
+  let h = `<div class="hint">${intro}　目前資金 <b style="color:var(--warn)">${fmt(S.money)}</b></div>`;
+  const owns = Object.keys(OWN).filter(k => OWN[k].shop === kind);
+  if (owns.length) h += '<h3>設備</h3>' + owns.map(k => { const o = OWN[k], has = S.own[k]; return `<div class="card up"><div class="info"><b>${o.name}</b>${has ? ' <span class="tag">已擁有</span>' : ''}<div class="small" style="color:var(--sub)">${o.desc}</div></div><button class="btn sm" data-act="buyOwn" data-k="${k}" ${has || S.money < o.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(o.cost)}</button></div>`; }).join('');
+  const ups = SHOP_UPS[kind] || [];
+  if (ups.length) h += '<h3>升級</h3>' + ups.map(k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max, need = u.need && !S.own[u.need]; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${need ? '需要先購買' + OWN[u.need].name : u.desc}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || need || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; }).join('');
+  if (kind === 'gear') h += '<h3>裝飾零件包</h3>' + Object.keys(PACKS).map(k => { const has = S.packs.includes(k), pk = PACKS[k], items = Object.values(DECO).filter(d => d.pack === k).map(d => dot(d.c) + d.n).join('　'); return `<div class="card up"><div class="info"><b>${pk.name}</b><div class="small" style="color:var(--sub)">${items}</div></div><button class="btn sm" data-act="buyPack" data-k="${k}" ${has || S.money < pk.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(pk.cost)}</button></div>`; }).join('');
+  $('#upList').innerHTML = h;
+}
+/* ---------- 手作台 ---------- */
+const BN = { busy: false };
+function renderBench() {
+  if (!M.sp || !unlockedSpecies().some(s => s.id === M.sp)) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || unlockedSpecies()[0]).id;
+  $('#benchBody').innerHTML = `<div class="hint">手作台只能做出<b>粗製捏捏</b>：品質最低，固定售價 ¥10。想做出更酥脆、更值錢的捏捏，要搭計程車到大城市購買加工機器。</div>
+  <div class="row wrap">${unlockedSpecies().map(s => `<button class="zbtn ${M.sp === s.id ? 'on' : ''}" data-act="pickSp" data-id="${s.id}">${dot(s.color)}${short(s.id)}<br><small>凝膠 ${S.gel[s.id] || 0}</small></button>`).join('')}</div>
+  <div class="card"><div class="tbar" style="height:10px"><i id="benchBar"></i></div><button class="btn big" style="width:100%" data-act="benchMake" ${BN.busy || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>${BN.busy ? '捏製中…' : '手工捏製（消耗 2 份凝膠）'}</button><div class="small" style="color:var(--sub);margin-top:6px">庫存 ${S.stock.length}/${cap()}</div></div>`;
+}
+function benchMake() {
+  if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (S.stock.length >= cap()) return toast('庫存已滿');
+  S.gel[sp] -= 2; BN.busy = true; renderBench(); sfx.squish(1); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
+  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); sfx.pop(); toast(`做好了一個粗製${short(sp)}捏捏（售價 ¥10）`); save(); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
+}
+/* ---------- 古地圖拼圖 ---------- */
+function openAltar() {
+  const q = qState(); if (!questReady('coast')) return toast('石台被一股力量封印著……');
+  if (q.frags.length < 5) return toast(`石台上刻著地圖的輪廓，但你只有 ${q.frags.length}/5 片碎片。`);
+  openGui('mapg');
+}
+let MAPIMG = null;
+function mapImage() {
+  if (MAPIMG) return MAPIMG; const c = document.createElement('canvas'); c.width = c.height = 450; const g = c.getContext('2d'), rd = seeded(42);
+  g.fillStyle = '#e9d8a6'; g.fillRect(0, 0, 450, 450); for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(120,90,40,${rd() * .08})`; g.fillRect(rd() * 450, rd() * 450, 3, 3); }
+  g.fillStyle = '#4d7c4a'; for (let i = 0; i < 30; i++) { const x = 30 + rd() * 190, y = 70 + rd() * 330; g.beginPath(); g.moveTo(x, y - 14); g.lineTo(x - 9, y + 6); g.lineTo(x + 9, y + 6); g.fill(); }
+  g.strokeStyle = '#7c6a4a'; g.lineWidth = 3; for (let i = 0; i < 6; i++) { const y = 40 + i * 70; g.beginPath(); g.moveTo(270, y); g.lineTo(287, y - 22); g.lineTo(304, y); g.stroke(); }
+  g.fillStyle = '#7fb3c8'; g.beginPath(); g.moveTo(360, 0); for (let y = 0; y <= 450; y += 30) g.lineTo(360 + Math.sin(y * .05) * 14, y); g.lineTo(450, 450); g.lineTo(450, 0); g.fill();
+  g.strokeStyle = '#5b9bb5'; g.lineWidth = 7; g.beginPath(); g.moveTo(0, 330); g.bezierCurveTo(120, 300, 160, 400, 260, 360); g.bezierCurveTo(320, 340, 340, 380, 380, 370); g.stroke();
+  g.setLineDash([10, 8]); g.strokeStyle = '#8b2e1f'; g.lineWidth = 4; g.beginPath(); g.moveTo(80, 230); g.bezierCurveTo(160, 150, 220, 250, 287, 225); g.lineTo(340, 200); g.lineTo(395, 120); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = '#b91c1c'; g.lineWidth = 6; g.beginPath(); g.moveTo(383, 108); g.lineTo(407, 132); g.moveTo(407, 108); g.lineTo(383, 132); g.stroke();
+  g.fillStyle = '#3f2e1e'; g.font = 'bold 32px "Noto Sans TC","Microsoft JhengHei",serif'; g.fillText('森林', 80, 165); g.fillText('海岸', 362, 262); g.font = 'bold 26px serif'; g.fillText('N', 30, 46);
+  g.strokeStyle = '#3f2e1e'; g.lineWidth = 3; g.beginPath(); g.moveTo(39, 98); g.lineTo(39, 56); g.lineTo(31, 67); g.moveTo(39, 56); g.lineTo(47, 67); g.stroke();
+  g.strokeStyle = '#7c5a3a'; g.lineWidth = 8; g.strokeRect(4, 4, 442, 442);
+  return MAPIMG = c.toDataURL('image/jpeg', .85);
+}
+function renderMapGame() {
+  const q = qState();
+  $('#mapBody').innerHTML = `<div class="hint">點擊地圖碎片可以旋轉 90°。把九塊碎片都轉回正確的方向（文字要是正的、河流與路徑要連起來），地圖就會重新拼合。</div>
+  <div class="mapgrid" style="--mapimg:url(${mapImage()})">${q.map.map((r, i) => `<button class="mtile" data-act="mapRot" data-i="${i}" style="background-position:${(i % 3) * 50}% ${Math.floor(i / 3) * 50}%;transform:rotate(${r * 90}deg)" aria-label="碎片 ${i + 1}"></button>`).join('')}</div>`;
+}
+function mapRotate(i) {
+  const q = qState(); if (q.map.every(r => r === 0)) return; q.map[i] = (q.map[i] + 1) % 4; sfx.tick(); save(); renderMapGame();
+  if (q.map.every(r => r === 0)) { sfx.pop(); toast('地圖拼好了！'); setTimeout(() => { closeGui(); discoverZone('coast'); }, 700); }
+}
+/* ---------- 手機：觸控轉視角 ---------- */
+function bindTouch(cv) {
+  const jb = $('#joyBase'), jk = $('#joyKnob');
+  cv.addEventListener('touchstart', e => {
+    if (GUI.kind || TITLE.on) return; e.preventDefault(); try { audio(); } catch (_) { }
+    for (const t of e.changedTouches) {
+      const x = t.clientX, y = t.clientY;
+      if (!IN.joy && x < innerWidth * .45 && y > innerHeight * .4) { IN.joy = { id: t.identifier, x0: x, y0: y }; jb.style.left = (x - 60) + 'px'; jb.style.top = (y - 60) + 'px'; jb.classList.add('on'); }
+      else if (!IN.look) IN.look = { id: t.identifier, x, y, sx: x, sy: y, t: performance.now(), moved: 0 };
+    }
+  }, { passive: false });
+  cv.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (IN.joy && t.identifier === IN.joy.id) { let dx = t.clientX - IN.joy.x0, dy = t.clientY - IN.joy.y0; const l = Math.hypot(dx, dy), m = 50; if (l > m) { dx *= m / l; dy *= m / l; } IN.jx = dx / m; IN.jy = dy / m; jk.style.transform = `translate(${dx}px,${dy}px)`; }
+      if (IN.look && t.identifier === IN.look.id) { const dx = t.clientX - IN.look.x, dy = t.clientY - IN.look.y; IN.look.x = t.clientX; IN.look.y = t.clientY; IN.look.moved += Math.abs(dx) + Math.abs(dy); const s = SENS[S.sens] * 2.4; P.yaw -= dx * s; P.pitch = clamp(P.pitch - dy * s, -1.5, 1.5); }
+    }
+  }, { passive: false });
+  const end = e => {
+    for (const t of e.changedTouches) {
+      if (IN.joy && t.identifier === IN.joy.id) { IN.joy = null; IN.jx = IN.jy = 0; jk.style.transform = ''; jb.classList.remove('on'); }
+      if (IN.look && t.identifier === IN.look.id) { const L0 = IN.look; IN.look = null; if (e.type === 'touchend' && L0.moved < 12 && performance.now() - L0.t < 350 && !GUI.kind) actAt(L0.sx, L0.sy); }
+    }
+  };
+  cv.addEventListener('touchend', end); cv.addEventListener('touchcancel', end);
+}
+
 /* ---------- 主迴圈 ---------- */
 let lastT = performance.now(), secAcc = 0, webAcc = 0, farmAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
 const tmpC = new THREE.Color(), tmpC2 = new THREE.Color(), tmpV = new THREE.Vector3();
@@ -1953,7 +2162,7 @@ function envStep(dt) {
   const k = Math.min(1, dt * 2); W.scene.fog.color.lerp(fog, k); W.scene.background.copy(W.scene.fog.color); W.sky.material.uniforms.bot.value.lerp(fog, k); W.sky.material.uniforms.top.value.lerp(top, k);
   W.sun.color.lerp(sun, k); W.hemi.color.lerp(hs, k); W.hemi.groundColor.lerp(hg, k); W.sun.intensity = 2.6 - w[2] * .9;
   W.sky.position.copy(W.cam.position); W.sun.position.set(P.x + 30, P.y + 55, P.z + 22); W.sun.target.position.set(P.x, P.y, P.z);
-  const zid = domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; if (prev) toast(`進入${ZONES.find(z => z.id === zid).name}`); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  const zid = inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; if (prev) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
 }
 function worldStep(dt) {
   W.t += dt; if (!GUI.kind) playerStep(dt);
@@ -1971,7 +2180,7 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (tab === 'up') renderUp(); }
+  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
