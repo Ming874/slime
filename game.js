@@ -523,10 +523,18 @@ function H0(x, z) {
   let ridge = Math.exp(-((r - 54) ** 2) / 34) * (13 + fbm(x * .07, z * .07, 5) * 9);
   const pass = ax > az ? Math.exp(-(z * z) / 16) : (z < 0 ? Math.exp(-(x * x) / 16) : 0);
   ridge *= 1 - pass * .97; h += ridge;
-  h += smooth(108, 128, r) * (18 + fbm(x * .03, z * .03, 8) * 24);
-  const sea = smooth(84, 100, x); h = h * (1 - sea) - 2.8 * sea;
-  const vn = smooth(60, 80, -z), vd = Math.hypot(x, z + 96); h += Math.max(0, 28 * (1 - vd / 30)) * vn; if (vd < 4.5) h -= (4.5 - vd) * 2.2 * vn;
-  h += smooth(60, 80, -x) * fbm(x * .06, z * .06, 21) * 7;
+  h += smooth(160, 182, r) * (18 + fbm(x * .03, z * .03, 8) * 24);
+  // 各區之間的分隔山脈（沿對角線），讓海岸、火山、雪原各自獨立
+  const outer = smooth(56, 68, r), dg = (ax - az) / 1.4142;
+  h += Math.exp(-(dg * dg) / 50) * outer * (22 + fbm(x * .05, z * .05, 17) * 14);
+  // 南方沒有隘口，整片是高山
+  if (z > 0 && az > ax) h += smooth(56, 72, az) * (20 + fbm(x * .04, z * .04, 19) * 18);
+  // 海岸：沙灘更寬，海在更東邊
+  const sea = smooth(128, 144, x); h = h * (1 - sea) - 2.8 * sea;
+  // 火山：主峰移到更北邊並加大
+  const vn = smooth(62, 84, -z), vd = Math.hypot(x, z + 130); h += Math.max(0, 34 * (1 - vd / 36)) * vn; if (vd < 5) h -= (5 - vd) * 2.4 * vn;
+  // 雪原：起伏更大的丘陵
+  h += smooth(62, 84, -x) * fbm(x * .05, z * .05, 21) * 10;
   return h;
 }
 const WS_R = 16, WS_Y = .4;
@@ -546,7 +554,7 @@ function initWorld() {
   try { W.r = new THREE.WebGLRenderer({ canvas: cv, antialias: !LOW, powerPreference: 'high-performance' }); } catch (e) { modal('<h2>無法啟動 3D</h2><p>你的瀏覽器或裝置不支援 WebGL，請改用較新的 Chrome、Edge 或 Safari。</p>'); return false; }
   W.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, LOW ? 1.25 : 1.75)); W.r.toneMapping = THREE.ACESFilmicToneMapping; W.r.toneMappingExposure = 1;
   if (!LOW) { W.r.shadowMap.enabled = true; W.r.shadowMap.type = THREE.PCFSoftShadowMap; }
-  const sc = W.scene = new THREE.Scene(); sc.background = new THREE.Color('#cfe6dc'); sc.fog = new THREE.Fog('#cfe6dc', 60, LOW ? 150 : 220); sc.environment = makeEnv(W.r);
+  const sc = W.scene = new THREE.Scene(); sc.background = new THREE.Color('#cfe6dc'); sc.fog = new THREE.Fog('#cfe6dc', 70, LOW ? 170 : 260); sc.environment = makeEnv(W.r);
   W.cam = new THREE.PerspectiveCamera(72, 1, .08, 700); W.cam.rotation.order = 'YXZ';
   W.hemi = new THREE.HemisphereLight('#d8f0ff', '#2d4a2f', 1); sc.add(W.hemi);
   W.sun = new THREE.DirectionalLight('#fff3d6', 2.6); W.sun.castShadow = !LOW; sc.add(W.sun); sc.add(W.sun.target);
@@ -562,7 +570,7 @@ function initWorld() {
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); W.ready = true; return true;
 }
 function buildTerrain() {
-  const N = LOW ? 190 : 260, size = 280 * K, geo = new THREE.PlaneGeometry(size, size, N, N); geo.rotateX(-Math.PI / 2);
+  const N = LOW ? 240 : 330, size = 370 * K, geo = new THREE.PlaneGeometry(size, size, N, N); geo.rotateX(-Math.PI / 2);
   const p = geo.attributes.position, n = p.count, hs = new Float32Array(n), row = N + 1, cell = size / N;
   for (let i = 0; i < n; i++) { hs[i] = H(p.getX(i), p.getZ(i)); p.setY(i, hs[i]); }
   const pal = BIOMES.map(b => ZONE3D[b].pal.map(c => new THREE.Color(c))), cols = new Float32Array(n * 3), c = new THREE.Color(), t = new THREE.Color(), wet = new THREE.Color('#a8956a');
@@ -583,8 +591,8 @@ function buildTerrain() {
   const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 })); m.receiveShadow = true; W.scene.add(m);
 }
 function buildWater() {
-  const geo = new THREE.PlaneGeometry(220 * K, 300 * K, LOW ? 30 : 60, LOW ? 40 : 80), m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#0e7490', roughness: .08, metalness: .2, transparent: true, opacity: .9 }));
-  m.rotation.x = -Math.PI / 2; m.position.set(180 * K, -.9 * K, 0); m.receiveShadow = true; W.scene.add(m);
+  const geo = new THREE.PlaneGeometry(180 * K, 400 * K, LOW ? 30 : 60, LOW ? 50 : 100), m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#0e7490', roughness: .08, metalness: .2, transparent: true, opacity: .9 }));
+  m.rotation.x = -Math.PI / 2; m.position.set(215 * K, -.9 * K, 0); m.receiveShadow = true; W.scene.add(m);
   const wp = geo.attributes.position, base = Float32Array.from(wp.array);
   W.anim.push((dt, t) => { if (P.x < 40 * K || inCity()) return; for (let i = 0; i < wp.count; i++) { const x = base[i * 3], y = base[i * 3 + 1]; wp.setZ(i, Math.sin(x * .3 + t * 1.2) * .1 + Math.cos(y * .4 + t * .9) * .1); } wp.needsUpdate = true; geo.computeVertexNormals(); });
 }
@@ -597,17 +605,17 @@ function buildProps() {
     if (Math.abs(x) < 10 * K && Math.abs(z + 54 * K) < 9 * K) return true;
     return PUZ_SPOTS.some(([px, pz]) => Math.hypot(x - px, z - pz) < 4.5);
   };
-  const tries = LOW ? 6000 : 10500;
+  const tries = LOW ? 10000 : 18000;
   for (let i = 0; i < tries; i++) {
-    const x = (rd() - .5) * 250 * K, z = (rd() - .5) * 250 * K, h = H(x, z); if (h < -.3 || h > 26 * K || avoid(x, z)) continue;
+    const x = (rd() - .5) * 350 * K, z = (rd() - .5) * 350 * K, h = H(x, z); if (h < -.3 || h > 26 * K || avoid(x, z)) continue;
     const sl = Math.abs(H(x + 1, z) - H(x - 1, z)) + Math.abs(H(x, z + 1) - H(x, z - 1)); if (sl > 1.5) continue;
     const b = domBiome(x, z), s = .75 + rd() * .8, ry = rd() * 6.28, k = rd(), o = { x, y: h - .12 - sl * .3, z, s, ry };
     let col = 0;
-    if (b === 'forest') { if (k < .45) { push('pine', o); col = .35; } else if (k < .72) { push('broad', o); col = .35; } else if (k < .86) push('bush', o); else if (k < .95) { push('rockF', o); col = .8; } else push('shroom', o); }
-    else if (b === 'coast') { if (k < .45) { push('palm', o); col = .3; } else if (k < .7) { push('rockF', o); col = .8; } else push('bushC', o); }
-    else if (b === 'volcano') { if (k < .45) { push('rockV', o); col = .8; } else if (k < .7) { push('dead', o); col = .25; } else push('obsid', o); }
-    else { if (k < .55) { push('pineS', o); col = .35; } else if (k < .75) { push('rockS', o); col = .8; } else push('ice', o); }
-    if (col && Math.max(Math.abs(x), Math.abs(z)) < 110 * K) addCol({ x, z, r: col * s + .1 });
+    if (b === 'forest') { if (k < .45) { push('pine', o); col = .2; } else if (k < .72) { push('broad', o); col = .2; } else if (k < .86) push('bush', o); else if (k < .95) { push('rockF', o); col = .7; } else push('shroom', o); }
+    else if (b === 'coast') { if (k < .45) { push('palm', o); col = .15; } else if (k < .7) { push('rockF', o); col = .7; } else push('bushC', o); }
+    else if (b === 'volcano') { if (k < .45) { push('rockV', o); col = .7; } else if (k < .7) { push('dead', o); col = .15; } else push('obsid', o); }
+    else { if (k < .55) { push('pineS', o); col = .2; } else if (k < .75) { push('rockS', o); col = .7; } else push('ice', o); }
+    if (col && Math.max(Math.abs(x), Math.abs(z)) < 176 * K) addCol({ x, z, r: col * s + .05, k: 'prop' });
   }
   const flatM = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 });
   const cone = (r, h, y, c, sd) => [jit(new THREE.ConeGeometry(r, h, 9, 3), .22, sd), c, M4(0, y, 0)];
@@ -632,8 +640,8 @@ function buildProps() {
   // 草叢與花（成片分布）
   const grass = [], flowers = [], gc = [new THREE.Color('#4f9a45'), new THREE.Color('#8cc265'), new THREE.Color('#9a9a55'), new THREE.Color('#cfc47a')];
   const fcol = ['#f9a8d4', '#fde68a', '#ffffff', '#c4b5fd', '#fca5a5'].map(c => new THREE.Color(c));
-  for (let i = 0; i < (LOW ? 420 : 820); i++) {
-    const cx = (rd() - .5) * 220 * K, cz = (rd() - .5) * 220 * K, b = domBiome(cx, cz); if (b === 'volcano' || b === 'snow') continue;
+  for (let i = 0; i < (LOW ? 700 : 1400); i++) {
+    const cx = (rd() - .5) * 300 * K, cz = (rd() - .5) * 300 * K, b = domBiome(cx, cz); if (b === 'volcano' || b === 'snow') continue;
     for (let j = 0; j < (LOW ? 14 : 22); j++) {
       const x = cx + (rd() - .5) * 7, z = cz + (rd() - .5) * 7, h = H(x, z); if (h < .05 || h > 6 * K || Math.hypot(x, z) < 20) continue; if (Math.abs(H(x + .8, z) - H(x - .8, z)) + Math.abs(H(x, z + .8) - H(x, z - .8)) > .5) continue;
       const c = b === 'coast' ? gc[2].clone().lerp(gc[3], rd()) : gc[0].clone().lerp(gc[1], rd());
@@ -647,12 +655,12 @@ function buildProps() {
   W.scene.add(instances(fg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6, flatShading: true }), flowers, false));
 }
 function buildVolcanoFx() {
-  const VZ = -96 * K, y = H(0, VZ) + .3, lava = mesh(new THREE.CircleGeometry(4.6 * K, 32), new THREE.MeshBasicMaterial({ color: '#fb923c' }), 0, y, VZ, W.scene); lava.rotation.x = -Math.PI / 2;
+  const VZ = -130 * K, y = H(0, VZ) + .3, lava = mesh(new THREE.CircleGeometry(5 * K, 32), new THREE.MeshBasicMaterial({ color: '#fb923c' }), 0, y, VZ, W.scene); lava.rotation.x = -Math.PI / 2;
   const smokeG = new THREE.IcosahedronGeometry(2, 1), smokeM = new THREE.MeshStandardMaterial({ color: '#3f3a3a', roughness: 1, transparent: true, opacity: .5, flatShading: true }), puffs = [];
   for (let i = 0; i < 12; i++) { const m = mesh(smokeG, smokeM, 0, y, VZ, W.scene); m.userData.o = i / 12; puffs.push(m); }
   const pools = [], rd = seeded(5);
-  for (let i = 0; i < 9; i++) {
-    const x = (rd() - .5) * 80 * K, z = (-62 - rd() * 18) * K; if (Math.hypot(x, z - VZ) < 33 * K) continue; const hy = H(x, z) + .05, r = 1.2 + rd() * 1.4;
+  for (let i = 0; i < 16; i++) {
+    const x = (rd() - .5) * 90 * K, z = (-64 - rd() * 80) * K; if (Math.hypot(x, z - VZ) < 40 * K || Math.abs(x) > -z - 12 * K) continue; const hy = H(x, z) + .05, r = 1.2 + rd() * 1.4;
     const a = mesh(new THREE.CircleGeometry(r, 28), new THREE.MeshBasicMaterial({ color: '#ea580c' }), x, hy, z, W.scene); a.rotation.x = -Math.PI / 2;
     const b = mesh(new THREE.CircleGeometry(r * .6, 24), new THREE.MeshBasicMaterial({ color: '#fde047' }), x, hy + .01, z, W.scene); b.rotation.x = -Math.PI / 2; pools.push(b);
   }
@@ -660,8 +668,8 @@ function buildVolcanoFx() {
 }
 function buildClouds() {
   const cg = new THREE.IcosahedronGeometry(1, 1), cm = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true, transparent: true, opacity: .92, fog: false }), clouds = [], rd = seeded(9);
-  for (let i = 0; i < (LOW ? 10 : 18); i++) { const g = new THREE.Group(); for (let k = 0; k < 5; k++) { const m = mesh(cg, cm, (k - 2) * 1.6 + rd() - .5, rd() * .6, rd() * 1.6 - .8, g); m.scale.set(1.6 + rd(), 1 + rd() * .6, 1.3); } g.position.set((rd() - .5) * 300, 40 + rd() * 20, (rd() - .5) * 300); g.scale.setScalar(2 + rd() * 2.5); W.scene.add(g); clouds.push(g); }
-  W.anim.push(dt => clouds.forEach(c => { c.position.x += dt * 1.2; if (c.position.x > 160) c.position.x = -160; }));
+  for (let i = 0; i < (LOW ? 10 : 18); i++) { const g = new THREE.Group(); for (let k = 0; k < 5; k++) { const m = mesh(cg, cm, (k - 2) * 1.6 + rd() - .5, rd() * .6, rd() * 1.6 - .8, g); m.scale.set(1.6 + rd(), 1 + rd() * .6, 1.3); } g.position.set((rd() - .5) * 520, 40 + rd() * 20, (rd() - .5) * 520); g.scale.setScalar(2 + rd() * 2.5); W.scene.add(g); clouds.push(g); }
+  W.anim.push(dt => clouds.forEach(c => { c.position.x += dt * 1.2; if (c.position.x > 260) c.position.x = -260; }));
 }
 let dotTexC = null;
 function dotTex() {
@@ -966,7 +974,7 @@ function renderQuest() {
 /* ============================================================
    史萊姆（細緻模型：水滴身體、內核、氣泡、眼睛、嘴巴、腮紅、底部滴落、品種特徵）
    ============================================================ */
-let SLIME_GEO = null; const SCACHE = {};
+let SLIME_GEO = null, PIP_GEO = null; const SCACHE = {}, SLIME_GREY = new THREE.Color('#94a3b8');
 function surf(x, y, z) { const l = Math.hypot(x, y, z) || 1; x /= l; y /= l; z /= l; if (y < 0) { y *= .2; x *= 1.06; z *= 1.06; } else { const t = Math.max(0, (y - .6) / .4), p = 1 - t * t * .3; x *= p; z *= p; y = y * .92 + t * t * t * .12; } return new THREE.Vector3(x, y, z); }
 function slimeGeo() {
   if (SLIME_GEO) return SLIME_GEO; const g = new THREE.SphereGeometry(1, LOW ? 32 : 44, LOW ? 22 : 30), p = g.attributes.position;
@@ -1042,15 +1050,18 @@ function slimeMesh(sp) {
   }
   if (sp.rar >= 3) { const halo = mesh(new THREE.TorusGeometry(.32, .03, 10, 40), new THREE.MeshBasicMaterial({ color: sp.rar >= 4 ? '#fde047' : '#f0abfc' }), 0, 1.7, 0, g); halo.rotation.x = Math.PI / 2; g.userData.halo = halo; }
   blobShadow(1.05, g, .03);
+  body.userData.base = new THREE.Color(sp.color);
+  const pg = new THREE.Group(); pg.visible = false; g.add(pg); if (!PIP_GEO) PIP_GEO = new THREE.SphereGeometry(.075, 12, 8);
+  g.userData.pips = { g: pg, m: [-1, 0, 1].map(i => mesh(PIP_GEO, new THREE.MeshBasicMaterial({ color: '#334155' }), i * .22, 0, 0, pg)) };
   g.userData.body = body; g.userData.eyes = eyes; body.userData.slimeRoot = g; return g;
 }
 function zoneSpawn(zid) {
   for (let k = 0; k < 80; k++) {
     let x, z;
     if (zid === 'forest') { x = rnd(-44, 44) * K; z = rnd(-44, 44) * K; if (Math.hypot(x, z) < 22) continue; }
-    else if (zid === 'coast') { x = rnd(62, 82) * K; z = rnd(-38, 38) * K; }
-    else if (zid === 'volcano') { x = rnd(-40, 40) * K; z = rnd(-60, -76) * K; if (Math.hypot(x, z + 96 * K) < 33 * K) continue; }
-    else { x = rnd(-62, -96) * K; z = rnd(-38, 38) * K; }
+    else if (zid === 'coast') { x = rnd(62, 124) * K; z = rnd(-50, 50) * K; if (Math.abs(z) > x - 12 * K) continue; }
+    else if (zid === 'volcano') { x = rnd(-50, 50) * K; z = rnd(-62, -155) * K; if (Math.hypot(x, z + 130 * K) < 40 * K || Math.abs(x) > -z - 12 * K) continue; }
+    else { x = rnd(-62, -160) * K; z = rnd(-50, 50) * K; if (Math.abs(z) > -x - 12 * K) continue; }
     const h = H(x, z); if (h < 0 || h > 10 * K) continue; return [x, z];
   }
   return [0, 30];
@@ -1062,36 +1073,43 @@ function spawnSlime(zid, home) {
   const sl = { id: ++W.sid, sc: rnd(.66, .86), sp, m, zid, hx, hz, x: hx + rnd(-3, 3), z: hz + rnd(-3, 3), vx: 0, vz: 0, ph: rnd(0, 6), hits: 0, cool: 0, sq: 0, blink: rnd(1, 4), yaw: rnd(0, 6), turn: rnd(1, 4), flee: 0 };
   m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); return sl;
 }
-function spawnZone(zid) { if (W.spawned.has(zid)) return; W.spawned.add(zid); const n = LOW ? 14 : 22; for (let i = 0; i < n; i++) spawnSlime(zid); }
+function spawnZone(zid) { if (W.spawned.has(zid)) return; W.spawned.add(zid); const n = LOW ? 18 : 28; for (let i = 0; i < n; i++) spawnSlime(zid); }
 function spawnAllSlimes() { S.zones.forEach(spawnZone); }
 function slimeStep(dt, t) {
   W.slimes.forEach(s => {
+    // 計時器每幀都更新（不論玩家在不在附近），避免遠處的史萊姆永遠卡在冷卻
+    if (!s.mirror) { s.cool = Math.max(0, s.cool - dt); if (s.hits > 0 && (s.since = (s.since || 0) + dt) > 10) s.hits = 0; }
+    s.sq = Math.max(0, s.sq - dt * 3); s.happy = Math.max(0, (s.happy || 0) - dt);
     const dx = s.x - P.x, dz = s.z - P.z, dist = Math.hypot(dx, dz); s.m.visible = dist < 60; if (!s.m.visible) return;
     s.ph += dt * 3; let vx = s.vx, vz = s.vz;
-    if (s.mirror) { const k = Math.min(1, dt * 8); vx = (s.tx - s.x) * 4; vz = (s.tz - s.z) * 4; s.x += (s.tx - s.x) * k; s.z += (s.tz - s.z) * k; s.sq = Math.max(0, s.sq - dt * 3); } else {
+    if (s.mirror) { const k = Math.min(1, dt * 8); vx = (s.tx - s.x) * 4; vz = (s.tz - s.z) * 4; s.x += (s.tx - s.x) * k; s.z += (s.tz - s.z) * k; } else {
     s.turn -= dt;
     if (s.turn < 0) { s.turn = rnd(1.5, 4); const a = Math.atan2(s.hz - s.z, s.hx - s.x) + rnd(-1.5, 1.5), far = Math.hypot(s.hx - s.x, s.hz - s.z) > 9; const sp = Math.random() < .3 ? 0 : rnd(.4, .9); s.vx = Math.cos(far ? Math.atan2(s.hz - s.z, s.hx - s.x) : a) * sp; s.vz = Math.sin(far ? Math.atan2(s.hz - s.z, s.hx - s.x) : a) * sp; }
     if (s.flee > 0) { s.flee -= dt; vx = dx / (dist || 1) * 2.5; vz = dz / (dist || 1) * 2.5; }
     const nx = s.x + vx * dt, nz = s.z + vz * dt, nh = H(nx, nz);
     if (nh > -.1 && Math.abs(nh - H(s.x, s.z)) < .5 && Math.hypot(nx, nz) > WS_R + 1) { s.x = nx; s.z = nz; } else s.turn = 0;
-    s.cool = Math.max(0, s.cool - dt); s.sq = Math.max(0, s.sq - dt * 3); }
+    }
     const ph = Math.abs(Math.sin(s.ph)), cool = s.cool > 0, moving = Math.hypot(vx, vz) > .05, hop = cool || !moving ? Math.abs(Math.sin(s.ph * .5)) * .05 : ph * .45, b = s.m.userData.body;
-    s.happy = Math.max(0, (s.happy || 0) - dt); s.m.position.set(s.x, G(s.x, s.z), s.z); b.position.y = hop + .02 + (s.happy > 0 ? Math.sin(s.happy / .6 * Math.PI) * .9 : 0);
+    s.m.position.set(s.x, G(s.x, s.z), s.z); b.position.y = hop + .02 + (s.happy > 0 ? Math.sin(s.happy / .6 * Math.PI) * .9 : 0);
     const k = cool ? .75 : 1, wob = Math.sin(t * 5 + s.ph) * .02;
     b.scale.set(.95 * k * (1 + s.sq * .25 + wob), .85 * k * (1 - s.sq * .3 - wob + (moving && !cool ? ph * .06 - (1 - ph) * .08 : 0)), .95 * k * (1 + s.sq * .25 + wob));
-    b.material.opacity = cool ? .5 : .88;
+    b.material.opacity = cool ? .55 : .88; if (b.userData.base) b.material.color.copy(b.userData.base).lerp(SLIME_GREY, cool ? .6 : 0);
     const want = dist < 7 ? Math.atan2(-dx, -dz) : (moving ? Math.atan2(vx, vz) : s.yaw); let d = want - s.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); s.yaw += d * Math.min(1, dt * 4); s.m.rotation.y = s.yaw;
     s.blink -= dt; s.m.userData.eyes.scale.y = s.blink < .12 ? .15 : (cool ? .35 : 1); if (s.blink < 0) s.blink = rnd(2, 5);
     const u = s.m.userData; if (u.halo) { u.halo.rotation.z = t; u.halo.position.y = 1.7 + hop + Math.sin(t * 2) * .05; }
     if (u.flame) { u.flame.scale.set(1 + Math.sin(t * 13 + s.ph) * .15, 1 + Math.sin(t * 9 + s.ph) * .3, 1); }
     if (u.orbit) u.orbit.rotation.y = t * 1.5;
+    if (u.pips) {
+      const show = s.cool > 0 || s.hits > 0; u.pips.g.visible = show;
+      if (show) { u.pips.g.position.y = 1.32 + hop; u.pips.g.rotation.y = Math.atan2(P.x - s.x, P.z - s.z) - s.yaw; const n = s.cool > 0 ? Math.ceil(s.cool / 6 * 3) : s.hits, c = s.cool > 0 ? '#93c5fd' : '#fde047'; u.pips.m.forEach((m, i) => m.material.color.set(i < n ? c : '#334155')); }
+    }
   });
 }
-function slimeHitCore(sl) { if (sl.cool > 0) return { res: 'shy' }; sl.hits++; sl.sq = 1; sl.flee = .35; if (sl.hits >= 3) { sl.cool = 6; sl.hits = 0; sl.happy = .6; return { res: 'harvest' }; } return { res: 'hit', hits: sl.hits }; }
+function slimeHitCore(sl) { if (sl.cool > 0) return { res: 'shy' }; sl.hits++; sl.sq = 1; sl.since = 0; if (sl.hits >= 3) { sl.cool = 6; sl.hits = 0; sl.happy = .6; return { res: 'harvest' }; } return { res: 'hit', hits: sl.hits }; }
 function hitSlime(sl) { if (sl.mirror) { netSend({ t: 'hit', id: sl.id }); sl.sq = 1; sfx.squish(.5); return; } applyHit(sl, slimeHitCore(sl)); }
 function applyHit(sl, r) {
   const top = sl.m.position.clone().setY(sl.m.position.y + 1.6);
-  if (r.res === 'shy') { fx3(top, '害羞中…', '#cbd5e1'); return; }
+  if (r.res === 'shy') { fx3(top, `休息中，${Math.max(1, Math.ceil(sl.cool || 0))} 秒後恢復`, '#93c5fd'); return; }
   sfx.squish(.8); if (navigator.vibrate) navigator.vibrate(8);
   if (r.res === 'harvest') { sl.happy = .6; const n = 1 + S.up.net; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big'); sfx.pop(); if (W.C) { W.cFloor = sl.m.position.y + .05; W.C.emit(sl.m.position.clone().setY(sl.m.position.y + .9), 26, sl.sp.color, true); } toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠`); renderHotbar(true); }
   else fx3(top, `${short(sl.sp.id)} ${r.hits}/3`, RAR[sl.sp.rar].c);
@@ -1104,7 +1122,8 @@ let P = null;
 const KEYS = new Set(), IN = { joy: null, jx: 0, jy: 0, run: false, look: null, drag: null };
 const SENS = [.0016, .0025, .0038], SENS_N = ['低', '中', '高'];
 function initPlayer() {
-  const sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
+  let sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
+  if (!inCity(sp.x) && !regionOK(sp.x, sp.z)) sp = { x: 0, z: 16, yaw: 0 };
   P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0 };
 }
 const locked = () => document.pointerLockElement === $('#worldCv');
@@ -1169,17 +1188,28 @@ function bindInput() {
   addEventListener('resize', resizeWorld);
 }
 function jump() { if (P.ground) { P.vy = 7.2; P.ground = false; } }
+/* 區域保護：山脊只能從隘口通過；山脊外只能進入已解鎖的區域；火山口不能進入 */
+function regionOK(x, z) {
+  const ox = x / K, oz = z / K, ax = Math.abs(ox), az = Math.abs(oz), r = Math.max(ax, az);
+  if (Math.hypot(ox, oz + 130) < 5.3) return false;
+  if (r < 49) return true;
+  const ew = ax >= az, side = ew ? (ox > 0 ? 'coast' : 'snow') : (oz < 0 ? 'volcano' : null), lateral = ew ? az : ax;
+  if (r <= 58) return !!side && lateral < 7;
+  if (Math.abs(ax - az) < 9) return false;
+  return !!side && S.zones.includes(side);
+}
 function tryMove(dx, dz) {
   let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z), h1 = G(nx, nz), d = Math.hypot(dx, dz) || 1e-6;
-  if (h1 < -1.3) return false;
+  if (h1 < -2.2) return false;
   const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7);
-  if ((ha - h0) / .7 > 1.7 && ha > P.y + .7) return false;
+  if ((ha - h0) / .7 > 1.1) return false;
+  if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) return false;
   for (const c of colsNear(nx, nz)) {
     if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
   }
   if (inCity(nx)) { if (Math.abs(nx - CITY.x) > 58 || Math.abs(nz - CITY.z) > 30) return false; }
-  else if (Math.max(Math.abs(nx), Math.abs(nz)) > 125 * K) return false;
+  else if (Math.max(Math.abs(nx), Math.abs(nz)) > 178 * K) return false;
   P.x = nx; P.z = nz; return true;
 }
 function playerStep(dt) {
@@ -1233,14 +1263,14 @@ function pickAt(ndcX, ndcY) {
 function targetLabel(t) {
   if (!t) return '';
   const key = TOUCH ? '' : '<kbd>E</kbd>';
-  if (t.type === 'slime') { const s = t.sl; return `${key}${s.sp.name} <span style="color:${RAR[s.sp.rar].c}">${RAR[s.sp.rar].n}</span>${s.cool > 0 ? ' · 害羞中' : ` · 採集 ${s.hits}/3`}`; }
+  if (t.type === 'slime') { const s = t.sl; return `${key}${s.sp.name} <span style="color:${RAR[s.sp.rar].c}">${RAR[s.sp.rar].n}</span>${s.cool > 0 ? ` · 休息中 ${Math.ceil(s.cool)} 秒` : ` · 採集 ${s.hits}/3`}`; }
   if (t.type === 'station') return `${key}使用${t.it.name}`;
   if (t.type === 'gate') return `能量門 · 需解開「${GATES[t.it.id].title}」`;
   if (t.type === 'puzzle') return `${key}${t.it.name}`;
   return '';
 }
-function act() { if (GUI.kind || !W.ready) return; doAct(TARGET); }
-function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); doAct(t); }
+function act() { if (GUI.kind || !W.ready) return; VM.swing = .35; doAct(TARGET); }
+function actAt(x, y) { VM.swing = .35; const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); doAct(t); }
 function doAct(t) {
   if (!t) return;
   if (t.type === 'slime') hitSlime(t.sl);
@@ -1855,7 +1885,7 @@ function netEmit(m) { if (!NET.on) return; m.from = NET.me; m.name = NET.name; i
 function bcast(m, except) { NET.conns.forEach((c, id) => { if (id !== except && c.open) { try { c.send(m); } catch (_) { } } }); }
 function myState() {
   const p = stockById(L.stageId);
-  return { t: 'st', name: NET.name, color: NET.color, x: +(P ? P.x : 0).toFixed(2), y: +(P ? P.y : 0).toFixed(2), z: +(P ? P.z : 0).toFixed(2), yaw: +(P ? P.yaw : 0).toFixed(2), zones: S.zones, live: L.on ? { on: true, hype: Math.round(L.hype), viewers: Math.round(L.viewers), sp: p ? p.sp : null } : null };
+  return { t: 'st', name: NET.name, color: NET.color, x: +(P ? P.x : 0).toFixed(2), y: +(P ? P.y : 0).toFixed(2), z: +(P ? P.z : 0).toFixed(2), yaw: +(P ? P.yaw : 0).toFixed(2), zones: S.zones, live: L.on ? { on: true, hype: Math.round(L.hype), viewers: Math.round(L.viewers), sp: p ? p.sp : null } : null, held: P ? heldKey() : '' };
 }
 function hostRecv(id, m) {
   if (!m || typeof m !== 'object') return;
@@ -1900,7 +1930,7 @@ function netTick(dt) {
   if (NET.host) {
     NET.players.set(NET.me, Object.assign(st, { id: NET.me }));
     bcast({ t: 'ps', p: Object.fromEntries(NET.players) });
-    if (NET.conns.size) bcast({ t: 'sl', a: W.slimes.map(s => [s.id, SPECIES.indexOf(s.sp), +s.x.toFixed(2), +s.z.toFixed(2), s.cool > 0 ? 1 : 0, s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0]) });
+    if (NET.conns.size) bcast({ t: 'sl', a: W.slimes.map(s => [s.id, SPECIES.indexOf(s.sp), +s.x.toFixed(2), +s.z.toFixed(2), +s.cool.toFixed(1), s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0]) });
   } else if (NET.hc && NET.hc.open) NET.hc.send(st);
 }
 function mirrorSlimes(a) {
@@ -1909,7 +1939,7 @@ function mirrorSlimes(a) {
   a.forEach(([id, si, x, z, cool, hits, sq, sc, happy]) => {
     seen.add(id); let s = byId.get(id);
     if (!s) { const sp = SPECIES[si] || SPECIES[0], m = slimeMesh(sp); s = { id, sp, m, mirror: true, x, z, tx: x, tz: z, ph: rnd(0, 6), hits: 0, cool: 0, sq: 0, blink: rnd(1, 4), yaw: 0, sc: sc / 100, vx: 0, vz: 0 }; m.scale.setScalar(s.sc); m.userData.body.userData.sl = s; W.scene.add(m); W.slimes.push(s); }
-    s.tx = x; s.tz = z; s.cool = cool ? 1 : 0; s.hits = hits; if (sq) s.sq = 1; if (happy && !(s.happy > 0)) s.happy = .6;
+    s.tx = x; s.tz = z; s.cool = +cool || 0; s.hits = hits; if (sq) s.sq = 1; if (happy && !(s.happy > 0)) s.happy = .6;
   });
   W.slimes = W.slimes.filter(s => { if (seen.has(s.id)) return true; W.scene.remove(s.m); return false; });
 }
@@ -1940,6 +1970,11 @@ function avatarsStep(dt) {
       const g = avatarMesh(p.color || '#22d3ee'), tag = textSprite(p.name || '玩家', p.color || '#22d3ee'); tag.position.y = 2.3; tag.scale.set(1.8, .56, 1); g.add(tag);
       const lt = textSprite('LIVE 直播中', '#fb7185'); lt.position.y = 2.85; lt.scale.set(1.7, .53, 1); lt.visible = false; g.add(lt);
       g.position.set(p.x, p.y, p.z); W.scene.add(g); a = { g, lt, x: p.x, y: p.y, z: p.z, yaw: p.yaw, wasLive: false, bob: 0 }; AV.set(id, a);
+    }
+    if (a.heldKey !== (p.held || '')) {
+      a.heldKey = p.held || ''; if (a.hm) { a.g.remove(a.hm); a.hm.geometry.dispose(); a.hm.material.dispose(); a.hm = null; }
+      if (a.heldKey) { const sp = SPECIES[+a.heldKey.slice(1)] || SPECIES[0], mat = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .12, clearcoat: 1, transparent: true, opacity: .9 });
+        a.hm = mesh(a.heldKey[0] === 'p' ? new THREE.BoxGeometry(.2, .2, .2) : new THREE.SphereGeometry(.11, 14, 10), mat, .42, .95, -.3, a.g); }
     }
     const k = Math.min(1, dt * 10), ox = a.x, oz = a.z; a.x += (p.x - a.x) * k; a.y += (p.y - a.y) * k; a.z += (p.z - a.z) * k;
     let d = p.yaw - a.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); a.yaw += d * k;
@@ -2158,6 +2193,37 @@ function bindTouch(cv) {
   cv.addEventListener('touchend', end); cv.addEventListener('touchcancel', end);
 }
 
+/* ============================================================
+   第一人稱手持：快捷列選到捏捏或凝膠時，畫面右下角顯示拿在手上
+   ============================================================ */
+const VM = { g: null, key: '', swing: 0 };
+function initViewModel() {
+  if (W.cam.parent !== W.scene) W.scene.add(W.cam);
+  const g = VM.g = new THREE.Group(); W.cam.add(g); g.position.set(.36, -.27, -.78); g.scale.setScalar(.72);
+  const skin = new THREE.MeshStandardMaterial({ color: '#f5c9a8', roughness: .6 }), sleeve = new THREE.MeshStandardMaterial({ color: '#22d3ee', roughness: .55 });
+  const arm = new THREE.Group(); arm.rotation.set(-.3, .3, .12); g.add(arm);
+  const fd = new THREE.Vector3(.3, -.55, .78).normalize(), fore = mesh(new THREE.CylinderGeometry(.045, .06, .9, 14), sleeve, fd.x * .48, -.06 + fd.y * .48, .02 + fd.z * .48, arm); fore.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), fd);
+  const hand = mesh(new THREE.SphereGeometry(.06, 16, 12), skin, 0, -.05, .02, arm); hand.scale.set(1.15, .75, 1.3);
+  mesh(new THREE.SphereGeometry(.024, 10, 8), skin, -.06, -.025, -.01, arm).scale.set(1, 1.7, 1);
+  VM.hold = new THREE.Group(); VM.hold.position.set(0, .02, -.01); arm.add(VM.hold);
+  VM.J = makeJelly(6, true); VM.J.ov.visible = false; VM.J.group.scale.setScalar(.065); VM.J.group.position.y = .04; VM.hold.add(VM.J.group);
+  VM.gel = mesh(new THREE.SphereGeometry(.065, 20, 14), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1, transparent: true, opacity: .88 }), 0, .03, 0, VM.hold); VM.gel.scale.set(1, .72, 1);
+  g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
+  g.visible = false;
+}
+function heldKey() { const it = held(); return it ? (it.t === 'prod' ? 'p' : 'g') + SPECIES.indexOf(SP[it.t === 'prod' ? it.p.sp : it.sp]) : ''; }
+function viewModelStep(dt) {
+  if (!VM.g) initViewModel();
+  const it = held(), show = !!it && !GUI.kind && !TITLE.on; VM.g.visible = show; if (!show) { VM.key = ''; return; }
+  const key = it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp;
+  if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .35); const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; VM.J.group.visible = it.t === 'prod'; VM.gel.visible = it.t === 'gel'; if (it.t === 'prod') jellyColors(VM.J, sp); else VM.gel.material.color.set(sp.color); }
+  VM.swing = Math.max(0, VM.swing - dt * 2.2);
+  const mv = P.ground && (IN.jx || IN.jy || ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].some(k => KEYS.has(k))) ? 1 : 0;
+  const bx = Math.sin(P.bob * .5) * .012 * mv, by = Math.abs(Math.cos(P.bob * .5)) * .014 * mv, sw = Math.sin(VM.swing / .35 * Math.PI);
+  VM.g.position.set(.36 + bx, -.27 - by - sw * .05, -.78 + sw * .04); VM.g.rotation.set(sw * .45, 0, -sw * .2);
+  VM.J.group.rotation.y += dt * .7; VM.gel.rotation.y += dt * .7;
+}
+
 /* ---------- 主迴圈 ---------- */
 let lastT = performance.now(), secAcc = 0, webAcc = 0, farmAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
 const tmpC = new THREE.Color(), tmpC2 = new THREE.Color(), tmpV = new THREE.Vector3();
@@ -2171,7 +2237,7 @@ function envStep(dt) {
 }
 function worldStep(dt) {
   W.t += dt; if (!GUI.kind) playerStep(dt);
-  slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); avatarsStep(dt);
+  slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
   if (W.C) W.C.update(dt, W.cFloor || 0);
   for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position)); s.material.opacity = o; s.visible = o > .02; }
   if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = targetLabel(TARGET); $('#prompt').innerHTML = lbl; $('#cross').classList.toggle('on', !!TARGET); }
