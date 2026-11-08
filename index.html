@@ -130,14 +130,23 @@
 
 <div id="modal" hidden><div class="mbox" id="mbox"></div></div>
 <div id="login" hidden>
-  <div class="mbox">
-    <h2>SQUISH LAB</h2>
-    <p>請輸入登入碼進入遊戲</p>
-    <input id="loginCode" type="password" autocomplete="off" placeholder="登入碼" style="width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:inherit;font-size:16px">
-    <div id="loginMsg" class="small" style="color:var(--red);min-height:20px;margin-top:6px"></div>
-    <div class="row"><button class="btn" id="loginBtn">進入</button></div>
+  <div class="login-card">
+    <div class="lslime" aria-hidden="true"><i></i><i></i><em></em><em></em></div>
+    <div class="lshadow" aria-hidden="true"></div>
+    <div class="lkicker">SQUISH LAB</div>
+    <h1>史萊姆捏捏工坊</h1>
+    <p class="lsub">走進月光谷，採集、加工、直播你的酥脆捏捏</p>
+    <form id="loginForm" autocomplete="off">
+      <div class="lfield">
+        <input id="loginCode" type="password" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="輸入遊玩金鑰" aria-label="遊玩金鑰">
+        <button type="button" id="loginEye" aria-label="顯示或隱藏金鑰">👁</button>
+      </div>
+      <button class="btn big" id="loginBtn" type="submit">進入工坊</button>
+    </form>
+    <div id="loginMsg" class="lmsg" role="alert"></div>
   </div>
 </div>
+<div id="boot" hidden><div class="bootc"><div class="spin"></div><div id="bootTxt">正在生成月光谷…</div></div></div>
 <script src="vendor/three.min.js"></script>
 <script src="gate.js"></script>
 </body>

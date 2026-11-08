@@ -22,6 +22,8 @@ function rgba(h, a = 1, mix = 0) {
 function seeded(seed) { let s = (seed * 9301 + 49297) % 233280; return () => (s = (s * 9301 + 49297) % 233280) / 233280; }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const dot = c => `<i class="dot" style="background:${c}"></i>`;
+// 只有內容真的改變時才重繪 DOM，避免點擊被吞掉、輸入框被覆蓋
+function setHTML(el, h) { if (el && el._h !== h) { el._h = h; el.innerHTML = h; } }
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const TOUCH = matchMedia('(pointer:coarse)').matches || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
 const LOW = TOUCH || Math.min(screen.width, screen.height) < 700;
@@ -89,12 +91,39 @@ function fresh() {
     pos: null, hb: 0, sens: 1, q: null,
   };
 }
+// 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
+function sanitize(o) {
+  const s = Object.assign(fresh(), o, { up: Object.assign(fresh().up, o.up) });
+  const arr = v => Array.isArray(v) ? v : [], obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  for (const k in s.up) { if (!UPS[k]) delete s.up[k]; else s.up[k] = clamp(Math.floor(+s.up[k] || 0), 0, UPS[k].max); }
+  ['money', 'fans', 'earned', 'workers', 'auto', 'rep', 'sales'].forEach(k => { s[k] = +s[k]; if (!isFinite(s[k]) || s[k] < 0) s[k] = 0; });
+  const fixP = p => { p.crisp = clamp(+p.crisp || .5, 0, 1); p.dur = clamp(isFinite(+p.dur) ? +p.dur : 100, 0, 100); p.deco = arr(p.deco).filter(d => d && DECO[d.k]).slice(0, 6); p.cracks = arr(p.cracks).filter(Array.isArray).slice(-30); return p; };
+  const okP = p => p && typeof p === 'object' && SP[p.sp] && isFinite(+p.id);
+  s.stock = arr(s.stock).filter(okP).map(fixP); s.web = arr(s.web).filter(okP).map(fixP);
+  const ids = new Set(); let maxId = 0;
+  for (const p of [...s.stock, ...s.web]) { p.id = Math.floor(+p.id); if (ids.has(p.id)) p.id = -1; else ids.add(p.id); maxId = Math.max(maxId, p.id); }
+  s.nextId = Math.max(Math.floor(+s.nextId) || 1, maxId + 1); for (const p of [...s.stock, ...s.web]) if (p.id < 0) p.id = s.nextId++;
+  s.gel = Object.fromEntries(Object.entries(obj(s.gel)).filter(([k, v]) => SP[k] && +v >= 0).map(([k, v]) => [k, Math.floor(+v)]));
+  s.zones = [...new Set(['forest', ...arr(s.zones).filter(z => ZONES.some(x => x.id === z))])];
+  s.packs = [...new Set(['base', ...arr(s.packs).filter(k => PACKS[k])])];
+  s.price = { live: Object.assign({}, obj(obj(s.price).live)), web: Object.assign({}, obj(obj(s.price).web)) };
+  s.codex = obj(s.codex); s.regulars = obj(s.regulars);
+  s.rate = arr(s.rate).filter(n => n >= 1 && n <= 5).slice(-40); if (!s.rate.length) s.rate = [4, 4, 5];
+  s.reviews = arr(s.reviews).filter(v => v && REVIEWS[v.s]).slice(0, 8);
+  s.contracts = arr(s.contracts).filter(c => c && (c.sp === 'any' || SP[c.sp]) && isFinite(+c.dl));
+  s.customers = arr(s.customers).filter(c => c && SP[c.sp] && isFinite(+c.dl));
+  if (s.branch && !BRANCHES[s.branch]) s.branch = null;
+  if (s.pos && !(Number.isFinite(s.pos.x) && Number.isFinite(s.pos.z) && Number.isFinite(s.pos.yaw))) s.pos = null;
+  s.hb = clamp(Math.floor(+s.hb) || 0, 0, 8); s.sens = clamp(Math.floor(+s.sens) || 0, 0, 2);
+  if (s.mk && !(SP[s.mk.sp] && s.mk.step >= 0 && s.mk.step < 3 && Array.isArray(s.mk.prec) && s.mk.prec.length === s.mk.step)) s.mk = null;
+  return s;
+}
 function load() {
-  try { const o = JSON.parse(localStorage.getItem(SAVE_KEY)); if (o) return Object.assign(fresh(), o, { up: Object.assign(fresh().up, o.up) }); } catch (e) { }
+  try { const o = JSON.parse(localStorage.getItem(SAVE_KEY)); if (o && typeof o === 'object') return sanitize(o); } catch (e) { console.warn('存檔讀取失敗，將開始新遊戲', e); }
   return null;
 }
-let S = load() || fresh();
-function save() { S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } }
+let S = load() || fresh(), resetting = false;
+function save() { if (resetting) return; S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { } }
 
 /* ---------- 經濟公式 ---------- */
 const trend = { sp: null };
@@ -118,7 +147,8 @@ let AC = null, NB = null, master = null;
 function audio() {
   if (!AC) {
     AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .2; comp.connect(AC.destination);
+    master = AC.createGain(); master.gain.value = 0.9; master.connect(comp);
     NB = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); const d = NB.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   if (AC.state === 'suspended') AC.resume(); return AC;
@@ -145,6 +175,10 @@ const sfx = {
   tick() { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, 0.05, 2500, 2, 0.2); },
   step() { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, .06, rnd(300, 600), 1, .05, 'lowpass'); },
   open() { if (!S.sound) return; const t = audio().currentTime; tone(520, t, .12, .08, 'triangle'); tone(780, t + .06, .15, .08, 'triangle'); },
+  coin() { if (!S.sound) return; const t = audio().currentTime; tone(1318.5, t, .12, .1, 'triangle'); tone(1975.5, t + .07, .3, .1, 'triangle'); },
+  level() { if (!S.sound) return; const t = audio().currentTime; [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, t + i * .07, .28, .09, 'triangle')); },
+  perfect() { if (!S.sound) return; const t = audio().currentTime; tone(1046.5, t, .2, .08); tone(1568, t + .08, .4, .08); },
+  bad() { if (!S.sound) return; const t = audio().currentTime; tone(240, t, .2, .07, 'triangle'); },
   machine(i) {
     if (!S.sound) return; const ac = audio(), t = ac.currentTime;
     if (i === 0) { noise(ac, t, 0.08, 5000, 4, 0.35, 'highpass'); tone(180, t, 0.08, 0.08, 'square'); }
@@ -159,11 +193,16 @@ function toast(msg) {
   setTimeout(() => d.classList.add('old'), 6000); setTimeout(() => d.remove(), 6700);
   while (box.children.length > 6) box.firstChild.remove();
 }
-function modal(html, btns = [{ t: '好' }]) {
-  $('#mbox').innerHTML = html + '<div class="row" id="mbtns"></div>';
-  btns.forEach(b => {
-    const e = document.createElement('button'); e.className = 'btn' + (b.ghost ? ' ghost' : ''); e.textContent = b.t;
-    e.onclick = () => { $('#modal').hidden = true; b.f && b.f(); if (!GUI.kind) lockMouse(); }; $('#mbtns').appendChild(e);
+// 彈窗佇列：同時觸發多個彈窗時依序顯示，不會互相覆蓋
+const MQ = []; let mOpen = false;
+function modal(html, btns = [{ t: '好' }]) { MQ.push({ html, btns }); if (!mOpen) nextModal(); }
+function nextModal() {
+  const m = MQ.shift();
+  if (!m) { mOpen = false; $('#modal').hidden = true; if (!GUI.kind) lockMouse(); return; }
+  mOpen = true; $('#mbox').innerHTML = m.html + '<div class="row" id="mbtns"></div>';
+  m.btns.forEach(b => {
+    const e = document.createElement('button'); e.className = 'btn' + (b.ghost ? ' ghost' : '') + (b.red ? ' red' : ''); e.textContent = b.t;
+    e.onclick = () => { mOpen = false; $('#modal').hidden = true; try { b.f && b.f(); } finally { if (!mOpen) nextModal(); } }; $('#mbtns').appendChild(e);
   });
   unlockMouse(); $('#modal').hidden = false;
 }
@@ -252,7 +291,7 @@ function textSprite(txt, color = '#e6edf5', sub = '') {
   g.fillStyle = color; g.font = 'bold 60px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 256, sub ? 64 : 80);
   if (sub) { g.fillStyle = '#8b9bb0'; g.font = '34px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.fillText(sub, 256, 118); }
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false })); s.scale.set(2.4, .75, 1); return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false, transparent: true })); s.scale.set(2.4, .75, 1); W.labels.push(s); return s;
 }
 
 /* ---------- 酥脆捏捏（裝飾桌／直播台的特寫用） ---------- */
@@ -331,16 +370,16 @@ function jellyDeform(J, dt, hit, s) {
   for (const g of J.groups) { let x = 0, y = 0, z = 0; for (const i of g) { x += nm.getX(i); y += nm.getY(i); z += nm.getZ(i); } const l = Math.hypot(x, y, z) || 1; for (const i of g) nm.setXYZ(i, x / l, y / l, z / l); }
   nm.needsUpdate = true;
 }
-function makeCrumbs(scene, N = 200) {
+function makeCrumbs(scene, N = 200, size = .07) {
   const geo = new THREE.BufferGeometry(), pos = new Float32Array(N * 3).fill(-50), col = new Float32Array(N * 3);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: .07, vertexColors: true, transparent: true, depthWrite: false })); pts.frustumCulled = false; scene.add(pts);
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size, vertexColors: true, transparent: true, depthWrite: false })); pts.frustumCulled = false; scene.add(pts);
   const C = { pts, pos, col, vel: new Float32Array(N * 3), life: new Float32Array(N), k: 0, N };
-  C.emit = (p, n, color) => {
+  C.emit = (p, n, color, sym) => {
     const c = new THREE.Color(color), w = new THREE.Color('#ffffff');
     for (let j = 0; j < n; j++) {
       const i = C.k = (C.k + 1) % N; C.life[i] = 1; C.pos[i * 3] = p.x; C.pos[i * 3 + 1] = p.y; C.pos[i * 3 + 2] = p.z;
-      C.vel[i * 3] = rnd(-2, 2); C.vel[i * 3 + 1] = rnd(1, 4); C.vel[i * 3 + 2] = rnd(-.5, 2.5);
+        C.vel[i * 3] = rnd(-2, 2); C.vel[i * 3 + 1] = rnd(1, 4); C.vel[i * 3 + 2] = sym ? rnd(-2, 2) : rnd(-.5, 2.5);
       const cc = Math.random() < .5 ? w : c.clone().lerp(w, .4); C.col[i * 3] = cc.r; C.col[i * 3 + 1] = cc.g; C.col[i * 3 + 2] = cc.b;
     }
     geo.attributes.color.needsUpdate = true;
@@ -356,9 +395,14 @@ function makeCrumbs(scene, N = 200) {
   };
   return C;
 }
+function popAt(wrap, cx, cy, txt, col) {
+  if (!wrap) return; const b = wrap.getBoundingClientRect(), e = document.createElement('div'); e.className = 'popw'; e.textContent = txt; e.style.color = col;
+  e.style.left = (cx - b.left + rnd(-34, 34)) + 'px'; e.style.top = (cy - b.top - rnd(12, 40)) + 'px'; wrap.appendChild(e); setTimeout(() => e.remove(), 800);
+  const all = wrap.querySelectorAll('.popw'); if (all.length > 5) all[0].remove();
+}
 /* 特寫舞台（裝飾桌／直播台），延遲初始化 */
 function makeStage(cv, mode) {
-  const st = { cv, mode, ready: false, p: null, shown: undefined, t: 0, ptr: null, sel: -1, drag: null, spin: null, onCrunch: null, onSel: null, sq: 0, sqv: 0, flash: 0, hit: new THREE.Vector3() };
+  const st = { cv, mode, ready: false, p: null, shown: undefined, t: 0, ptr: null, sel: -1, drag: null, spin: null, onCrunch: null, onSel: null, onFlat: null, sq: 0, sqv: 0, flash: 0, hit: new THREE.Vector3() };
   st.init = () => {
     if (st.ready) return true;
     try { st.v = makeView(cv, mode === 'squeeze' ? '#0c0a18' : '#0b1220', 36); } catch (e) { toast('此裝置不支援 WebGL'); return false; }
@@ -405,12 +449,15 @@ function makeStage(cv, mode) {
       }
       if (st.spin) st.J.group.rotation.y = st.spin.r + (e.clientX - st.spin.x) * .01;
     });
-    const up = () => { st.ptr = null; st.drag = null; st.spin = null; };
-    cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+    // 快速點一下也要能捏出聲音（原本按住不到 0.14 秒不會觸發）
+    cv.addEventListener('pointerup', () => { if (st.ptr && !st.ptr.fired && mode === 'squeeze') st.crunchAt(); if (st.drag) save(); st.ptr = null; st.drag = null; st.spin = null; });
+    cv.addEventListener('pointercancel', () => { st.ptr = null; st.drag = null; st.spin = null; });
   }
   function setHit(h) { st.hit.copy(st.J.mesh.worldToLocal(h.point.clone())); st.ptr.uv = h.uv ? h.uv.clone() : new THREE.Vector2(.5, .5); st.ptr.world = h.point.clone(); }
   st.crunchAt = () => {
-    const p = st.p, q = st.ptr; if (!p || !q) return; if (p.dur <= 0) { sfx.squish(1); return; }
+    const p = st.p, q = st.ptr; if (!p || !q) return;
+    if (p.dur <= 0) { sfx.squish(1); popAt(cv.parentElement, q.px, q.py, '扁扁…', '#94a3b8'); st.onFlat && st.onFlat(); return; }
+    if (mode === 'squeeze') popAt(cv.parentElement, q.px, q.py, pick(['喀滋', '咔嚓', '啵滋', '喀啦', '酥～']), pick(['#fde047', '#22d3ee', '#f0abfc', '#ffffff']));
     const eff = effCrisp(p); sfx.crunch(.6 + eff * .6, eff); if (navigator.vibrate) navigator.vibrate(12); p.dur = Math.max(0, p.dur - 2.2);
     let u = q.uv.x, v = q.uv.y, a = rnd(0, PI2); const cr = [u, v];
     for (let k = 0; k < 4; k++) { a += rnd(-.8, .8); const l = rnd(.03, .08); u += Math.cos(a) * l; v += Math.sin(a) * l; cr.push(u, v); }
@@ -468,7 +515,7 @@ function H(x, z) {
 const WS_R = 16.3, WS_Y = .45;
 function G(x, z) { const h = H(x, z); return Math.hypot(x, z) < WS_R ? Math.max(h, WS_Y) : h; }
 
-const W = { ready: false, anim: [], inter: [], t: 0, cols: new Map(), gates: {}, slimes: [], puz: [] };
+const W = { ready: false, anim: [], inter: [], t: 0, cols: new Map(), gates: {}, slimes: [], puz: [], labels: [] };
 function addCol(c) {
   const x0 = c.box ? c.box[0] : c.x - c.r, x1 = c.box ? c.box[2] : c.x + c.r, z0 = c.box ? c.box[1] : c.z - c.r, z1 = c.box ? c.box[3] : c.z + c.r;
   for (let i = Math.floor(x0 / 8); i <= Math.floor(x1 / 8); i++) for (let j = Math.floor(z0 / 8); j <= Math.floor(z1 / 8); j++) { const k = i + ',' + j; if (!W.cols.has(k)) W.cols.set(k, []); W.cols.get(k).push(c); }
@@ -494,6 +541,7 @@ function initWorld() {
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; varying float vh; void main(){ gl_FragColor = vec4(mix(bot, top, smoothstep(0.0, 0.45, vh)), 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
   buildTerrain(); buildWater(); buildProps(); buildWorkshop(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
+  W.C = makeCrumbs(sc, 180, .14);
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); W.ready = true; return true;
 }
 function buildTerrain() {
@@ -824,7 +872,7 @@ function buildPuzzles() {
     order.forEach((ci, i) => {
       const [x, z] = TIDE_SPOTS[i], g = new THREE.Group(); g.position.set(x, H(x, z), z); W0.add(g);
       const stn = mesh(jit(new THREE.DodecahedronGeometry(.7, 1), .25, i + 5), std('#64748b', { flatShading: true, roughness: .9 }), 0, .5, 0, g); stn.scale.set(1, 1.3, 1); stn.castShadow = !LOW;
-      g.userData.gem = mesh(new THREE.OctahedronGeometry(.25), new THREE.MeshStandardMaterial({ color: TIDE[ci].c, emissive: TIDE[ci].c, emissiveIntensity: .15, roughness: .2 }), 0, 1.55, 0, g);
+      g.userData.gem = mesh(new THREE.OctahedronGeometry(.25), new THREE.MeshStandardMaterial({ color: TIDE[ci].c, emissive: TIDE[ci].c, emissiveIntensity: q.tide.includes(ci) ? 1.8 : .15, roughness: .2 }), 0, 1.55, 0, g);
       addCol({ x, z, r: .8 }); add(g, { type: 'tide', c: ci, g }, '潮汐石', 1.2);
     });
   }
@@ -1021,7 +1069,8 @@ function hitSlime(sl) {
   sl.hits++; sl.sq = 1; sl.flee = .35; sfx.squish(.8); if (navigator.vibrate) navigator.vibrate(8);
   if (sl.hits >= 3) {
     const n = 1 + S.up.net; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); sl.cool = 6; sl.hits = 0;
-    fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color); sfx.pop(); toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠`); renderHotbar(true);
+    fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big'); sfx.pop(); toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠`); renderHotbar(true);
+    if (W.C) { W.cFloor = sl.m.position.y + .05; W.C.emit(sl.m.position.clone().setY(sl.m.position.y + .9), 26, sl.sp.color, true); }
   } else fx3(top, `${short(sl.sp.id)} ${sl.hits}/3`, RAR[sl.sp.rar].c);
 }
 
@@ -1045,7 +1094,7 @@ function bindInput() {
     const k = e.code; if (!$('#modal').hidden) return;
     if (k === 'Escape') { if (GUI.kind) closeGui(); return; }
     if (k === 'KeyI' || k === 'Tab') { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
-    if (GUI.kind) { if (k === 'Space' && GUI.kind === 'line' && M.active) { e.preventDefault(); stopBar(); } if (k === 'KeyE' && GUI.kind !== 'line') closeGui(); return; }
+    if (GUI.kind) { if (k === 'Space' && GUI.kind === 'line' && M.active) { e.preventDefault(); if (!e.repeat) stopBar(); } if (k === 'KeyE' && GUI.kind !== 'line' && !e.repeat) closeGui(); return; }
     KEYS.add(k); if (k === 'Space') e.preventDefault();
     if (k === 'KeyE' || k === 'KeyF') act();
     if (/^Digit[1-9]$/.test(k)) { S.hb = +k.slice(5) - 1; renderHotbar(true); }
@@ -1118,12 +1167,18 @@ function playerStep(dt) {
   if (moving) { P.stepT -= dt; if (P.stepT < 0) { P.stepT = run ? .3 : .42; sfx.step(); } }
   P.camY += (P.y - P.camY) * Math.min(1, dt * 18);
 }
-const LINE_VIEW = { p: new THREE.Vector3(0, WS_Y + 7.5, 6.5), t: new THREE.Vector3(0, WS_Y - 1.6, -6.5) };
+// 產線特寫鏡頭：放在天棚下方（原本在屋頂上方，畫面被屋頂整片擋住），
+// 並依畫面比例拉遠，讓整條產線出現在下方介面之上的區域
+function lineViewPose() {
+  const vf = W.cam.fov * Math.PI / 180, dist = clamp(9.6 / (Math.tan(vf / 2) * W.cam.aspect), 8, 19), y = WS_Y + 4.7;
+  const p = new THREE.Vector3(.4, y, -6.5 + dist), pitch = Math.atan2(y - (WS_Y + 1.5), dist) + vf * .24;
+  return { p, t: p.clone().add(new THREE.Vector3(0, -Math.sin(pitch), -Math.cos(pitch))) };
+}
 function cameraStep(dt) {
   const cam = W.cam;
   if (GUI.kind === 'line') {
-    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(LINE_VIEW.p, LINE_VIEW.t, new THREE.Vector3(0, 1, 0)));
-    cam.position.lerp(LINE_VIEW.p, Math.min(1, dt * 4)); cam.quaternion.slerp(q, Math.min(1, dt * 4)); W.camAway = true; return;
+    const v = lineViewPose(), q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(v.p, v.t, new THREE.Vector3(0, 1, 0)));
+    cam.position.lerp(v.p, Math.min(1, dt * 4)); cam.quaternion.slerp(q, Math.min(1, dt * 4)); W.camAway = true; return;
   }
   const bob = Math.sin(P.bob) * .045, target = new THREE.Vector3(P.x, P.camY + P.eye + bob, P.z);
   if (W.camAway) { cam.position.lerp(target, Math.min(1, dt * 6)); if (cam.position.distanceTo(target) < .05) W.camAway = false; } else cam.position.copy(target);
@@ -1179,9 +1234,9 @@ function renderHotbar(force) {
   $('#hotbar').innerHTML = Array.from({ length: 9 }, (_, i) => slotHTML(items[i], i, i === S.hb)).join('');
 }
 const held = () => invItems()[S.hb] || null;
-function fx3(pos, txt, color = '#fff') {
+function fx3(pos, txt, color = '#fff', cls = '') {
   const q = pos.clone().project(W.cam); if (q.z > 1) return;
-  const d = document.createElement('div'); d.className = 'fx'; d.textContent = txt; d.style.left = (q.x * .5 + .5) * innerWidth + 'px'; d.style.top = (-q.y * .5 + .5) * innerHeight + 'px'; d.style.color = color;
+  const d = document.createElement('div'); d.className = 'fx ' + cls; d.textContent = txt; d.style.left = (q.x * .5 + .5) * innerWidth + 'px'; d.style.top = (-q.y * .5 + .5) * innerHeight + 'px'; d.style.color = color;
   $('#fxl').appendChild(d); setTimeout(() => d.remove(), 1100);
 }
 function objective() {
@@ -1198,8 +1253,10 @@ function renderObjective() {
   const o = objective(), s = o.t + o.d; W.obj = o; if (s === objSig) return; objSig = s;
   $('#objective').innerHTML = `<b>目前目標</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>`;
 }
+let cmpSig = '';
 function renderCompass() {
-  const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .75, items = [];
+  const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .75, items = [], o0 = W.obj;
+  const sig = `${P.yaw.toFixed(3)}|${Math.round(P.x * 2)}|${Math.round(P.z * 2)}|${w}|${o0 && o0.x}|${o0 && o0.z}|${S.zones.length}`; if (sig === cmpSig) return; cmpSig = sig;
   const put = (ang, html, cls, color) => { let r = Math.atan2(Math.sin(ang - P.yaw), Math.cos(ang - P.yaw)); if (Math.abs(r) > range / 2) return; items.push(`<span class="cmk ${cls}" style="left:${(.5 - r / range) * w}px;${color ? 'color:' + color : ''}">${html}</span>`); };
   [['北', 0], ['西', Math.PI / 2], ['南', Math.PI], ['東', -Math.PI / 2]].forEach(([n, a]) => put(a, n, 'dir'));
   for (let a = 0; a < 24; a++) if (a % 6) put(a / 24 * PI2, '', 'tick');
@@ -1253,33 +1310,43 @@ function closeGui() {
 function refresh() { if (GUI.kind && tab) RENDER[tab](); renderTop(); renderHotbar(); }
 
 /* ---------- 加工 ---------- */
-const M = { sp: null, step: -1, pos: 0, dir: 1, spd: 1, c: .5, prec: [], active: false, last: null };
+const M = { sp: null, step: -1, pos: 0, dir: 1, spd: 1, c: .5, prec: [], active: false, last: null, lastStop: 0 };
+// 加工進度存檔：重新整理也不會白白損失凝膠
+function persistMake() { S.mk = M.active ? { sp: M.sp, step: M.step, prec: M.prec.slice() } : null; save(); }
 function zoneHalf(step) { return 0.12 + 0.03 * S.up[MKEY[step]]; }
 function startMake() {
   const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）');
   if (S.stock.length >= cap()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
-  S.gel[sp] -= 2; M.step = 0; M.prec = []; M.active = true; M.last = null; MK.bx = -6.4; nextStep(); renderHotbar(true); renderMake();
+  S.gel[sp] -= 2; M.step = 0; M.prec = []; M.active = true; M.last = null; MK.bx = -6.4; nextStep(); persistMake(); renderHotbar(true); renderMake();
 }
 function nextStep() { M.pos = 0; M.dir = 1; M.spd = 0.9 + 0.4 * M.step; M.c = rnd(.3, .7); }
 function stopBar() {
-  if (!M.active) return; const d = Math.abs(M.pos - M.c), w = zoneHalf(M.step);
+  if (!M.active) return; const now = performance.now(); if (now - M.lastStop < 180) return; M.lastStop = now;
+  const d = Math.abs(M.pos - M.c), w = zoneHalf(M.step);
   const pr = d <= w ? 0.85 + 0.15 * (1 - d / w) : Math.max(0, 0.85 * (1 - (d - w) / 0.4));
   M.prec.push(pr); sfx.machine(M.step); MK.pulse[M.step] = .7;
-  toast(`${STEPS[M.step]}：${pr > .95 ? '完美' : pr > .8 ? '很好' : pr > .5 ? '普通' : '偏了'}（${Math.round(pr * 100)}%）`); M.step++;
-  if (M.step >= 3) { M.active = false; const avg = M.prec.reduce((a, b) => a + b, 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg); S.stock.push(p); M.last = p; save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest(); }
-  else nextStep();
+  const lv = pr > .95 ? 0 : pr > .8 ? 1 : pr > .5 ? 2 : 3, word = ['完美！', '很好', '普通', '偏了…'][lv];
+  if (lv === 0) sfx.perfect(); else if (lv === 3) sfx.bad();
+  if (W.ready) fx3(new THREE.Vector3(MX[M.step], WS_Y + 3.6, -6.5), `${word} ${Math.round(pr * 100)}%`, ['#fde047', '#34d399', '#cbd5e1', '#fb7185'][lv], 'big');
+  toast(`${STEPS[M.step]}：${word}（${Math.round(pr * 100)}%）`); M.step++;
+  if (M.step >= 3) {
+    M.active = false; const avg = M.prec.reduce((a, b) => a + b, 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg); S.stock.push(p); M.last = p; S.mk = null; save();
+    setTimeout(() => sfx.level(), 350); renderHotbar(true); renderQuest();
+    if (p.crisp >= .9) toast(`極品捏捏！酥脆度 ${Math.round(p.crisp * 100)}%`);
+  } else { nextStep(); persistMake(); }
   renderMake();
 }
 function swatch(sp) { return sp.color2 ? `linear-gradient(135deg,${sp.color},${sp.color2})` : `radial-gradient(circle at 30% 30%,${rgba(sp.color, 1, .6)},${sp.color})`; }
 function renderMake() {
+  $('#machLegend').hidden = M.active; $('#gelPick').hidden = M.active;
   $('#machLegend').innerHTML = MKEY.map((k, i) => `<span class="mlg">${STEPS[i]} · ${UPS[k].name}<span class="lv">${[0, 1, 2, 3, 4].map(j => `<i class="${j < S.up[k] ? 'on' : ''}"></i>`).join('')}</span></span>`).join('');
   $('#gelPick').innerHTML = unlockedSpecies().map(s => `<button class="zbtn ${M.sp === s.id ? 'on' : ''}" data-act="pickSp" data-id="${s.id}" ${M.active ? 'disabled' : ''}>${dot(s.color)}${short(s.id)}<br><small>凝膠 ${S.gel[s.id] || 0}</small></button>`).join('');
   const mini = $('#mini');
   if (M.active) {
     const half = zoneHalf(M.step);
     mini.innerHTML = `<div class="steps">${STEPS.map((s, i) => `<span class="${i === M.step ? 'on' : i < M.step ? 'done' : ''}">${i + 1}. ${s}</span>`).join('')}</div>
-    <div class="bar"><div class="zone" style="left:${(M.c - half) * 100}%;width:${half * 200}%"></div><div class="cur" id="mcur"></div></div>
-    <button class="btn big" style="width:100%" data-act="stopBar">停機${TOUCH ? '' : '（空白鍵）'}</button>`;
+    <div class="bar" data-stop><div class="zone" style="left:${(M.c - half) * 100}%;width:${half * 200}%"></div><div class="cur" id="mcur"></div></div>
+    <button class="btn big" style="width:100%" data-stop>停機${TOUCH ? '' : '（空白鍵）'}</button>`;
   } else mini.innerHTML = `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`;
   const r = $('#makeResult');
   if (M.last && !M.active) { const p = M.last, pct = Math.round(p.crisp * 100); r.innerHTML = `<div class="card item" style="cursor:default"><div class="sw" style="background:${swatch(SP[p.sp])};width:52px;height:52px"></div><div class="grow"><b>${SP[p.sp].name} · 酥脆捏捏</b><br>酥脆度 <b style="color:var(--warn)">${pct}%</b>　${pct >= 90 ? '極品' : pct >= 70 ? '優良' : '再接再厲'}<br><small style="color:var(--sub)">已放入背包。可拿到裝飾桌加工，或到直播台販售。</small></div></div>`; }
@@ -1297,7 +1364,8 @@ const stockById = id => S.stock.find(p => p.id === +id);
 const decorSt = makeStage($('#decorCv'), 'decor'); const D = { id: null };
 decorSt.onSel = () => renderDecorTools();
 function renderDecor() {
-  const p = stockById(D.id) || null; if (!p) D.id = null; decorSt.set(p); setTimeout(decorSt.resize, 0);
+  if (!stockById(D.id)) D.id = S.stock.length ? S.stock[0].id : null;
+  const p = stockById(D.id) || null; decorSt.set(p); setTimeout(decorSt.resize, 0);
   $('#decorStock').innerHTML = S.stock.length ? S.stock.map(q => itemHTML(q, 'decoSel', D.id)).join('') : '<div class="empty">背包裡沒有捏捏，先到加工產線做一個吧。</div>';
   renderDecorTools();
 }
@@ -1322,13 +1390,17 @@ function chat(who, txt, cls) {
 liveSt.onCrunch = () => {
   if (!L.on) return; const now = performance.now(); L.combo = now - L.lastC < 1200 ? L.combo + 1 : 1; L.lastC = now; L.hype = Math.min(100, L.hype + 5 + Math.min(L.combo, 20) * .4);
   if (Math.random() < .4) chat(pick(NAMES), pick(CHAT_CRUNCH));
-  if (Math.random() < .05 * clamp(L.viewers / 30, .3, 2)) { const n = Math.round(rnd(5, 30) * (1 + L.combo / 10)); addMoney(n); S.fans += 0.3; sfx.tick(); const e = document.createElement('div'); e.className = 'don'; e.textContent = `${pick(NAMES)} 斗內 ${fmt(n)}`; $('#donate').appendChild(e); setTimeout(() => e.remove(), 3000); while ($('#donate').children.length > 3) $('#donate').firstChild.remove(); }
+  if (Math.random() < .05 * clamp(L.viewers / 30, .3, 2)) { const n = Math.round(rnd(5, 30) * (1 + L.combo / 10)); addMoney(n); S.fans += 0.3; sfx.coin(); if (L.ss) L.ss.tips += n; const e = document.createElement('div'); e.className = 'don'; e.textContent = `${pick(NAMES)} 斗內 ${fmt(n)}`; $('#donate').appendChild(e); setTimeout(() => e.remove(), 3000); while ($('#donate').children.length > 3) $('#donate').firstChild.remove(); }
   renderTop();
 };
+const bestStock = () => S.stock.slice().sort((a, b) => ((b.dur > 0) - (a.dur > 0)) || (effCrisp(b) - effCrisp(a)))[0];
+liveSt.onFlat = () => { const now = performance.now(); if (now - (L.flatWarn || 0) > 4000) { L.flatWarn = now; toast('這個捏捏已經被捏扁了，換一個上台吧'); } };
 function renderLive() {
-  if (L.stageId && !stockById(L.stageId)) L.stageId = null; liveSt.set(stockById(L.stageId) || null); setTimeout(liveSt.resize, 0);
+  if (!stockById(L.stageId)) { const b = bestStock(); L.stageId = b ? b.id : null; }
+  liveSt.set(stockById(L.stageId) || null); setTimeout(liveSt.resize, 0);
   $('#liveStock').innerHTML = S.stock.length ? S.stock.map(q => itemHTML(q, 'stageSel', L.stageId)).join('') : '<div class="empty">背包裡沒有捏捏，先到加工產線做一個。</div>';
-  $('#livePrice').innerHTML = priceTable('live'); $('#btnLive').textContent = L.on ? '結束直播' : '開始直播'; updateLiveHUD();
+  if (!$('#livePrice').contains(document.activeElement)) setHTML($('#livePrice'), priceTable('live'));
+  $('#btnLive').textContent = L.on ? '結束直播' : '開始直播'; $('#btnLive').classList.toggle('red', L.on); updateLiveHUD();
 }
 function updateLiveHUD() {
   $('#liveBadge').textContent = L.on ? 'LIVE' : 'OFF AIR'; $('#liveBadge').className = 'badge' + (L.on ? ' on' : '');
@@ -1341,9 +1413,12 @@ function reqMatch(p) { return L.req && (L.req.kind === 'sp' ? p.sp === L.req.sp 
 function liveSale(p) {
   let price = getPrice('live', p.sp), bonus = 1;
   if (reqMatch(p)) { bonus = 1.8; L.req = null; S.fans += 3; chat('系統', '指定任務完成！限時銷售成交！', 'dm'); }
-  const gain = price * bonus; addMoney(gain); S.sales++; S.fans += 1 + L.hype / 30; S.stock = S.stock.filter(q => q !== p); sfx.pop();
+  const gain = price * bonus; addMoney(gain); S.sales++; S.fans += 1 + L.hype / 30; S.stock = S.stock.filter(q => q !== p); sfx.coin();
+  if (L.ss) { L.ss.sales++; L.ss.income += gain; }
+  if (tab === 'live') popAt($('#liveWrap'), innerWidth / 2, $('#liveWrap').getBoundingClientRect().top + 70, `成交！${fmt(gain)}`, '#34d399');
   chat(pick(NAMES), `買了${short(p.sp)}捏捏！${fmt(gain)}`, 'dm'); toast(`直播成交 +${fmt(gain)}`);
-  const next = S.stock.slice().sort((a, b) => (reqMatch(b) - reqMatch(a)) || (effCrisp(b) - effCrisp(a)))[0]; L.stageId = next ? next.id : null;
+  const next = S.stock.slice().sort((a, b) => (reqMatch(b) - reqMatch(a)) || ((b.dur > 0) - (a.dur > 0)) || (effCrisp(b) - effCrisp(a)))[0]; L.stageId = next ? next.id : null;
+  if (!next) toast('背包裡的捏捏賣光了！回加工產線補貨吧');
   if (tab === 'live') renderLive(); renderTop(); renderHotbar(); save();
 }
 function updateLive(dt) {
@@ -1354,8 +1429,22 @@ function updateLive(dt) {
     if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(getPrice('live', p.sp), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
     L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); chat(pick(NAMES), pick(CHAT_IDLE)); }
     if (L.req) { L.req.t -= dt; if (L.req.t <= 0) { L.req = null; chat('系統', '指定任務已結束', 'dm'); } }
-    else { L.reqT -= dt; if (L.reqT <= 0) { L.reqT = rnd(25, 40); if (Math.random() < .6) { const sp = pick(unlockedSpecies()); L.req = { kind: 'sp', sp: sp.id, t: 40, text: `要「${sp.name}」` }; } else L.req = { kind: 'cr', t: 40, text: '要酥脆度 ≥ 70% 的' }; chat('系統', '新的觀眾指定：' + L.req.text, 'dm'); } }
+    else { L.reqT -= dt; if (L.reqT <= 0) { L.reqT = rnd(25, 40); if (Math.random() < .6) { const has = [...new Set(S.stock.map(p => p.sp))], id = has.length && Math.random() < .7 ? pick(has) : pick(unlockedSpecies()).id; L.req = { kind: 'sp', sp: id, t: 40, text: `要「${SP[id].name}」` }; } else L.req = { kind: 'cr', t: 40, text: '要酥脆度 ≥ 70% 的' }; chat('系統', '新的觀眾指定：' + L.req.text, 'dm'); } }
   } else { L.hype = Math.max(0, L.hype - 10 * dt); L.viewers = Math.max(0, L.viewers - dt * 10); L.combo = 0; L.req = null; }
+}
+
+function toggleLive() {
+  if (!L.on) {
+    if (!S.stock.length) { sfx.bad(); return toast('背包裡沒有捏捏，先到加工產線做一個吧'); }
+    if (!stockById(L.stageId)) L.stageId = bestStock().id;
+    L.on = true; L.ss = { sales: 0, income: 0, tips: 0, fans: S.fans, t0: Date.now() }; L.reqT = Math.min(L.reqT, 14);
+    chat('系統', '直播開始！歡迎大家', 'dm'); sfx.level(); if (!S.tipLive) { S.tipLive = true; toast('按住捏捏擠壓、滑動或連續點擊，連擊越多熱度越高'); }
+  } else {
+    L.on = false; const ss = L.ss; L.ss = null; chat('系統', '直播結束，感謝收看', 'dm');
+    if (ss && (ss.sales || ss.tips || Date.now() - ss.t0 > 15000)) modal(`<h2>本場直播回顧</h2><div class="sumg"><div><b>${ss.sales}</b><span>售出件數</span></div><div><b>${fmt(ss.income)}</b><span>銷售收入</span></div><div><b>${fmt(ss.tips)}</b><span>觀眾斗內</span></div><div><b>+${Math.floor(S.fans - ss.fans)}</b><span>新增粉絲</span></div></div><p class="small" style="color:var(--sub);text-align:center">直播時長 ${Math.max(1, Math.round((Date.now() - ss.t0) / 1000))} 秒</p>`);
+    else toast('直播結束');
+  }
+  renderLive(); save();
 }
 
 /* ---------- 定價 ---------- */
@@ -1364,7 +1453,7 @@ function priceTable(ch) {
   return list.map(s => { const f = fair({ sp: s.id, crisp: .8, dur: 100, deco: [] }, ch), l = demandLabel(demand(getPrice(ch, s.id), f));
     return `<div class="prow"><span class="nm">${dot(s.color)}${s.name}${trend.sp === s.id ? ' <span class="tag">流行</span>' : ''}<br><small style="color:var(--sub)">基準合理價 ${fmt(f)}</small></span><input type="number" min="1" max="99999" value="${getPrice(ch, s.id)}" data-price="${ch}" data-sp="${s.id}"><span class="dem" style="color:${l[1]}">${l[0]}</span></div>`; }).join('');
 }
-document.addEventListener('change', e => { const t = e.target; if (!t.dataset || !t.dataset.price) return; S.price[t.dataset.price][t.dataset.sp] = clamp(Math.round(+t.value) || 1, 1, 99999); save(); t.dataset.price === 'live' ? renderLive() : renderWeb(); });
+document.addEventListener('change', e => { const t = e.target; if (!t.dataset || !t.dataset.price) return; S.price[t.dataset.price][t.dataset.sp] = clamp(Math.round(+t.value) || 1, 1, 99999); save(); t.blur(); t.dataset.price === 'live' ? renderLive() : renderWeb(); });
 
 /* ---------- 網站 ---------- */
 const rating = () => { const a = S.rate.slice(-20); return a.reduce((x, y) => x + y, 0) / a.length; };
@@ -1377,11 +1466,11 @@ function webTick() {
 }
 function renderWeb() {
   const r = rating();
-  $('#webInfo').innerHTML = `<div class="row"><div class="grow">店鋪評分 <b class="stars">${'★'.repeat(Math.round(r))}${'☆'.repeat(5 - Math.round(r))}</b> ${r.toFixed(1)}　粉絲 ${Math.floor(S.fans)}</div><div class="small">貨架 ${S.web.length}/${slots()}</div></div>`;
-  $('#webShelf').innerHTML = S.web.length ? S.web.map(p => itemHTML(p, 'unlist', null, ` · 售 ${fmt(getPrice('web', p.sp))}`)).join('') : '<div class="empty">貨架空空如也，從下方上架商品。</div>';
-  $('#webStock').innerHTML = S.stock.length ? S.stock.map(p => itemHTML(p, 'list', null)).join('') : '<div class="empty">背包裡沒有捏捏。</div>';
-  $('#webPrice').innerHTML = priceTable('web');
-  $('#reviews').innerHTML = S.reviews.length ? S.reviews.map(v => `<div><span class="stars">${'★'.repeat(v.s)}</span> ${esc(v.who)}：${esc(v.t)} <small style="color:var(--sub)">（${v.sp}）</small></div>`).join('') : '尚無評價';
+  setHTML($('#webInfo'), `<div class="row"><div class="grow">店鋪評分 <b class="stars">${'★'.repeat(Math.round(r))}${'☆'.repeat(5 - Math.round(r))}</b> ${r.toFixed(1)}　粉絲 ${Math.floor(S.fans)}</div><div class="small">貨架 ${S.web.length}/${slots()}</div></div>`);
+  setHTML($('#webShelf'), S.web.length ? S.web.map(p => itemHTML(p, 'unlist', null, ` · 售 ${fmt(getPrice('web', p.sp))}`)).join('') : '<div class="empty">貨架空空如也，從下方上架商品。</div>');
+  setHTML($('#webStock'), S.stock.length ? S.stock.map(p => itemHTML(p, 'list', null)).join('') : '<div class="empty">背包裡沒有捏捏。</div>');
+  if (!$('#webPrice').contains(document.activeElement)) setHTML($('#webPrice'), priceTable('web'));
+  setHTML($('#reviews'), S.reviews.length ? S.reviews.map(v => `<div><span class="stars">${'★'.repeat(v.s)}</span> ${esc(v.who)}：${esc(v.t)} <small style="color:var(--sub)">（${esc(v.sp)}）</small></div>`).join('') : '尚無評價');
 }
 
 /* ---------- 升級 ---------- */
@@ -1391,7 +1480,7 @@ function renderUp() {
   const row = k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${u.desc}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; };
   let h = '<h3>產線機器</h3>' + Object.keys(UPS).filter(k => UPS[k].mach).map(row).join('') + '<h3>設施與裝備</h3>' + Object.keys(UPS).filter(k => !UPS[k].mach).map(row).join('');
   h += '<h3>裝飾零件包</h3>' + Object.keys(PACKS).map(k => { const has = S.packs.includes(k), pk = PACKS[k], items = Object.values(DECO).filter(d => d.pack === k).map(d => dot(d.c) + d.n).join('　'); return `<div class="card up"><div class="info"><b>${pk.name}</b><div class="small" style="color:var(--sub)">${items}</div></div><button class="btn sm" data-act="buyPack" data-k="${k}" ${has || S.money < pk.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(pk.cost)}</button></div>`; }).join('');
-  $('#upList').innerHTML = h;
+  setHTML($('#upList'), h);
 }
 
 /* ---------- 中期三線 ---------- */
@@ -1400,8 +1489,15 @@ const branchReady = () => !S.branch && S.earned >= 2500 && S.fans >= 60;
 function checkBranch() {
   if (branchReady() && !S.seen_branch) { S.seen_branch = true; modal(`<h2>工坊的轉捩點</h2><p>你的捏捏已經小有名氣，累積營收 ${fmt(S.earned)}、粉絲 ${Math.floor(S.fans)}。<br>三條道路擺在眼前，玩法與劇情都不同（一旦選擇就無法更改）：</p><p>${Object.values(BRANCHES).map(b => `<b>${b.name}</b>：${b.desc}`).join('<br><br>')}</p><p>到工坊的「工作電腦 → 事業」做出選擇。</p>`); }
 }
-function renderBranch() {
-  const bx = $('#branchBody'), fw = $('#facWrap'), showFac = S.branch === 'factory';
+const fmtSec = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+function tickTimers() {
+  const now = Date.now();
+  $$('[data-dl]').forEach(e => { e.textContent = fmtSec(Math.max(0, Math.ceil((+e.dataset.dl - now) / 1000))); });
+  $$('[data-dlbar]').forEach(e => { e.style.width = clamp((+e.dataset.dlbar - now) / 450, 0, 100).toFixed(1) + '%'; });
+}
+function renderBranch() { renderBranch0(); tickTimers(); }
+function renderBranch0() {
+  const bx = { set innerHTML(h) { setHTML($('#branchBody'), h); } }, fw = $('#facWrap'), showFac = S.branch === 'factory';
   if (fw.hidden === showFac) { fw.hidden = !showFac; if (showFac) setTimeout(() => { initFac(); FAC.v && FAC.v.resize(); }, 0); }
   if (!S.branch) { bx.innerHTML = `<h2>選擇你的事業道路</h2><div class="bgroup">${Object.keys(BRANCHES).map(k => `<div class="card"><b>${BRANCHES[k].name}</b><div class="small" style="color:var(--sub);margin:6px 0">${BRANCHES[k].desc}</div><button class="btn" data-act="chooseBranch" data-k="${k}" ${branchReady() ? '' : 'disabled'}>選擇此道路</button></div>`).join('')}</div>${branchReady() ? '' : '<div class="hint">需要累積營收 ¥2,500 且粉絲 60 才能做出選擇。</div>'}`; return; }
   if (S.branch === 'factory') {
@@ -1411,10 +1507,10 @@ function renderBranch() {
     <div class="card small">庫存 ${S.stock.length}/${cap()}　凝膠合計 ${Object.values(S.gel).reduce((a, b) => a + b, 0)}</div>`;
   } else if (S.branch === 'corp') {
     bx.innerHTML = `<h2>企業合作</h2><div class="hint">大公司定期釋出訂單，報酬約為合理價 ×1.5，但需在期限內交付足夠品質的商品。逾期會損失信譽。</div><div class="card small">企業信譽 <b>${S.rep}</b>　承接中 ${S.contracts.length}/3</div>` +
-      (S.contracts.length ? S.contracts.map(c => { const ok = contractItems(c); return `<div class="card"><b>${c.sp === 'any' ? '任意種類' : SP[c.sp].name}</b> × ${c.n}　酥脆 ≥ ${Math.round(c.min * 100)}%<br>報酬 <b style="color:var(--warn)">${fmt(c.reward)}</b>　剩餘 ${Math.max(0, Math.ceil((c.dl - Date.now()) / 1000))} 秒<div class="row" style="margin-top:6px"><span class="small grow">符合庫存 ${ok.length}/${c.n}</span><button class="btn sm" data-act="deliver" data-id="${c.id}" ${ok.length < c.n ? 'disabled' : ''}>交貨</button></div></div>`; }).join('') : '<div class="empty">目前沒有訂單，請稍候…</div>');
+      (S.contracts.length ? S.contracts.map(c => { const ok = contractItems(c); return `<div class="card"><b>${c.sp === 'any' ? '任意種類' : SP[c.sp].name}</b> × ${c.n}　酥脆 ≥ ${Math.round(c.min * 100)}%<br>報酬 <b style="color:var(--warn)">${fmt(c.reward)}</b>　剩餘 <b data-dl="${c.dl}"></b><div class="row" style="margin-top:6px"><span class="small grow">符合庫存 ${ok.length}/${c.n}</span><button class="btn sm" data-act="deliver" data-id="${c.id}" ${ok.length < c.n ? 'disabled' : ''}>交貨</button></div></div>`; }).join('') : '<div class="empty">目前沒有訂單，請稍候…</div>');
   } else {
     bx.innerHTML = `<h2>溫馨小店</h2><div class="hint">顧客會上門指定想要的種類。滿足熟客可累積好感度，熟客會給更高價與小費。顧客等太久會失望離開。</div><div class="card small">熟客 ${Object.values(S.regulars).filter(v => v >= 5).length} 位（好感 ≥ 5）</div>` +
-      (S.customers.length ? S.customers.map(c => { const ok = shopItem(c), aff = S.regulars[c.name] || 0; return `<div class="card"><b>${esc(c.name)}</b> ${aff >= 5 ? '<span class="tag">熟客</span>' : ''} <small style="color:var(--sub)">好感 ${aff}</small><br>想要：<b>${SP[c.sp].name}</b>　酥脆 ≥ ${Math.round(c.min * 100)}%<div class="meter2" style="margin:6px 0"><i style="width:${clamp((c.dl - Date.now()) / 450, 0, 100)}%"></i></div><button class="btn sm" data-act="serve" data-id="${c.id}" ${ok ? '' : 'disabled'}>${ok ? `出貨 ${fmt(shopPrice(c, ok))}` : '背包沒有符合商品'}</button></div>`; }).join('') : '<div class="empty">店裡暫時沒有客人…</div>');
+      (S.customers.length ? S.customers.map(c => { const ok = shopItem(c), aff = S.regulars[c.name] || 0; return `<div class="card"><b>${esc(c.name)}</b> ${aff >= 5 ? '<span class="tag">熟客</span>' : ''} <small style="color:var(--sub)">好感 ${aff}</small><br>想要：<b>${SP[c.sp].name}</b>　酥脆 ≥ ${Math.round(c.min * 100)}%<div class="meter2" style="margin:6px 0"><i data-dlbar="${c.dl}"></i></div><button class="btn sm" data-act="serve" data-id="${c.id}" ${ok ? '' : 'disabled'}>${ok ? `出貨 ${fmt(shopPrice(c, ok))}` : '背包沒有符合商品'}</button></div>`; }).join('') : '<div class="empty">店裡暫時沒有客人…</div>');
   }
 }
 function contractItems(c) { return S.stock.filter(p => (c.sp === 'any' || p.sp === c.sp) && effCrisp(p) >= c.min).sort((a, b) => effCrisp(a) - effCrisp(b)).slice(0, c.n); }
@@ -1463,7 +1559,10 @@ function facStep(dt) {
   FAC.blocks.forEach((b, i) => { b.visible = S.workers > 0; b.position.x += dt * (w ? 1.2 : 0); if (b.position.x > 9) { b.position.x -= 18; b.material = FAC.mats[(i + Math.floor(t)) % FAC.mats.length]; } b.rotation.y += dt * (w ? 1 : 0); });
   FAC.v.cam.position.x = Math.sin(t * .2) * 1.5; FAC.v.cam.lookAt(0, .8, 0); FAC.v.render();
 }
-function chooseBranch(k) { S.branch = k; save(); renderGuiTabs(); renderBranch(); toast('已選擇：' + BRANCHES[k].name); }
+function chooseBranch(k) {
+  if (S.branch || !branchReady() || !BRANCHES[k]) return; const b = BRANCHES[k];
+  modal(`<h2>選擇「${b.name}」？</h2><p>${b.desc}</p><p class="small" style="color:var(--sub)">選擇後無法更改。</p>`, [{ t: '再想想', ghost: true }, { t: '確定選擇', f: () => { if (S.branch || !branchReady()) return; S.branch = k; save(); sfx.level(); renderGuiTabs(); renderBranch(); toast('已選擇：' + b.name); } }]);
+}
 
 /* ---------- 圖鑑 / 背包 ---------- */
 const GOAL = { species: 8, fans: 800, earned: 40000 };
@@ -1501,12 +1600,12 @@ document.addEventListener('click', e => {
     case 'addDeco': { const p = decorSt.p; if (!p) return; if (p.deco.length >= 6) return toast('最多 6 個零件'); p.deco.push({ k, x: rnd(-.45, .45), z: rnd(-.45, .45), s: 1, r: 0 }); decorSt.sel = p.deco.length - 1; decorSt.rebuildDeco(); sfx.tick(); renderDecorTools(); save(); break; }
     case 'delDeco': { const p = decorSt.p; if (p && decorSt.sel >= 0) { p.deco.splice(decorSt.sel, 1); decorSt.sel = -1; decorSt.rebuildDeco(); renderDecorTools(); save(); } break; }
     case 'photo': { if (!decorSt.ready) return; decorSt.selRing.visible = false; decorSt.v.render(); const a2 = document.createElement('a'); a2.download = 'squish-lab.png'; a2.href = decorSt.cv.toDataURL('image/png'); a2.click(); toast('已儲存圖片'); break; }
-    case 'toggleLive': L.on = !L.on; if (L.on) { chat('系統', '直播開始！歡迎大家', 'dm'); if (!liveSt.p) toast('先從下方選一個捏捏上台'); } else toast('直播結束'); renderLive(); break;
+    case 'toggleLive': toggleLive(); break;
     case 'stageSel': L.stageId = +id; renderLive(); break;
     case 'list': { const p = stockById(id); if (!p) return; if (S.web.length >= slots()) return toast('貨架已滿，請升級網站伺服器'); S.stock = S.stock.filter(q => q !== p); S.web.push(p); renderWeb(); renderHotbar(); save(); break; }
     case 'unlist': { const p = S.web.find(q => q.id === +id); if (!p) return; if (S.stock.length >= cap()) return toast('庫存已滿'); S.web = S.web.filter(q => q !== p); S.stock.push(p); renderWeb(); renderHotbar(); save(); break; }
-    case 'buyUp': { const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max) return; S.money -= c; S.up[k]++; sfx.pop(); renderUp(); renderTop(); save(); break; }
-    case 'buyPack': { const c = PACKS[k].cost; if (S.money < c) return; S.money -= c; S.packs.push(k); sfx.pop(); renderUp(); renderTop(); save(); break; }
+    case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); renderUp(); renderTop(); save(); break; }
+    case 'buyPack': { const pk = PACKS[k]; if (!pk || S.packs.includes(k) || S.money < pk.cost) return; S.money -= pk.cost; S.packs.push(k); sfx.level(); toast(`已解鎖${pk.name}`); renderUp(); renderTop(); save(); break; }
     case 'chooseBranch': chooseBranch(k); break;
     case 'hire': { const c = Math.round(400 * Math.pow(1.5, S.workers)); if (S.money >= c) { S.money -= c; S.workers++; renderBranch(); renderTop(); save(); } break; }
     case 'auto': { const c = Math.round(600 * Math.pow(1.8, S.auto)); if (S.money >= c) { S.money -= c; S.auto++; renderBranch(); renderTop(); save(); } break; }
@@ -1517,9 +1616,11 @@ document.addEventListener('click', e => {
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
     case 'help': showHelp(); break;
     case 'home': P.x = 0; P.z = 31; P.y = G(0, 31); P.yaw = 0; closeGui(); toast('已傳送回工坊入口'); break;
-    case 'reset': modal('<h2>重置存檔？</h2><p>所有進度將被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定重置', f: () => { localStorage.removeItem(SAVE_KEY); S = fresh(); P = null; location.reload(); } }]); break;
+    case 'reset': modal('<h2>重置存檔？</h2><p>所有進度將被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定重置', red: true, f: () => { resetting = true; try { localStorage.removeItem(SAVE_KEY); } catch (_) { } location.reload(); } }]); break;
   }
 });
+// 加工的「停機」用 pointerdown 觸發：比 click 少一個放開手指的延遲，計時更準
+document.addEventListener('pointerdown', e => { if (e.button > 0) return; const el = e.target.closest && e.target.closest('[data-stop]'); if (el && M.active) { e.preventDefault(); stopBar(); } });
 function showHelp() {
   const keys = TOUCH
     ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站）</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>右上</kbd><span>背包、選單</span></div>'
@@ -1535,18 +1636,20 @@ function showIntro() {
 
 /* ---------- 主迴圈 ---------- */
 let lastT = performance.now(), secAcc = 0, webAcc = 0, farmAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
-const tmpC = new THREE.Color(), tmpC2 = new THREE.Color();
+const tmpC = new THREE.Color(), tmpC2 = new THREE.Color(), tmpV = new THREE.Vector3();
 function envStep(dt) {
   const w = biomeW(P.x, P.z), fog = new THREE.Color(0, 0, 0), top = new THREE.Color(0, 0, 0), sun = new THREE.Color(0, 0, 0), hs = new THREE.Color(0, 0, 0), hg = new THREE.Color(0, 0, 0);
   BIOMES.forEach((b, i) => { const Z = ZONE3D[b]; fog.add(tmpC.set(Z.fog).multiplyScalar(w[i])); top.add(tmpC.set(Z.top).multiplyScalar(w[i])); sun.add(tmpC.set(Z.sun).multiplyScalar(w[i])); hs.add(tmpC.set(Z.hemiS).multiplyScalar(w[i])); hg.add(tmpC.set(Z.hemiG).multiplyScalar(w[i])); });
   const k = Math.min(1, dt * 2); W.scene.fog.color.lerp(fog, k); W.scene.background.copy(W.scene.fog.color); W.sky.material.uniforms.bot.value.lerp(fog, k); W.sky.material.uniforms.top.value.lerp(top, k);
   W.sun.color.lerp(sun, k); W.hemi.color.lerp(hs, k); W.hemi.groundColor.lerp(hg, k); W.sun.intensity = 2.6 - w[2] * .9;
   W.sky.position.copy(W.cam.position); W.sun.position.set(P.x + 30, P.y + 55, P.z + 22); W.sun.target.position.set(P.x, P.y, P.z);
-  const zid = domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; if (prev) toast(`進入${ZONES.find(z => z.id === zid).name}`); }
+  const zid = domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; if (prev) toast(`進入${ZONES.find(z => z.id === zid).name}`); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
 }
 function worldStep(dt) {
   W.t += dt; if (!GUI.kind) playerStep(dt);
   slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt);
+  if (W.C) W.C.update(dt, W.cFloor || 0);
+  for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position)); s.material.opacity = o; s.visible = o > .02; }
   if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = targetLabel(TARGET); $('#prompt').innerHTML = lbl; $('#cross').classList.toggle('on', !!TARGET); }
   else if (GUI.kind) { $('#prompt').innerHTML = ''; }
   W.r.render(W.scene, W.cam);
@@ -1558,7 +1661,7 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); }
+  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (tab === 'up') renderUp(); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
@@ -1583,6 +1686,15 @@ if (initWorld()) {
   $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動 · I 背包 · Esc 選單'; $('#startHint').hidden = TOUCH;
   toast('歡迎來到月光谷。左上角是目前目標。');
 }
+{ const bt = $('#boot'); if (bt && !bt.hidden) { bt.classList.add('out'); setTimeout(() => { bt.hidden = true; bt.classList.remove('out'); }, 520); } }
 if (!S.seen) showIntro();
-addEventListener('beforeunload', save);
+addEventListener('beforeunload', save); addEventListener('pagehide', save);
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); save(); return; }
+  if (!hiddenAt) return; const el = Math.min((Date.now() - hiddenAt) / 1000, 1800); hiddenAt = 0; lastT = performance.now(); if (el < 8 || !S.web.length) return;
+  let gain = 0, n = 0; for (let i = 0; i < Math.floor(el / 4) && S.web.length; i++) { const r = webTick(); if (r) { gain += r.price; n++; } }
+  if (n) { toast(`離開期間網站賣出 ${n} 件，+${fmt(gain)}`); sfx.coin(); renderTop(); renderHotbar(); }
+});
+if (S.mk && W.ready) { M.sp = S.mk.sp; M.step = S.mk.step; M.prec = S.mk.prec.slice(); M.active = true; nextStep(); MK.bx = MX[M.step]; setTimeout(() => { if (!GUI.kind && $('#modal').hidden) openGui('line'); toast('已恢復上次未完成的加工'); }, 300); }
 requestAnimationFrame(loop);
