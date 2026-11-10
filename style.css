@@ -39,6 +39,24 @@ svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 #cross::before{left:10px;top:2px;width:2px;height:18px}
 #cross::after{top:10px;left:2px;height:2px;width:18px}
 #cross.on::before,#cross.on::after{background:#22d3ee}
+/* 準心環：採集進度三格／休息倒數；受擊時脈衝、完美時發光 */
+#ring{position:absolute;left:50%;top:50%;width:48px;height:48px;transform:translate(-50%,-50%) scale(.85);opacity:0;transition:opacity .15s,transform .15s;fill:none;stroke-width:3.2;filter:drop-shadow(0 0 2px #000a)}
+#ring.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#ring .seg{stroke:#ffffff45;stroke-linecap:round;transition:stroke .12s}
+#ring .seg.f{stroke:#fde047}
+#ring .seg.off{stroke:#ffffff18}
+#ring .cool{stroke:#93c5fd;stroke-linecap:round;transform:rotate(-90deg);transform-origin:24px 24px;stroke-dasharray:0 100}
+#ring.flee .seg{stroke:#7dd3fc70}
+#ring.hit{animation:ringhit .22s ease-out}
+#ring.perf{animation:ringperf .4s ease-out}
+#ring.perf .seg.f{stroke:#f0abfc}
+#ring.cool{animation:ringno .3s}
+@keyframes ringhit{0%{transform:translate(-50%,-50%) scale(1.25)}100%{transform:translate(-50%,-50%) scale(1)}}
+@keyframes ringperf{0%{transform:translate(-50%,-50%) scale(1.45);filter:drop-shadow(0 0 8px #f0abfc)}100%{transform:translate(-50%,-50%) scale(1)}}
+@keyframes ringno{0%,100%{transform:translate(-50%,-50%)}30%{transform:translate(calc(-50% - 4px),-50%)}70%{transform:translate(calc(-50% + 4px),-50%)}}
+/* 潛行時的畫面暗角 */
+#vig{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 52%,#020617a8 100%);opacity:0;transition:opacity .35s}
+#vig.on{opacity:1}
 #prompt{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);background:#0b0f17c0;border:1px solid #ffffff22;border-radius:8px;padding:5px 12px;font-size:13px;white-space:nowrap}
 #prompt:empty{display:none}
 #prompt kbd{display:inline-block;background:#fff;color:#000;border-radius:4px;padding:0 6px;font:700 12px/18px Inter,sans-serif;margin-right:6px}
@@ -83,6 +101,7 @@ body.touch #startHint{display:none!important}
 #btnAct{right:22px;bottom:calc(var(--slot) + 70px + env(safe-area-inset-bottom))}
 #btnJump{right:108px;bottom:calc(var(--slot) + 60px + env(safe-area-inset-bottom))}
 #btnRun{right:40px;bottom:calc(var(--slot) + 158px + env(safe-area-inset-bottom))}
+#btnSneak{right:116px;bottom:calc(var(--slot) + 140px + env(safe-area-inset-bottom))}
 #startHint{position:absolute;left:50%;top:62%;transform:translateX(-50%);background:#0b0f17d0;border:1px solid #ffffff2a;border-radius:12px;padding:12px 18px;text-align:center;line-height:1.8;font-size:14px}
 #startHint b{color:var(--acc)}
 
