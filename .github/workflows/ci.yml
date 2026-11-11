@@ -46,8 +46,12 @@ jobs:
         run: |
           docker run -d --name slime -p 8080:8080 slime:ci
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health >/dev/null && break; sleep 1; done
-          curl -fsS http://127.0.0.1:8080/ | grep -q '<script src="gate.js'
-          curl -fsS -o /dev/null http://127.0.0.1:8080/game.js
+          # 建置時要把 ?v=dev 換成 12 碼內容雜湊（見 Dockerfile），玩家才會在部署後立刻拿到新版
+          curl -fsS http://127.0.0.1:8080/ > index.out
+          grep -Eq '<script src="gate\.js\?v=[0-9a-f]{12}"' index.out
+          grep -Eq 'href="style\.css\?v=[0-9a-f]{12}"' index.out
+          V=$(grep -Eo 'gate\.js\?v=[0-9a-f]{12}' index.out | cut -d= -f2); echo "site version: $V"
+          curl -fsS -o /dev/null "http://127.0.0.1:8080/game.js?v=$V"
           curl -fsS -o /dev/null http://127.0.0.1:8080/vendor/three.min.js
           docker logs slime | tail -n 20
 

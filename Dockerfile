@@ -15,6 +15,17 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY . /srv
 RUN rm -f /srv/Caddyfile
 
+# 版本號自動化：把 index.html 裡的 ?v=dev 換成網站檔案內容的雜湊（前 12 碼，不含 index.html 本身）。
+# 檔案一改網址就跟著換，Cloudflare／瀏覽器不會再給舊版；沒改則沿用快取。部署時不必再手動改版本號。
+# 若沒換成功（例如 index.html 的 ?v=dev 被改掉），建置直接失敗，不會上線沒帶版本號的頁面。
+RUN cd /srv \
+ && V=$(find . -type f ! -name index.html | sort | xargs sha256sum | sha256sum | cut -c1-12) \
+ && sed -i "s/?v=dev\"/?v=$V\"/g" index.html \
+ && grep -q "gate.js?v=$V\"" index.html \
+ && grep -q "style.css?v=$V\"" index.html \
+ && ! grep -q '?v=dev"' index.html \
+ && echo "site version: $V"
+
 USER 1000:1000
 ENV PORT=8080
 EXPOSE 8080
