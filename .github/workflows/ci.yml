@@ -46,7 +46,7 @@ jobs:
         run: |
           docker run -d --name slime -p 8080:8080 slime:ci
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health >/dev/null && break; sleep 1; done
-          curl -fsS http://127.0.0.1:8080/ | grep -q '<script src="gate.js">'
+          curl -fsS http://127.0.0.1:8080/ | grep -q '<script src="gate.js'
           curl -fsS -o /dev/null http://127.0.0.1:8080/game.js
           curl -fsS -o /dev/null http://127.0.0.1:8080/vendor/three.min.js
           docker logs slime | tail -n 20

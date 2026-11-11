@@ -20,6 +20,11 @@
 
 	respond /health 200
 
+	# 頁面與遊戲程式每次都向伺服器確認是否有新版（有 ETag，沒變只回 304），部署後玩家立刻拿到新版；
+	# 否則 Cloudflare 會把 .js／.css 快取 4 小時
+	@fresh path / /index.html /gate.js /game.js /style.css
+	header @fresh Cache-Control "no-cache"
+
 	header {
 		X-XSS-Protection "1; mode=block"
 		X-Content-Type-Options "nosniff"

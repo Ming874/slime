@@ -16,6 +16,8 @@
     '00729fcd52cc898aa6d25a41119c8b7fe1eadea7d328d6469e57ad204d276186',
   ];
   const KEY = 'slime_auth_v1', SALT = 'slime-squish:';
+  // 版本號由 index.html 的 gate.js?v= 帶入並傳給 game.js：每次部署換版本號，就不會拿到 CDN／瀏覽器裡的舊檔
+  const VER = (() => { try { return new URL(document.currentScript.src).searchParams.get('v') || ''; } catch (e) { return ''; } })();
 
   /* ---------- 純 JS SHA-256（備援） ---------- */
   const K = [
@@ -73,7 +75,7 @@
   function start() {
     if (started) return; started = true;
     const boot = document.getElementById('boot'); if (boot) boot.hidden = false;
-    const s = document.createElement('script'); s.src = 'game.js';
+    const s = document.createElement('script'); s.src = 'game.js' + (VER ? '?v=' + encodeURIComponent(VER) : '');
     s.onerror = () => { const m = document.getElementById('loginMsg'); if (m) m.textContent = '遊戲載入失敗，請重新整理頁面'; };
     document.body.appendChild(s);
   }
