@@ -1497,10 +1497,10 @@ function puzzleTap(it) {
 }
 function questTarget() {
   const k = nextQuest(); if (!k || !S.zones.includes(QUEST[k].from)) return null; const q = qState();
-  const nearest = (list, have, n) => { let b = null, bd = 1e9; list.forEach(([x, z], i) => { if (have.includes(i)) return; const d = Math.hypot(x - P.x, z - P.z); if (d < bd) { bd = d; b = { x, z, n }; } }); return b; };
-  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台' } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片');
-  if (k === 'volcano') return q.notes.length >= 3 ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣' } : nearest(NOTES, q.notes, '撕碎的紙條');
-  if (k === 'snow') return q.read.tablet ? { x: 0, z: PILLARS[1][1], n: '熔岩柱' } : { x: TABLET[0], z: TABLET[1], n: '古老的石碑' };
+  const nearest = (list, have, n, h) => { let b = null, bd = 1e9; list.forEach(([x, z], i) => { if (have.includes(i)) return; const d = Math.hypot(x - P.x, z - P.z); if (d < bd) { bd = d; b = { x, z, n, h }; } }); return b; };
+  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台', h: '對準石台' + (TOUCH ? '點擊' : '按 E') + '，把古地圖拼回原狀。' } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片', '碎片就落在附近的地上，靠近時會微微發光，對準後' + (TOUCH ? '點擊' : '按 E') + '撿起。');
+  if (k === 'volcano') return q.notes.length >= 3 ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣', h: '依照紙條上的謎語，依序點亮四顆潮汐石。順序錯了會重來。' } : nearest(NOTES, q.notes, '撕碎的紙條', '紙條壓在附近地上的小石頭下，對準後' + (TOUCH ? '點擊' : '按 E') + '撿起。');
+  if (k === 'snow') return q.read.tablet ? { x: 0, z: PILLARS[1][1], n: '熔岩柱', h: '依照石碑上的謎題，點擊熔岩柱切換頂端晶石的顏色。' } : { x: TABLET[0], z: TABLET[1], n: '古老的石碑', h: '對準石碑' + (TOUCH ? '點擊' : '按 E') + '，閱讀上面的古文。' };
   return null;
 }
 function renderQuest() {
@@ -2360,25 +2360,33 @@ function fx3(pos, txt, color = '#fff', cls = '') {
 function objective() {
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
-    if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee' };
-    return { t: '逛逛大城市', d: '機械行、生活百貨、器材行都在路的北側。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15' };
+    if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee', n: '機械行', here: '對準機械行的店門' + (TOUCH ? '點擊' : '按 E') + '，購買切片機。' };
+    return { t: '逛逛大城市', d: '機械行、生活百貨、器材行都在路的北側。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
   }
   if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。', track: 'slime', c: '#6ee7a8' };
-  if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24' };
-  if (!S.sales) return { t: '上架到網站', d: '到「工作電腦」把沒玩過的捏捏上架到網站，等顧客下單。', x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8' };
-  if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)} 後，搭出生點左邊的計程車到大城市購買切片機（目前 ${fmt(S.money)}）。`, x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15' };
+  if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24', n: '手作台', here: '對準手作台' + (TOUCH ? '點擊' : '按 E') + '，用 2 份凝膠做出粗製捏捏。' };
+  if (!S.sales) return { t: '上架到網站', d: '到「工作電腦」把沒玩過的捏捏上架到網站，等顧客下單。', x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8', n: '工作電腦', here: '對準工作電腦' + (TOUCH ? '點擊' : '按 E') + '，在「網路商店」把捏捏上架。' };
+  if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)} 後，搭出生點左邊的計程車到大城市購買切片機（目前 ${fmt(S.money)}）。`, x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，前往大城市。' };
   const k = nextQuest(), qt = questTarget();
-  if (k) return { t: QUEST[k].title, d: questReady(k) ? (qt ? `前往${qt.n}。` : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd' };
+  if (k) return { t: QUEST[k].title, d: questReady(k) ? (qt ? `前往${qt.n}。` : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd', n: qt && qt.n, here: qt && qt.h };
   return { t: '開設夢想捏捏博物館', d: '累積粉絲與營收，到工作電腦的圖鑑頁完成夢想。' };
 }
 let objSig = '';
 function renderObjective() {
-  const o = objective(), s = o.t + o.d; W.obj = o; if (s === objSig) return; objSig = s;
-  $('#objective').innerHTML = `<b>目前目標</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>`;
+  let o = objective(); let tx = o.x, tz = o.z;
+  if (o.track === 'slime') { let bd = 1e9; W.slimes.forEach(sl => { if (sl.cool > 0) return; const d = Math.hypot(sl.x - P.x, sl.z - P.z); if (d < bd) { bd = d; tx = sl.x; tz = sl.z; } }); }
+  const key = o.t + '|' + (o.n || o.track || ''), same = tx != null && inCity(tx) === inCity(), dist = same ? Math.hypot(tx - P.x, tz - P.z) : 1e9;
+  if (W.arrKey !== key) { W.arrKey = key; W.arr = false; }
+  if (!W.arr && dist < 8) { W.arr = true; if (o.n) { toast(`已抵達${o.n}`); sfx.tick(); } }
+  else if (W.arr && dist > 12) W.arr = false;
+  if (W.arr) o = Object.assign({}, o, { d: o.track === 'slime' ? `對準史萊姆' + (TOUCH ? '點擊' : '按 E') + ' 3 次採集凝膠。` : (o.here || `已抵達${o.n || '目標地點'}，對準它' + (TOUCH ? '點擊' : '按 E') + '使用。`), t: o.n ? `${o.t}（已抵達${o.n}）` : o.t, arrived: true });
+  const s = o.t + o.d; W.obj = o; if (s === objSig) return; objSig = s;
+  $('#objective').classList.toggle('arrived', !!o.arrived); $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目前目標'}</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>`;
 }
 /* 目標引導標記：在畫面上標出目標位置與距離；不在畫面內時貼齊邊緣並以箭頭指出方向；靠近 8 公尺內自動隱藏 */
 const WPV = new THREE.Vector3(), WP_HIDE = 8;
 function waypointStep() {
+  if ((W.objT = (W.objT || 0) + 1) % 15 === 0) renderObjective();
   let el = $('#wp');
   if (!el) { el = document.createElement('div'); el.id = 'wp'; el.hidden = true; el.innerHTML = '<svg class="wpi" viewBox="0 0 24 24"><path d="M12 1l2.4 6.2L20.5 4l-2.6 6.3L23 12l-5.1 1.7 2.6 6.3-6.1-3.2L12 23l-2.4-6.2L3.5 20l2.6-6.3L1 12l5.1-1.7L3.5 4l6.1 3.2z"/></svg><b></b><i class="wpa"></i>'; $('#hud').appendChild(el); }
   const o = W.obj; let tx = null, tz = null;

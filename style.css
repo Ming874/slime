@@ -372,3 +372,7 @@ body.titleon #hud{display:none}
 #wp .wpa{display:none;position:absolute;left:50%;top:15px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:11px solid var(--wpc,#fde047)}
 #wp.off .wpa{display:block}
 @keyframes wpp{50%{transform:scale(1.12) rotate(10deg)}}
+
+#objective.arrived{border-left-color:var(--good);animation:objIn .35s ease}
+#objective.arrived b{color:var(--good)}
+@keyframes objIn{from{transform:translateX(-6px);opacity:.4}}
