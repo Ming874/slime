@@ -1497,9 +1497,10 @@ function puzzleTap(it) {
 }
 function questTarget() {
   const k = nextQuest(); if (!k || !S.zones.includes(QUEST[k].from)) return null; const q = qState();
-  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台' } : null;
-  if (k === 'volcano') return q.notes.length >= 3 ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣' } : null;
-  if (k === 'snow') return q.read.tablet ? { x: 0, z: PILLARS[1][1], n: '熔岩柱' } : null;
+  const nearest = (list, have, n) => { let b = null, bd = 1e9; list.forEach(([x, z], i) => { if (have.includes(i)) return; const d = Math.hypot(x - P.x, z - P.z); if (d < bd) { bd = d; b = { x, z, n }; } }); return b; };
+  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台' } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片');
+  if (k === 'volcano') return q.notes.length >= 3 ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣' } : nearest(NOTES, q.notes, '撕碎的紙條');
+  if (k === 'snow') return q.read.tablet ? { x: 0, z: PILLARS[1][1], n: '熔岩柱' } : { x: TABLET[0], z: TABLET[1], n: '古老的石碑' };
   return null;
 }
 function renderQuest() {
@@ -2362,7 +2363,7 @@ function objective() {
     if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee' };
     return { t: '逛逛大城市', d: '機械行、生活百貨、器材行都在路的北側。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15' };
   }
-  if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。' };
+  if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。', track: 'slime', c: '#6ee7a8' };
   if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24' };
   if (!S.sales) return { t: '上架到網站', d: '到「工作電腦」把沒玩過的捏捏上架到網站，等顧客下單。', x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8' };
   if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)} 後，搭出生點左邊的計程車到大城市購買切片機（目前 ${fmt(S.money)}）。`, x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15' };
@@ -2374,6 +2375,30 @@ let objSig = '';
 function renderObjective() {
   const o = objective(), s = o.t + o.d; W.obj = o; if (s === objSig) return; objSig = s;
   $('#objective').innerHTML = `<b>目前目標</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>`;
+}
+/* 目標引導標記：在畫面上標出目標位置與距離；不在畫面內時貼齊邊緣並以箭頭指出方向；靠近 8 公尺內自動隱藏 */
+const WPV = new THREE.Vector3(), WP_HIDE = 8;
+function waypointStep() {
+  let el = $('#wp');
+  if (!el) { el = document.createElement('div'); el.id = 'wp'; el.hidden = true; el.innerHTML = '<svg class="wpi" viewBox="0 0 24 24"><path d="M12 1l2.4 6.2L20.5 4l-2.6 6.3L23 12l-5.1 1.7 2.6 6.3-6.1-3.2L12 23l-2.4-6.2L3.5 20l2.6-6.3L1 12l5.1-1.7L3.5 4l6.1 3.2z"/></svg><b></b><i class="wpa"></i>'; $('#hud').appendChild(el); }
+  const o = W.obj; let tx = null, tz = null;
+  if (o && o.track === 'slime') { let bd = 1e9; W.slimes.forEach(s => { if (s.cool > 0) return; const d = Math.hypot(s.x - P.x, s.z - P.z); if (d < bd) { bd = d; tx = s.x; tz = s.z; } }); }
+  else if (o && o.x != null) { tx = o.x; tz = o.z; }
+  if (tx == null || GUI.kind || TITLE.on || inCity(tx) !== inCity()) { el.hidden = true; return; }
+  const dist = Math.hypot(tx - P.x, tz - P.z); if (dist < WP_HIDE) { el.hidden = true; return; }
+  WPV.set(tx, G(tx, tz) + 1.8, tz).project(W.cam);
+  const vw = innerWidth, vh = innerHeight, behind = WPV.z > 1; let sx = (WPV.x * .5 + .5) * vw, sy = (-WPV.y * .5 + .5) * vh;
+  if (behind) { sx = vw - sx; sy = vh - sy; }
+  const mx = 56, mt = 90, mb = 130, off = behind || sx < mx || sx > vw - mx || sy < mt || sy > vh - mb;
+  let ang = 0;
+  if (off) {
+    const cx = vw / 2, cy = vh / 2; let dx = sx - cx, dy = sy - cy; if (Math.abs(dx) + Math.abs(dy) < 1) dy = 1;
+    const kx = (vw / 2 - mx) / Math.max(Math.abs(dx), 1e-6), ky = (dy < 0 ? cy - mt : vh - mb - cy) / Math.max(Math.abs(dy), 1e-6), k = Math.min(kx, ky);
+    sx = cx + dx * k; sy = cy + dy * k; ang = Math.atan2(dy, dx) * 180 / Math.PI + 90;
+  }
+  el.hidden = false; el.classList.toggle('off', off); el.style.transform = `translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px)`; el.style.setProperty('--wpc', o.c || '#fde047');
+  const txt = dist >= 1000 ? (dist / 1000).toFixed(1) + 'km' : Math.round(dist) + 'm'; if (el.dataset.t !== txt) { el.dataset.t = txt; el.querySelector('b').textContent = txt; }
+  if (off) el.querySelector('.wpa').style.transform = `translate(-50%,-50%) rotate(${ang.toFixed(0)}deg) translateY(-25px)`;
 }
 let cmpSig = '';
 function renderCompass() {
@@ -3506,6 +3531,7 @@ function loop(now) {
     if (W.lost) { /* 顯示資源遺失期間暫停繪製，恢復後自動繼續 */ }
     else if (W.ready && TITLE.on) { titleStep(dt); drsStep(dt); }
     else if (W.ready && (!g || g === 'line')) { worldStep(dt); renderCompass(); drsStep(dt); }
+    if (W.ready) waypointStep();
     else DRS.acc = DRS.n = 0;
     if (M.active) makeTick(dt);
     if (tab === 'decor') decorSt.step(dt);

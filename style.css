@@ -363,3 +363,12 @@ body.titleon #hud{display:none}
 #fade.on{opacity:1}
 #fade[hidden]{display:none}
 .steps span.off{opacity:.4;border-style:dashed}
+
+/* ================= 目標引導標記 ================= */
+#wp{position:absolute;left:0;top:0;width:64px;margin:-20px 0 0 -32px;display:flex;flex-direction:column;align-items:center;pointer-events:none;filter:drop-shadow(0 1px 2px #000a);will-change:transform;z-index:3}
+#wp[hidden]{display:none}
+#wp .wpi{width:30px;height:30px;fill:var(--wpc,#fde047);stroke:#1e293b;stroke-width:1.3;animation:wpp 1.6s ease-in-out infinite}
+#wp b{font:800 15px/1 Inter,"Noto Sans TC",sans-serif;color:#fff;-webkit-text-stroke:3px #1e293b;paint-order:stroke fill;margin-top:-5px;letter-spacing:.3px}
+#wp .wpa{display:none;position:absolute;left:50%;top:15px;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:11px solid var(--wpc,#fde047)}
+#wp.off .wpa{display:block}
+@keyframes wpp{50%{transform:scale(1.12) rotate(10deg)}}
