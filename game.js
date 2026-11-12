@@ -2149,6 +2149,9 @@ function surfaceAt(x, z) {
   const b = domBiome(x, z); if (b === 'snow') return 'snow'; if (b === 'volcano') return 'rock'; if (b === 'coast' && H(x, z) < 1.5 * K) return 'sand'; return 'grass';
 }
 const locked = () => document.pointerLockElement === $('#worldCv');
+let HINT0 = '';
+function showFreeHint() { const h = $('#startHint'); if (!HINT0) HINT0 = h.innerHTML; h.innerHTML = '<b>滑鼠已解鎖（遊戲繼續進行）</b><br>按 Alt 或點擊畫面回到操控'; h.hidden = false; }
+function restoreHint() { if (HINT0) $('#startHint').innerHTML = HINT0; }
 function lockMouse() { if (TOUCH || GUI.kind || TITLE.on || CHAT.open || !$('#modal').hidden) return; try { const r = $('#worldCv').requestPointerLock(); if (r && r.catch) r.catch(() => { }); } catch (e) { } }
 function unlockMouse() { if (locked()) { W.unlockByUs = true; document.exitPointerLock(); } }
 function bindInput() {
@@ -2157,6 +2160,8 @@ function bindInput() {
     if (e.target.tagName === 'INPUT') return;
     const k = e.code; if (!$('#modal').hidden || TITLE.on) return;
     if (k === 'Escape') { if (GUI.kind) closeGui(); else openGui('pause'); return; }
+    // Alt：暫時解鎖滑鼠但不暫停遊戲；再按一次 Alt 或點擊畫面就回到操控
+    if (k === 'AltLeft' || k === 'AltRight') { e.preventDefault(); if (GUI.kind || TOUCH) return; if (locked()) { W.altFree = true; unlockMouse(); showFreeHint(); } else { W.altFree = false; lockMouse(); } return; }
     if ((k === 'KeyT' || k === 'Enter') && NET.on && !GUI.kind) { e.preventDefault(); openChat(); return; }
     if (k === 'KeyI' || k === 'Tab') { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
     if (GUI.kind) {
@@ -2171,7 +2176,9 @@ function bindInput() {
   addEventListener('blur', () => { KEYS.clear(); IN.hold = IN.holdE = false; });
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => { if (GUI.kind) return; S.hb = (S.hb + (e.deltaY > 0 ? 1 : 8)) % 9; renderHotbar(true); }, { passive: true });
+  addEventListener('keyup', e => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
   document.addEventListener('pointerlockchange', () => {
+    if (locked()) { W.altFree = false; restoreHint(); }
     $('#startHint').hidden = locked() || TOUCH || !!GUI.kind || TITLE.on;
     if (!locked() && !GUI.kind && !TOUCH && !W.unlockByUs && !TITLE.on && !CHAT.open && $('#modal').hidden) openGui('pause');
     W.unlockByUs = false;
@@ -2814,7 +2821,7 @@ document.addEventListener('click', e => {
 function showHelp() {
   const keys = TOUCH
     ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span></div>'
-    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（加工時為停機）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
+    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（加工時為停機）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
   modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。每一下之間抓穩約 0.3 秒的節奏，連續「完美」可以多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
 }
 function showIntro() {
