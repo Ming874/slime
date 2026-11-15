@@ -391,3 +391,9 @@ body.titleon #hud{display:none}
 .hintbox{margin-top:8px;display:grid;gap:5px}
 .hintbox>div{font-size:12px;color:#fde68a;background:#fbbf2418;border-left:3px solid var(--warn);padding:4px 8px;border-radius:4px}
 #objective .clues{pointer-events:none}
+
+/* 經驗條 */
+#xpbar em{position:absolute;right:2px;top:-19px;font-style:normal;font-size:12px;font-weight:800;color:var(--acc);text-shadow:0 1px 2px #000;opacity:0;animation:xpg 1.4s ease-out}
+@keyframes xpg{0%{opacity:0;transform:translateY(4px)}12%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
+#xpbar span.up{animation:xpup .9s ease-out}
+@keyframes xpup{0%{transform:translateX(-50%) scale(1)}30%{transform:translateX(-50%) scale(1.9);color:#fde047}100%{transform:translateX(-50%) scale(1)}}

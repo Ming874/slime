@@ -84,7 +84,7 @@ const BRANCHES = {
 const SAVE_KEY = 'slime_world_v1';
 function fresh() {
   return {
-    money: 60, fans: 0, earned: 0, gel: {}, stock: [], web: [], price: { live: {}, web: {} },
+    money: 60, fans: 0, xp: 0, earned: 0, gel: {}, stock: [], web: [], price: { live: {}, web: {} },
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
@@ -115,6 +115,7 @@ function sanitize(o) {
   s.customers = arr(s.customers).filter(c => c && SP[c.sp] && isFinite(+c.dl));
   if (s.branch && !BRANCHES[s.branch]) s.branch = null;
   if (s.pos && !(Number.isFinite(s.pos.x) && Number.isFinite(s.pos.z) && Number.isFinite(s.pos.yaw))) s.pos = null;
+  if (!('xp' in o)) s.xp = Math.round((+o.fans || 0) * 2 + (+o.sales || 0) * 2); s.xp = Math.max(0, Math.floor(+s.xp) || 0);
   s.hb = clamp(Math.floor(+s.hb) || 0, 0, 8); s.sens = clamp(Math.floor(+s.sens) || 0, 0, 2);
   // 已購買的設備：只保留有效項目；改版前（設備內建）的舊存檔自動補發
   const OWN_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'];
@@ -147,7 +148,7 @@ const demand = (price, f) => clamp(1.5 - 0.75 * price / Math.max(1, f), 0, 1.3);
 const demandLabel = d => d > 0.95 ? ['熱賣', '#fb923c'] : d > 0.55 ? ['穩定', '#34d399'] : d > 0.2 ? ['冷淡', '#8b9bb0'] : ['滯銷', '#38bdf8'];
 const unlockedSpecies = () => SPECIES.filter(s => S.zones.includes(s.zone));
 function addMoney(n) { S.money += n; if (n > 0) S.earned += n; }
-function discover(id) { if (!S.codex[id]) S.codex[id] = { seen: true, made: 0 }; }
+function discover(id) { if (!S.codex[id]) { S.codex[id] = { seen: true, made: 0 }; if (typeof gainXP === 'function' && S.seen) gainXP(10, '發現新種類'); } }
 function makeProduct(spId, crisp, crude) { const p = { id: S.nextId++, sp: spId, crisp, dur: 100, deco: [], cracks: [] }; if (crude) p.crude = true; discover(spId); S.codex[spId].made++; return p; }
 
 /* ---------- 音效 ---------- */
@@ -1474,7 +1475,7 @@ function openGate(k) {
   W.inter = W.inter.filter(it => it !== gt.it);
 }
 function discoverZone(k) {
-  if (S.zones.includes(k)) return; S.zones.push(k); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
+  if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
   const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '四根熔岩柱的光芒交會，冰冷的風從西方山脊吹來，雪原的入口出現了。' }[k];
   modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p><p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`, [{ t: '出發' }]);
@@ -1547,11 +1548,11 @@ function puzzleTap(it) {
   if (!questReady(zoneOf) && pz.type !== 'tablet') { const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`); }
   const above = (h = 1) => it.obj.position.clone().setY(it.obj.position.y + h);
   if (pz.type === 'frag') {
-    if (!q.frags.includes(pz.i)) q.frags.push(pz.i); fx3(above(1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
+    if (!q.frags.includes(pz.i)) { q.frags.push(pz.i); gainXP(5); } fx3(above(1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
     removePuz(it); sfx.pop(); save(); renderQuest(); toast(q.frags.length >= 5 ? '五片碎片都找到了！到東方能量門前的古地圖石台把地圖拼回原狀。' : `取得古地圖碎片（${q.frags.length}/5）`);
   } else if (pz.type === 'altar') openAltar();
   else if (pz.type === 'note') {
-    if (!q.notes.includes(pz.i)) q.notes.push(pz.i); removePuz(it); sfx.pop(); save(); renderQuest(); objSig = ''; renderObjective();
+    if (!q.notes.includes(pz.i)) { q.notes.push(pz.i); gainXP(5); } removePuz(it); sfx.pop(); save(); renderQuest(); objSig = ''; renderObjective();
     const all = q.notes.length >= 3;
     modal(`<h2>撕碎的紙條（${q.notes.length}/3）</h2><div class="riddle">${NOTE_TXT[pz.i]}</div>
       <p class="small" style="margin:10px 0 4px"><b>目前拼出的謎語</b>（依照醒來的順序整理）：</p>${tideStepsHTML()}
@@ -2210,7 +2211,7 @@ function applyHit(sl, r, local, pt, remote) {
   if (navigator.vibrate) navigator.vibrate(r.res === 'harvest' ? [10, 30, 14] : 8);
   const perfect = sl.perf > 0;
   if (r.res === 'harvest') {
-    const bonus = sl.perf >= 2 ? 1 : 0, n = 1 + S.up.net + bonus; sl.happy = .6; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id);
+    const bonus = sl.perf >= 2 ? 1 : 0, n = 1 + S.up.net + bonus; sl.happy = .6; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); gainXP(XP_HARV[sl.sp.rar] + bonus);
     fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big'); sfx.pop();
     if (bonus) { setTimeout(() => fx3(top.clone().setY(top.y + .5), '完美節奏！額外 +1', '#f0abfc', 'big'), 220); sfx.perfect(); if (!emoteOn(sl) || sl.emo.k !== 'star') emote(sl, 'star'); }
     if (W.goo) W.goo.emit(sl.m.position.clone().setY(sl.m.position.y + .7 * sl.sc), 3 + n * 3, sl.sp.color, { collect: true, size: .07, up: 3.5, speed: 1.2 });
@@ -2509,11 +2510,21 @@ function renderCompass() {
   Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].x * 1.4, GATES[k].z * 1.4), '', 'pin', '#fbbf24'); });
   el.innerHTML = items.join('');
 }
-const FAN_LV = [0, 10, 30, 60, 120, 250, 500, 800, 1500, 3000];
+/* ---------- 經驗值與等級（與粉絲無關） ---------- */
+const XP_LV = [0, 20, 50, 100, 180, 300, 480, 720, 1050, 1500, 2100];   // 到達各等級所需的累計經驗，最高 10 級
+const XP_HARV = [0, 2, 4, 8, 20];                                         // 採集一次：依史萊姆稀有度
+const xpLevel = xp => { let lv = 0; while (lv < XP_LV.length - 1 && xp >= XP_LV[lv + 1]) lv++; return lv; };
+function gainXP(n, why) {
+  n = Math.round(n); if (!(n > 0) || !S) return;
+  const before = xpLevel(S.xp); S.xp += n; const after = xpLevel(S.xp);
+  const bar = $('#xpbar'); if (bar) { let em = $('#xpgain'); if (!em) { em = document.createElement('em'); em.id = 'xpgain'; bar.appendChild(em); } em.textContent = '+' + n + ' XP'; em.style.animation = 'none'; void em.offsetWidth; em.style.animation = ''; }
+  if (after > before) { sfx.level && sfx.level(); toast('升級！達到 Lv ' + after + (after >= XP_LV.length - 1 ? '（滿級）' : '')); const sp = bar && bar.querySelector('span'); if (sp) { sp.classList.remove('up'); void sp.offsetWidth; sp.classList.add('up'); } }
+  renderXP();
+}
 function renderXP() {
-  const f = S.fans; let lv = 0; while (lv < FAN_LV.length - 1 && f >= FAN_LV[lv + 1]) lv++;
-  const a = FAN_LV[lv], b = FAN_LV[Math.min(lv + 1, FAN_LV.length - 1)], pct = b > a ? (f - a) / (b - a) * 100 : 100;
+  const x = S.xp, lv = xpLevel(x), max = lv >= XP_LV.length - 1, a = XP_LV[lv], b = XP_LV[Math.min(lv + 1, XP_LV.length - 1)], pct = max ? 100 : (x - a) / (b - a) * 100;
   $('#xpbar i').style.width = clamp(pct, 0, 100) + '%'; $('#xpbar span').textContent = lv;
+  $('#xpbar').title = max ? `Lv ${lv}（滿級）　經驗 ${x}` : `Lv ${lv}　經驗 ${x - a} / ${b - a}（再 ${b - x} 升級）`;
 }
 function renderTop() {
   $('#sMoney').textContent = fmt(S.money); $('#sFans').textContent = '粉絲 ' + Math.floor(S.fans);
@@ -2605,7 +2616,7 @@ function finishStep() {
   M.si++;
   if (M.si >= M.steps.length) {
     M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
-    S.stock.push(p); M.last = p; save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
+    S.stock.push(p); M.last = p; gainXP(5 + p.crisp * 10); save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
   } else { M.step = M.steps[M.si]; beginStep(); }
   renderMake();
 }
@@ -2715,7 +2726,7 @@ function reqMatch(p) { return L.req && (L.req.kind === 'sp' ? p.sp === L.req.sp 
 function liveSale(p) {
   let price = priceOf(p, 'live'), bonus = 1;
   if (reqMatch(p)) { bonus = 1.8; L.req = null; S.fans += 3; chat('系統', '指定任務完成！限時銷售成交！', 'dm'); }
-  const gain = price * bonus; addMoney(gain); S.sales++; S.fans += 1 + L.hype / 30; S.stock = S.stock.filter(q => q !== p); sfx.coin();
+  const gain = price * bonus; addMoney(gain); S.sales++; S.fans += 1 + L.hype / 30; gainXP(bonus > 1 ? 8 : 4); S.stock = S.stock.filter(q => q !== p); sfx.coin();
   if (L.ss) { L.ss.sales++; L.ss.income += gain; }
   if (tab === 'live') popAt($('#liveWrap'), innerWidth / 2, $('#liveWrap').getBoundingClientRect().top + 70, `成交！${fmt(gain)}`, '#34d399');
   chat(pick(NAMES), `買了${short(p.sp)}捏捏！${fmt(gain)}`, 'dm'); toast(`直播成交 +${fmt(gain)}`);
@@ -2762,7 +2773,7 @@ const rating = () => { const a = S.rate.slice(-20); return a.reduce((x, y) => x 
 function webTick() {
   if (!S.web.length || Math.random() > clamp(0.25 + S.fans / 400 + (rating() - 3) * .1, .05, .9)) return null;
   const p = pick(S.web), f = fair(p, 'web'), price = priceOf(p, 'web'); if (Math.random() > demand(price, f) * .7) return null;
-  addMoney(price); S.sales++; S.fans += .3; S.web = S.web.filter(q => q !== p);
+  addMoney(price); S.sales++; S.fans += .3; gainXP(2); S.web = S.web.filter(q => q !== p);
   const stars = clamp(Math.round(1 + 2.2 * effCrisp(p) + 1.8 * clamp(f / price, 0, 1.3)), 1, 5); S.rate.push(stars); if (S.rate.length > 40) S.rate.shift();
   S.reviews.unshift({ s: stars, t: pick(REVIEWS[stars]), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars };
 }
@@ -2929,8 +2940,8 @@ document.addEventListener('click', e => {
     case 'chooseBranch': chooseBranch(k); break;
     case 'hire': { const c = Math.round(400 * Math.pow(1.5, S.workers)); if (S.money >= c) { S.money -= c; S.workers++; renderBranch(); renderTop(); save(); } break; }
     case 'auto': { const c = Math.round(600 * Math.pow(1.8, S.auto)); if (S.money >= c) { S.money -= c; S.auto++; renderBranch(); renderTop(); save(); } break; }
-    case 'deliver': { const c = S.contracts.find(x => x.id === +id); if (!c) return; const it = contractItems(c); if (it.length < c.n) return; S.stock = S.stock.filter(p => !it.includes(p)); S.contracts = S.contracts.filter(x => x !== c); addMoney(c.reward); S.rep++; S.fans += 2; sfx.pop(); toast(`交貨完成 +${fmt(c.reward)}`); refresh(); save(); break; }
-    case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
+    case 'deliver': { const c = S.contracts.find(x => x.id === +id); if (!c) return; const it = contractItems(c); if (it.length < c.n) return; S.stock = S.stock.filter(p => !it.includes(p)); S.contracts = S.contracts.filter(x => x !== c); addMoney(c.reward); S.rep++; gainXP(8); S.fans += 2; sfx.pop(); toast(`交貨完成 +${fmt(c.reward)}`); refresh(); save(); break; }
+    case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; gainXP(4); addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
     case 'finish': finish(); break;
     case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
@@ -3453,7 +3464,7 @@ function renderBench() {
 function benchMake() {
   if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (S.stock.length >= cap()) return toast('庫存已滿');
   S.gel[sp] -= 2; BN.busy = true; renderBench(); sfx.squish(1); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
-  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); sfx.pop(); toast(`做好了一個粗製${short(sp)}捏捏（售價 ¥10）`); save(); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
+  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); toast(`做好了一個粗製${short(sp)}捏捏（售價 ¥10）`); save(); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
 }
 /* ---------- 古地圖拼圖 ---------- */
 function openAltar() {
