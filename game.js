@@ -1374,10 +1374,75 @@ const PUZ_SPOTS = [...FRAG_SPOTS, ALTAR, ...NOTES, ...TIDE_SPOTS, TABLET, ...PIL
 const TIDE = [{ c: '#ef4444', n: '紅' }, { c: '#f97316', n: '橘' }, { c: '#facc15', n: '黃' }, { c: '#22c55e', n: '綠' }, { c: '#3b82f6', n: '藍' }, { c: '#a855f7', n: '紫' }];
 const TIDE_ORDER = [1, 4, 0, 3], TIDE_LAYOUT = [3, 0, 5, 1, 4, 2];
 const PILLAR = ['ice', 'grass', 'salt', 'coral', 'lava', 'honey'], PILLAR_ANS = [0, 1, 2, 3];
-const NOTE_TXT = ['……當潮水退去，第一個醒來的，是熔岩史萊姆身上燃燒的顏色……', '……第二個，是海鹽史萊姆的顏色；第三個，是彩虹最外圈的那一道……', '……最後醒來的，是青草史萊姆的顏色。其餘的石頭，千萬不要碰。'];
+const NOTE_TXT = ['……第 1 個醒來的，是熔岩史萊姆身上燃燒的顏色……', '……第 2 個，是海鹽史萊姆的顏色；第 3 個，是彩虹最外圈的那一道……', '……第 4 個，也是最後一個，是青草史萊姆的顏色。其餘的石頭，千萬不要碰。'];
+// 潮汐石陣的 4 個步驟：n 是這一步的線索寫在第幾張紙條上
+const TIDE_STEP = [{ n: 0, t: '熔岩史萊姆身上燃燒的顏色' }, { n: 1, t: '海鹽史萊姆的顏色' }, { n: 1, t: '彩虹最外圈的那一道' }, { n: 2, t: '青草史萊姆的顏色' }];
+const PILLAR_HINT_ORDER = [0, 3, 2, 1];
 const TABLET_TXT = '寒冰之心立於最左，<br>海底之花守在最右。<br>海鹽從不與寒冰比鄰，<br>剩下的那一根，長出初春的嫩草。';
+/* ---------- 火山相關謎題的輔助：線索判定、標籤、提示 ---------- */
+const pSp = v => SP[PILLAR[v]];
+const ENTER = () => (TOUCH ? '點擊' : '按 E');
+function pillarClues(pil) {
+  const sp = pil.map(v => PILLAR[v]), at = id => sp.indexOf(id);
+  return [
+    { t: '四根柱子分別是冰晶、海鹽、珊瑚，以及長出初春嫩草的青草史萊姆，各一根', ok: ['ice', 'salt', 'coral', 'grass'].every(id => sp.filter(x => x === id).length === 1) },
+    { t: '寒冰之心（冰晶史萊姆）立在最左邊（第 1 根）', ok: sp[0] === 'ice' },
+    { t: '海底之花（珊瑚史萊姆）守在最右邊（第 4 根）', ok: sp[3] === 'coral' },
+    { t: '海鹽史萊姆從不與冰晶史萊姆相鄰', ok: at('salt') >= 0 && at('ice') >= 0 && Math.abs(at('salt') - at('ice')) > 1 },
+  ];
+}
+const cluesDone = () => pillarClues(qState().pil).filter(c => c.ok).length;
+function pillarExtra() {
+  const q = qState(), cl = pillarClues(q.pil);
+  return `<div class="clues">${cl.map(c => `<div class="${c.ok ? 'ok' : ''}"><b>${c.ok ? '✓' : '○'}</b><span>${c.t}</span></div>`).join('')}<div class="slots">${q.pil.map((v, i) => `<span>${i + 1}.${dot(pSp(v).color)}${short(PILLAR[v])}</span>`).join('')}</div></div>`;
+}
+function tideStepsHTML() {
+  const q = qState();
+  return `<div class="clues">${TIDE_STEP.map((s, i) => { const done = i < q.tide.length, have = q.notes.includes(s.n); return `<div class="${done ? 'ok' : ''}"><b>${done ? '✓' : i + 1}</b><span>${have ? '第 ' + (i + 1) + ' 個醒來：' + esc(s.t) : '第 ' + (i + 1) + ' 個醒來：？？？（還有紙條沒找到）'}${done ? '　→ ' + TIDE[TIDE_ORDER[i]].n + '色' : ''}</span></div>`; }).join('')}</div>`;
+}
+function questExtra(k) {
+  const q = qState();
+  if (k === 'volcano' && (q.notes.length || q.tide.length)) return tideStepsHTML();
+  if (k === 'snow' && q.read.tablet) return pillarExtra();
+  return '';
+}
+function hintLines(k) {
+  const q = qState(), n = q.hints[k], out = [];
+  for (let i = 0; i < n; i++) {
+    if (k === 'tide') out.push(i === 0 ? '一共要依序點亮 4 顆石頭，另外 2 顆不是答案，千萬不要碰。' : `第 ${i} 步要點亮的是：${TIDE[TIDE_ORDER[i - 1]].n}色的石頭。`);
+    else { const p = PILLAR_HINT_ORDER[i]; out.push(`第 ${p + 1} 根應該是：${SP[PILLAR[PILLAR_ANS[p]]].name}。`); }
+  }
+  return out;
+}
+function hintBlock(k) {
+  const q = qState(), max = k === 'tide' ? 5 : 4, n = q.hints[k], lines = hintLines(k);
+  return `<div class="hintbox">${lines.map(l => `<div>提示：${l}</div>`).join('')}<button class="btn sm ghost" data-act="hint" data-k="${k}" ${n >= max ? 'disabled' : ''}>${n >= max ? '提示已全部揭露' : n ? '再給一點提示' : '卡住了？需要提示'}（${n}/${max}）</button></div>`;
+}
+function giveHint(k) {
+  const q = qState(), max = k === 'tide' ? 5 : 4; if (q.hints[k] >= max) return; q.hints[k]++; sfx.pop(); save();
+  toast('已揭露一則提示（可在探索日誌重新查看）'); renderQuest(); if (tab === 'riddle') renderRiddle(); objSig = ''; renderObjective();
+}
+function beam(parent, color, h = 7, r = .2, y = 0) {
+  const m = mesh(new THREE.CylinderGeometry(r, r, h, 12, 1, true), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 0, y + h / 2, 0, parent);
+  m.userData.isBeam = true; return m;
+}
+function putLabel(g, key, txt, color, sub, y, sx = 1.6, sy = .5) {
+  if (g.userData[key]) dropObj(g.userData[key]);
+  const lb = textSprite(txt, color, sub); lb.position.set(0, y, 0); lb.scale.set(sx, sy, 1); lb.userData.keep = true; g.add(lb); g.userData[key] = lb; return lb;
+}
+function stoneLabel(g, ci) {
+  const step = qState().tide.indexOf(ci);
+  if (step >= 0) putLabel(g, 'lab', `第 ${step + 1} 步`, TIDE[ci].c, TIDE[ci].n + '色', 2.55, 1.5, .47); else putLabel(g, 'lab', TIDE[ci].n + '色', TIDE[ci].c, '', 2.45, 1.45, .45);
+}
+function refreshStones() { W.puz.forEach(p => { if (p.pz.type === 'tide') stoneLabel(p.obj, p.pz.c); }); }
+function pillarLabel(g, v, i) { putLabel(g, 'lab', short(PILLAR[v]), pSp(v).color, `第 ${i + 1} 根`, 4.1, 1.7, .53); }
+function showPillarBeams() { W.puz.forEach(p => { if (p.pz.type === 'pillar' && !p.obj.userData.beam) p.obj.userData.beam = beam(p.obj, '#fde68a', 6, .28, 3.1); }); }
+function volcanoHint(zid) {
+  if (zid === 'volcano' && !S.zones.includes('snow') && !qState().read.tablet && !W.volHint) { W.volHint = true; setTimeout(() => toast('火山腳下有一座發光的石碑，往光柱的方向走，看看上面刻了什麼。'), 700); }
+}
 function qState() {
   if (!S.q) S.q = {}; const q = S.q; q.frags = q.frags || []; q.notes = q.notes || []; q.tide = q.tide || []; q.read = q.read || {};
+  q.hints = q.hints || {}; q.hints.tide = Math.max(0, Math.min(5, +q.hints.tide || 0)); q.hints.pillar = Math.max(0, Math.min(4, +q.hints.pillar || 0));
   if (!q.pil || q.pil.length !== 4) q.pil = [4, 4, 4, 4]; if (!q.map || q.map.length !== 9) q.map = [1, 3, 2, 0, 1, 2, 3, 1, 2]; return q;
 }
 const madeIn = zid => SPECIES.filter(s => s.zone === zid).reduce((a, s) => a + (S.codex[s.id] ? S.codex[s.id].made : 0), 0);
@@ -1436,36 +1501,43 @@ function buildPuzzles() {
     NOTES.forEach(([x, z], i) => {
       if (q.notes.includes(i)) return; const g = new THREE.Group(); g.position.set(x, H(x, z) + .02, z); W0.add(g);
       box(.5, .01, .36, std('#fef3c7', { roughness: .9 }), 0, .02, 0, g).rotation.y = i; mesh(new THREE.DodecahedronGeometry(.12), std('#94a3b8', { flatShading: true }), .1, .1, .05, g);
-      add(g, { type: 'note', i }, '被撕碎的紙條', .8);
+      beam(g, '#fef3c7', 6, .16); add(g, { type: 'note', i }, '被撕碎的紙條', .8);
     });
     TIDE_LAYOUT.forEach((ci, i) => {
       const [x, z] = TIDE_SPOTS[i], g = new THREE.Group(); g.position.set(x, H(x, z), z); W0.add(g);
       const stn = mesh(jit(new THREE.DodecahedronGeometry(.7, 1), .25, i + 5), std('#64748b', { flatShading: true, roughness: .9 }), 0, .5, 0, g); stn.scale.set(1, 1.3, 1); stn.castShadow = !LOW;
       g.userData.gem = mesh(new THREE.OctahedronGeometry(.25), new THREE.MeshStandardMaterial({ color: TIDE[ci].c, emissive: TIDE[ci].c, emissiveIntensity: q.tide.includes(ci) ? 1.8 : .15, roughness: .2 }), 0, 1.55, 0, g);
-      addCol({ x, z, r: .8 }); add(g, { type: 'tide', c: ci, g }, '潮汐石', 1.2);
+      addCol({ x, z, r: .8 }); add(g, { type: 'tide', c: ci, g }, `潮汐石（${TIDE[ci].n}色）`, 1.2); stoneLabel(g, ci);
     });
   }
   if (!S.zones.includes('snow')) {
     const t = new THREE.Group(); t.position.set(TABLET[0], H(...TABLET), TABLET[1]); t.rotation.y = .5; W0.add(t);
     box(1.3, 1.7, .3, std('#57534e', { flatShading: true, roughness: .95 }), 0, .85, 0, t); box(1.0, 1.2, .02, new THREE.MeshStandardMaterial({ color: '#1c1917', emissive: '#f97316', emissiveIntensity: .4 }), 0, .95, .16, t);
+    if (!q.read.tablet) beam(t, '#fdba74', 16, .4);
+    const tl = textSprite('古老的石碑', '#fdba74', q.read.tablet ? '可再讀一次' : '先讀一讀上面的古文'); tl.position.set(0, 2.9, 0); tl.userData.keep = true; t.add(tl);
     addCol({ x: TABLET[0], z: TABLET[1], r: .8 }); add(t, { type: 'tablet' }, '古老的石碑', 1.2);
     PILLARS.forEach(([x, z], i) => {
       const g = new THREE.Group(); g.position.set(x, H(x, z), z); W0.add(g);
       mesh(new THREE.CylinderGeometry(.45, .55, 2.6, 6), std('#1c1917', { flatShading: true, roughness: .8 }), 0, 1.3, 0, g);
       mesh(new THREE.CylinderGeometry(.48, .48, .12, 6), glow('#ea580c'), 0, .8, 0, g);
       const cr = mesh(new THREE.OctahedronGeometry(.32), new THREE.MeshStandardMaterial({ color: '#fff', emissive: '#fff', emissiveIntensity: .7, roughness: .2 }), 0, 2.95, 0, g); cr.scale.y = 1.4; g.userData.cr = cr;
-      setPillar(g, q.pil[i]); addCol({ x, z, r: .7 }); add(g, { type: 'pillar', i, g }, `熔岩柱（第 ${i + 1} 根）`, 1.4);
+      setPillar(g, q.pil[i], i); addCol({ x, z, r: .7 }); add(g, { type: 'pillar', i, g }, `熔岩柱（第 ${i + 1} 根）`, 1.4);
     });
+    if (q.read.tablet) showPillarBeams();
   }
   W.anim.push((dt, t) => W.puz.forEach((it, i) => {
     const o = it.obj, d = Math.hypot(o.position.x - P.x, o.position.z - P.z);
     if (it.pz.type === 'frag') o.userData.frag.material.emissiveIntensity = d < 14 ? .3 + (Math.sin(t * 3 + i) + 1) * .35 * (1 - d / 14) : .03;
     if (it.pz.type === 'pillar') o.userData.cr.rotation.y = t;
-    if (it.pz.type === 'tide' && !qState().tide.includes(it.pz.c)) o.userData.gem.material.emissiveIntensity = .15 + (Math.sin(t * 2 + i) + 1) * .1;
+    if (it.pz.type === 'tide') {
+      const gm = o.userData.gem.material;
+      if (o.userData.flash > 0) { o.userData.flash -= dt; gm.emissive.set('#ef4444'); gm.emissiveIntensity = 3 * Math.max(0, o.userData.flash / .6); if (o.userData.flash <= 0) gm.emissive.set(TIDE[it.pz.c].c); }
+      else if (!qState().tide.includes(it.pz.c)) gm.emissiveIntensity = .15 + (Math.sin(t * 2 + i) + 1) * .1;
+    }
     if (it.pz.type === 'altar') o.userData.plate.material.emissiveIntensity = qState().frags.length >= 5 ? .5 + Math.sin(t * 3) * .3 : .1;
   }));
 }
-function setPillar(g, v) { const c = SP[PILLAR[v]].color; g.userData.cr.material.color.set(c); g.userData.cr.material.emissive.set(c); }
+function setPillar(g, v, i) { const c = pSp(v).color; g.userData.cr.material.color.set(c); g.userData.cr.material.emissive.set(c); pillarLabel(g, v, i); }
 function removePuz(it) { W.scene.remove(it.obj); W.puz = W.puz.filter(x => x !== it); W.inter = W.inter.filter(x => x !== it); }
 function puzzleTap(it) {
   const q = qState(), pz = it.pz; sfx.tick();
@@ -1473,34 +1545,49 @@ function puzzleTap(it) {
   // 解開後（或正在開門的 0.5 秒內）再點不會打亂狀態
   if (S.zones.includes(zoneOf) || W.solving === zoneOf) return toast('這道謎題已經解開了。');
   if (!questReady(zoneOf) && pz.type !== 'tablet') { const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`); }
+  const above = (h = 1) => it.obj.position.clone().setY(it.obj.position.y + h);
   if (pz.type === 'frag') {
-    if (!q.frags.includes(pz.i)) q.frags.push(pz.i); fx3(it.obj.position.clone().setY(it.obj.position.y + 1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
+    if (!q.frags.includes(pz.i)) q.frags.push(pz.i); fx3(above(1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
     removePuz(it); sfx.pop(); save(); renderQuest(); toast(q.frags.length >= 5 ? '五片碎片都找到了！到東方能量門前的古地圖石台把地圖拼回原狀。' : `取得古地圖碎片（${q.frags.length}/5）`);
   } else if (pz.type === 'altar') openAltar();
   else if (pz.type === 'note') {
-    if (!q.notes.includes(pz.i)) q.notes.push(pz.i); removePuz(it); sfx.pop(); save(); renderQuest();
-    modal(`<h2>撕碎的紙條（${q.notes.length}/3）</h2><div class="riddle">${NOTE_TXT[pz.i]}</div><p class="small" style="color:var(--sub)">收集到的紙條可以在背包的探索日誌重新閱讀。</p>`);
+    if (!q.notes.includes(pz.i)) q.notes.push(pz.i); removePuz(it); sfx.pop(); save(); renderQuest(); objSig = ''; renderObjective();
+    const all = q.notes.length >= 3;
+    modal(`<h2>撕碎的紙條（${q.notes.length}/3）</h2><div class="riddle">${NOTE_TXT[pz.i]}</div>
+      <p class="small" style="margin:10px 0 4px"><b>目前拼出的謎語</b>（依照醒來的順序整理）：</p>${tideStepsHTML()}
+      <p class="small" style="color:var(--sub)">${all ? '謎語完整了！到海邊的潮汐石陣，依照上面的順序，依序點亮對應顏色的石頭。每顆石頭上方都標有顏色名稱。' : '還有紙條散落在海灘上，找到發出微光的光柱就是了。'}</p>`);
   } else if (pz.type === 'tide') {
-    if (q.notes.length < 3) return toast('潮汐石毫無反應……也許要先弄清楚紙條上的完整謎語。');
-    q.tide.push(pz.c); pz.g.userData.gem.material.emissiveIntensity = 1.8;
-    if (!q.tide.every((c, i) => c === TIDE_ORDER[i])) { q.tide = []; sfx.squish(1); toast('潮汐石的光一起熄滅了……順序不對。'); W.puz.forEach(p => p.pz.type === 'tide' && (p.pz.g.userData.gem.material.emissiveIntensity = .15)); }
-    else if (q.tide.length === TIDE_ORDER.length) { W.solving = 'volcano'; setTimeout(() => discoverZone('volcano'), 500); } else sfx.machine(0);
-    save(); renderQuest();
+    if (q.notes.length < 3) return toast('潮汐石毫無反應……先把三張紙條都找齊，弄清楚完整的謎語。');
+    if (q.tide.includes(pz.c)) return toast('這顆石頭已經亮了。');
+    const step = q.tide.length;
+    if (pz.c !== TIDE_ORDER[step]) {
+      q.tide = []; sfx.squish(1); fx3(above(2.4), '順序不對', '#fb7185'); toast(`第 ${step + 1} 步點錯了，所有石頭的光都熄滅了，請從第 1 步重新開始。`);
+      W.puz.forEach(p => { if (p.pz.type === 'tide') p.obj.userData.flash = .6; }); refreshStones(); save(); renderQuest(); renderObjective(); return;
+    }
+    q.tide.push(pz.c); pz.g.userData.gem.material.emissiveIntensity = 1.8; fx3(above(2.4), `第 ${q.tide.length} 步 ✓`, TIDE[pz.c].c); refreshStones();
+    if (q.tide.length === TIDE_ORDER.length) { W.solving = 'volcano'; setTimeout(() => discoverZone('volcano'), 500); } else sfx.machine(0);
+    save(); renderQuest(); renderObjective();
   } else if (pz.type === 'tablet') {
-    q.read.tablet = true; save(); renderQuest();
-    modal(`<h2>古老的石碑</h2><div class="riddle">${TABLET_TXT}</div><p class="small" style="color:var(--sub)">四根熔岩柱由左到右排列（面向北方）。點擊熔岩柱可以切換頂端晶石的顏色，每種顏色都屬於一種史萊姆。</p>`);
+    q.read.tablet = true; showPillarBeams(); save(); renderQuest(); objSig = ''; renderObjective(); openGui('riddle');
   } else if (pz.type === 'pillar') {
-    if (!q.read.tablet) return toast('熔岩柱燙得無法靠近……也許附近有什麼線索。');
-    q.pil[pz.i] = (q.pil[pz.i] + 1) % PILLAR.length; setPillar(pz.g, q.pil[pz.i]); sfx.machine(2); save();
+    if (!q.read.tablet) return toast('熔岩柱燙得無法靠近……先去讀一讀附近石碑上的古文。');
+    const before = cluesDone(); q.pil[pz.i] = (q.pil[pz.i] + 1) % PILLAR.length; setPillar(pz.g, q.pil[pz.i], pz.i); sfx.machine(2); save();
+    const after = cluesDone(); toast(`第 ${pz.i + 1} 根：${pSp(q.pil[pz.i]).name}（已滿足 ${after}/4 條線索）`);
+    if (after > before) { fx3(above(3.4), `線索 ${after}/4 ✓`, '#34d399'); sfx.tick(); }
+    renderQuest(); objSig = ''; renderObjective();
     if (q.pil.every((v, i) => v === PILLAR_ANS[i])) { W.solving = 'snow'; setTimeout(() => discoverZone('snow'), 500); }
   }
 }
 function questTarget() {
-  const k = nextQuest(); if (!k || !S.zones.includes(QUEST[k].from)) return null; const q = qState();
-  const nearest = (list, have, n, h) => { let b = null, bd = 1e9; list.forEach(([x, z], i) => { if (have.includes(i)) return; const d = Math.hypot(x - P.x, z - P.z); if (d < bd) { bd = d; b = { x, z, n, h }; } }); return b; };
-  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台', h: '對準石台' + (TOUCH ? '點擊' : '按 E') + '，把古地圖拼回原狀。' } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片', '碎片就落在附近的地上，靠近時會微微發光，對準後' + (TOUCH ? '點擊' : '按 E') + '撿起。');
-  if (k === 'volcano') return q.notes.length >= 3 ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣', h: '依照紙條上的謎語，依序點亮四顆潮汐石。順序錯了會重來。' } : nearest(NOTES, q.notes, '撕碎的紙條', '紙條壓在附近地上的小石頭下，對準後' + (TOUCH ? '點擊' : '按 E') + '撿起。');
-  if (k === 'snow') return q.read.tablet ? { x: 0, z: PILLARS[1][1], n: '熔岩柱', h: '依照石碑上的謎題，點擊熔岩柱切換頂端晶石的顏色。' } : { x: TABLET[0], z: TABLET[1], n: '古老的石碑', h: '對準石碑' + (TOUCH ? '點擊' : '按 E') + '，閱讀上面的古文。' };
+  const k = nextQuest(); if (!k || !S.zones.includes(QUEST[k].from)) return null; const q = qState(), E = ENTER();
+  const nearest = (list, have, n, h, d) => { let b = null, bd = 1e9; list.forEach(([x, z], i) => { if (have.includes(i)) return; const dd = Math.hypot(x - P.x, z - P.z); if (dd < bd) { bd = dd; b = { x, z, n, h, d }; } }); return b; };
+  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台', h: `對準石台${E}，把古地圖拼回原狀。` } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片', `碎片就落在附近的地上，靠近時會微微發光，對準後${E}撿起。`);
+  if (k === 'volcano') return q.notes.length >= 3
+    ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣', h: `對準石頭${E}，依紙條的順序點亮四顆（已點亮 ${q.tide.length}/4）。`, d: `前往潮汐石陣，依序點亮四顆石頭（已點亮 ${q.tide.length}/4）。` }
+    : nearest(NOTES, q.notes, '撕碎的紙條', `紙條壓在地上的小石頭下，會發出一道微光。對準後${E}撿起（已找到 ${q.notes.length}/3）。`, `沿著光柱找出海灘上的 3 張紙條（已找到 ${q.notes.length}/3）。`);
+  if (k === 'snow') return q.read.tablet
+    ? { x: 0, z: PILLARS[1][1], n: '熔岩柱', h: `對準熔岩柱${E}切換晶石的史萊姆種類，上方會顯示名稱；左上角的清單會告訴你哪些線索已滿足。`, d: `依照石碑線索設定四根熔岩柱（已滿足 ${cluesDone()}/4 條線索）。` }
+    : { x: TABLET[0], z: TABLET[1], n: '古老的石碑', h: `對準石碑${E}，閱讀上面的古文。`, d: '火山腳下有一座發光的石碑，朝光柱的方向走，去讀一讀。' };
   return null;
 }
 function renderQuest() {
@@ -1508,8 +1595,8 @@ function renderQuest() {
   if (!k) { el.innerHTML = '<b>探索日誌</b><div class="small" style="color:var(--sub);margin-top:4px">你已經發現了月光谷的所有區域。</div>'; return; }
   const Q = QUEST[k], ready = questReady(k), made = madeIn(Q.from); let prog = '';
   if (k === 'coast') prog = `<div class="qprog">${[0, 1, 2, 3, 4].map(i => `<i class="${q.frags.includes(i) ? 'on' : ''}"></i>`).join('')}</div><div class="small" style="margin-top:4px">古地圖碎片 ${q.frags.length}/5</div>`;
-  if (k === 'volcano') prog = `<div class="small" style="margin-top:6px">紙條 ${q.notes.length}/3</div>` + q.notes.slice().sort().map(i => `<div class="riddle" style="font-size:13px;margin-top:4px">${NOTE_TXT[i]}</div>`).join('');
-  if (k === 'snow' && q.read.tablet) prog = `<div class="riddle" style="font-size:13px;margin-top:6px">${TABLET_TXT}</div>`;
+  if (k === 'volcano' && ready) prog = `<div class="small" style="margin-top:6px">紙條 ${q.notes.length}/3　已點亮 ${q.tide.length}/4</div>` + tideStepsHTML() + hintBlock('tide');
+  if (k === 'snow' && ready && q.read.tablet) prog = `<div class="riddle" style="font-size:13px;margin-top:6px">${TABLET_TXT}</div><div class="small" style="margin-top:6px">已滿足 ${cluesDone()}/4 條線索</div>` + pillarExtra() + hintBlock('pillar');
   el.innerHTML = `<b>探索日誌：${Q.title}</b><div class="small" style="color:var(--sub);margin-top:4px;line-height:1.6">${Q.hint}${ready ? '' : `<br>（線索目前被封印：先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏，目前 ${made}/${Q.need}）`}</div>${prog}`;
 }
 
@@ -2368,7 +2455,7 @@ function objective() {
   if (!S.sales) return { t: '上架到網站', d: '到「工作電腦」把沒玩過的捏捏上架到網站，等顧客下單。', x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8', n: '工作電腦', here: '對準工作電腦' + (TOUCH ? '點擊' : '按 E') + '，在「網路商店」把捏捏上架。' };
   if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)} 後，搭出生點左邊的計程車到大城市購買切片機（目前 ${fmt(S.money)}）。`, x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，前往大城市。' };
   const k = nextQuest(), qt = questTarget();
-  if (k) return { t: QUEST[k].title, d: questReady(k) ? (qt ? `前往${qt.n}。` : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd', n: qt && qt.n, here: qt && qt.h };
+  if (k) { const ob = { t: QUEST[k].title, d: questReady(k) ? (qt ? (qt.d || `前往${qt.n}。`) : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd', n: qt && qt.n, here: qt && qt.h }; if (questReady(k)) ob.extra = questExtra(k); return ob; }
   return { t: '開設夢想捏捏博物館', d: '累積粉絲與營收，到工作電腦的圖鑑頁完成夢想。' };
 }
 let objSig = '';
@@ -2379,9 +2466,10 @@ function renderObjective() {
   if (W.arrKey !== key) { W.arrKey = key; W.arr = false; }
   if (!W.arr && dist < 8) { W.arr = true; if (o.n) { toast(`已抵達${o.n}`); sfx.tick(); } }
   else if (W.arr && dist > 12) W.arr = false;
-  if (W.arr) o = Object.assign({}, o, { d: o.track === 'slime' ? `對準史萊姆' + (TOUCH ? '點擊' : '按 E') + ' 3 次採集凝膠。` : (o.here || `已抵達${o.n || '目標地點'}，對準它' + (TOUCH ? '點擊' : '按 E') + '使用。`), t: o.n ? `${o.t}（已抵達${o.n}）` : o.t, arrived: true });
-  const s = o.t + o.d; W.obj = o; if (s === objSig) return; objSig = s;
-  $('#objective').classList.toggle('arrived', !!o.arrived); $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目前目標'}</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>`;
+  if (W.arr) o = Object.assign({}, o, { d: o.track === 'slime' ? `對準史萊姆${ENTER()} 3 次採集凝膠。` : (o.here || `已抵達${o.n || '目標地點'}，對準它${ENTER()}使用。`), t: o.n ? `${o.t}（已抵達${o.n}）` : o.t, arrived: true });
+  const s = o.t + o.d + (o.extra || ''); W.obj = o; if (s === objSig) return; objSig = s;
+  $('#objective').classList.toggle('arrived', !!o.arrived);
+  $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目前目標'}</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>${o.extra || ''}`;
 }
 /* 目標引導標記：在畫面上標出目標位置與距離；不在畫面內時貼齊邊緣並以箭頭指出方向；靠近 8 公尺內自動隱藏 */
 const WPV = new THREE.Vector3(), WP_HIDE = 8;
@@ -2440,9 +2528,9 @@ function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'branch', 'codex'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
+  pc: { t: '工作電腦', tabs: ['web', 'branch', 'codex'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
 };
-const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', mapg: '拼回地圖', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
+const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
 function openGui(kind, sec) {
   const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now();
@@ -2795,7 +2883,7 @@ function renderInv() {
   $('#invInfo').innerHTML = it ? (it.t === 'gel' ? `<b>${SP[it.sp].name}凝膠</b> × ${it.n}<br><span style="color:var(--sub)">帶到工坊的加工產線，每 2 份可做成 1 個酥脆捏捏。</span>` : `<b>${SP[it.p.sp].name} · 酥脆捏捏</b><br>酥脆 ${Math.round(effCrisp(it.p) * 100)}% · 耐久 ${Math.round(it.p.dur)}% · 裝飾 ${it.p.deco.length} · 合理價約 ${fmt(fair(it.p, 'live'))}<br><span style="color:var(--sub)">可到裝飾桌加上零件，或到直播台／工作電腦販售。</span>`) + `<div class="small" style="margin-top:6px;color:var(--sub)">點擊格子可放到快捷列第 ${S.hb + 1} 格選取。</div>` : `<span style="color:var(--sub)">背包：凝膠與捏捏都會顯示在這裡。庫存 ${S.stock.length}/${cap()}</span>`;
   renderQuest();
 }
-const RENDER = { bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), mapg: renderMapGame, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
+const RENDER = { bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
 
 /* ---------- 點擊事件 ---------- */
 document.addEventListener('click', e => {
@@ -2835,6 +2923,7 @@ document.addEventListener('click', e => {
     case 'benchMake': benchMake(); break;
     case 'taxiGo': taxiRide(); break;
     case 'mapRot': mapRotate(+el.dataset.i); break;
+    case 'hint': giveHint(k); break;
     case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max || (UPS[k].need && !S.own[UPS[k].need])) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); save(); break; }
     case 'buyPack': { const pk = PACKS[k]; if (!pk || S.packs.includes(k) || S.money < pk.cost) return; S.money -= pk.cost; S.packs.push(k); sfx.level(); toast(`已解鎖${pk.name}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); save(); break; }
     case 'chooseBranch': chooseBranch(k); break;
@@ -3392,6 +3481,14 @@ function renderMapGame() {
   $('#mapBody').innerHTML = `<div class="hint">點擊地圖碎片可以旋轉 90°。把九塊碎片都轉回正確的方向（文字要是正的、河流與路徑要連起來），地圖就會重新拼合。</div>
   <div class="mapgrid" style="--mapimg:url(${mapImage()})">${q.map.map((r, i) => `<button class="mtile" data-act="mapRot" data-i="${i}" style="background-position:${(i % 3) * 50}% ${Math.floor(i / 3) * 50}%;transform:rotate(${r * 90}deg)" aria-label="碎片 ${i + 1}"></button>`).join('')}</div>`;
 }
+/* ---------- 石碑面板（熔岩柱謎題） ---------- */
+function renderRiddle() {
+  const q = qState(), cl = pillarClues(q.pil), n = cl.filter(c => c.ok).length;
+  $('#riddleBody').innerHTML = `<div class="riddle">${TABLET_TXT}</div>
+  <div class="hint" style="margin-top:10px">這四條線索已經整理成清單。回到柱子前，對準熔岩柱${ENTER()}，切換頂端晶石的史萊姆種類；柱子上方會顯示名稱，左上角的目標欄會即時告訴你哪些線索已經滿足。面向北方時，最左邊是第 1 根。</div>
+  <div class="slotrow">${q.pil.map((v, i) => `<div class="slot2" style="border-color:${pSp(v).color}"><small>第 ${i + 1} 根</small><b>${dot(pSp(v).color)}${short(PILLAR[v])}</b></div>`).join('')}</div>
+  <div class="card"><div class="small" style="margin-bottom:6px">已滿足 <b style="color:var(--good)">${n}/4</b> 條線索</div>${pillarExtra()}</div>${hintBlock('pillar')}`;
+}
 function mapRotate(i) {
   const q = qState(); if (q.map.every(r => r === 0)) return; q.map[i] = (q.map[i] + 1) % 4; sfx.tick(); save(); renderMapGame();
   if (q.map.every(r => r === 0)) { sfx.pop(); toast('地圖拼好了！'); setTimeout(() => { closeGui(); discoverZone('coast'); }, 700); }
@@ -3499,7 +3596,7 @@ function envStep(dt) {
   shC.set(fx, P.y, fz); const a = Math.round(shC.dot(SUN_R) / tx) * tx, b = Math.round(shC.dot(SUN_U) / tx) * tx, c = shC.dot(SUN_D);
   shC.copy(SUN_R).multiplyScalar(a).addScaledVector(SUN_U, b).addScaledVector(SUN_D, c);
   W.sun.target.position.copy(shC); W.sun.position.copy(shC).addScaledVector(SUN_D, 66);
-  const zid = inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; if (prev) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  const zid = inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
 }
 // 距離剔除：超出霧距的道具區塊不繪製（大城市時整片山谷都不畫）
 const LOD_D = LOW ? 30 : 50, SHADOW_D = 52; // 50m 涵蓋整個陰影範圍（含視線前方偏移），遠角的樹也有陰影
@@ -3517,7 +3614,7 @@ function worldStep(dt) {
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks();
   slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
   if (W.goo) { const got = W.goo.update(dt, W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
-  for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position)); s.material.opacity = o; s.visible = o > .02; }
+  for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }
   if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = targetLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
   else if (GUI.kind) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）

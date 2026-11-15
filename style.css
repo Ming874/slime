@@ -376,3 +376,18 @@ body.titleon #hud{display:none}
 #objective.arrived{border-left-color:var(--good);animation:objIn .35s ease}
 #objective.arrived b{color:var(--good)}
 @keyframes objIn{from{transform:translateX(-6px);opacity:.4}}
+
+/* ================= 謎題線索清單 ================= */
+.clues{margin-top:6px;display:grid;gap:3px}
+.clues>div{display:flex;gap:6px;font-size:12px;line-height:1.5;color:#cbd5e1}
+.clues>div b{flex:none;width:15px;text-align:center;color:#94a3b8}
+.clues>div.ok{color:#86efac}
+.clues>div.ok b{color:var(--good)}
+.clues .slots{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px;padding-top:5px;border-top:1px dashed #ffffff30;color:#e2e8f0}
+.slotrow{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+.slot2{border:2px solid var(--line);border-radius:10px;padding:8px 4px;text-align:center;background:var(--bg)}
+.slot2 small{display:block;color:var(--sub);font-size:11px}
+.slot2 b{font-size:13px}
+.hintbox{margin-top:8px;display:grid;gap:5px}
+.hintbox>div{font-size:12px;color:#fde68a;background:#fbbf2418;border-left:3px solid var(--warn);padding:4px 8px;border-radius:4px}
+#objective .clues{pointer-events:none}
