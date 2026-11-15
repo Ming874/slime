@@ -118,9 +118,11 @@ function sanitize(o) {
   if (!('xp' in o)) s.xp = Math.round((+o.fans || 0) * 2 + (+o.sales || 0) * 2); s.xp = Math.max(0, Math.floor(+s.xp) || 0);
   s.hb = clamp(Math.floor(+s.hb) || 0, 0, 8); s.sens = clamp(Math.floor(+s.sens) || 0, 0, 2);
   // 已購買的設備：只保留有效項目；改版前（設備內建）的舊存檔自動補發
-  const OWN_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'];
-  if (!o.own || typeof o.own !== 'object') { s.own = {}; if (o.seen && ((+o.sales || 0) > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0))) { OWN_KEYS.forEach(k => s.own[k] = true); s.ownMigrated = true; } }
+  const OWN_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live', 'coat', 'sword'], OLD_OWN = ['slicer', 'coater', 'dryer', 'decor', 'live'];
+  if (!o.own || typeof o.own !== 'object') { s.own = {}; if (o.seen && ((+o.sales || 0) > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0))) { OLD_OWN.forEach(k => s.own[k] = true); s.ownMigrated = true; } }
   else s.own = Object.fromEntries(Object.entries(o.own).filter(([k, v]) => OWN_KEYS.includes(k) && v).map(([k]) => [k, true]));
+  // 已經解鎖雪原的舊存檔：補發保暖衣，避免被突然擋在雪原外面
+  if (s.zones.includes('snow') && !s.own.coat) { s.own.coat = true; s.coatMigrated = true; }
   if (s.mk && !(SP[s.mk.sp] && s.mk.step >= 0 && s.mk.step < 3 && Array.isArray(s.mk.prec) && s.mk.prec.length === s.mk.step)) s.mk = null;
   return s;
 }
@@ -1467,6 +1469,7 @@ function buildGates() {
     const it = addInter(hitBox(1, 8, 14, 0, 4, 0, g), 'gate', k, '能量門');
     W.gates[k] = { g, mat, col, it, fade: 0 };
   });
+  buildColdWall();
   W.anim.push((dt, t) => { if (gateTex) gateTex.offset.y = t * .3; Object.keys(W.gates).forEach(k => { const gt = W.gates[k]; if (gt.fade > 0) { gt.fade -= dt; gt.mat.opacity = .55 * Math.max(0, gt.fade); if (gt.fade <= 0) { dropObj(gt.g); delete W.gates[k]; } } else gt.mat.opacity = .45 + Math.sin(t * 2) * .1; }); });
 }
 function openGate(k) {
@@ -1478,7 +1481,7 @@ function discoverZone(k) {
   if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
   const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '四根熔岩柱的光芒交會，冰冷的風從西方山脊吹來，雪原的入口出現了。' }[k];
-  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p><p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`, [{ t: '出發' }]);
+  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p><p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>${k === 'snow' && !S.own.coat ? '<p><b>雪原極度寒冷，需要保暖衣才能進入。</b>保暖衣在大城市的武器店販售（升到 Lv ' + ARMS_LV + ' 後開張）。</p>' : ''}`, [{ t: '出發' }]);
   toast(`發現新區域：${z.name}`); renderQuest();
 }
 function buildPuzzles() {
@@ -2229,7 +2232,7 @@ const KEYS = new Set(), IN = { joy: null, jx: 0, jy: 0, run: false, sneak: false
 const SENS = [.0016, .0025, .0038], SENS_N = ['低', '中', '高'];
 function initPlayer() {
   let sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
-  if (!inCity(sp.x) && !regionOK(sp.x, sp.z)) sp = { x: 0, z: 16, yaw: 0 };
+  if (!inCity(sp.x) && (!regionOK(sp.x, sp.z) || coldBlocked(sp.x, sp.z))) sp = { x: 0, z: 16, yaw: 0 };
   P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, vx: 0, vz: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0, coy: 0, jb: 0, sneak: false, running: false, dip: 0, dipV: 0, roll: 0 };
 }
 // 腳下的地面材質（決定腳步聲）
@@ -2320,12 +2323,21 @@ function regionOK(x, z) {
   if (Math.abs(ax - az) < 9) return false;
   return !!side && S.zones.includes(side);
 }
+/* 雪原的刺骨寒氣：越過西側能量門外側，沒有保暖衣就走不進去 */
+const coldBlocked = (x, z) => !S.own.coat && x < -55.5 * K && !inCity(x);
+function refreshCold() { if (W.coldWall) W.coldWall.visible = !S.own.coat; }
+function buildColdWall() {
+  const w = new THREE.Group(); w.position.set(-55.5 * K, H(-55.5 * K, 0), 0); w.rotation.y = Math.PI / 2; W.scene.add(w); W.coldWall = w;
+  mesh(new THREE.PlaneGeometry(14 * K, 9 * K), new THREE.MeshBasicMaterial({ color: '#bae6fd', map: gateTex, transparent: true, opacity: .3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), 0, 4.5 * K, 0, w);
+  const lb = textSprite('刺骨寒氣', '#bae6fd', '需要保暖衣才能進入'); lb.position.set(0, 7.5, 0); lb.scale.set(4.4, 1.38, 1); w.add(lb); refreshCold();
+}
 function tryMove(dx, dz) {
   let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z), h1 = G(nx, nz), d = Math.hypot(dx, dz) || 1e-6;
   if (h1 < -2.2) return false;
   const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7);
   if ((ha - h0) / .7 > 1.1) return false;
   if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) return false;
+  if (coldBlocked(nx, nz) && !coldBlocked(P.x, P.z)) { const nw = performance.now(); if (!W.coldT || nw - W.coldT > 4000) { W.coldT = nw; toast('刺骨的寒氣擋住了去路……沒有保暖衣無法進入雪原。' + (armsOpen() ? '到大城市的武器店買一件吧。' : '升到 Lv ' + ARMS_LV + ' 後，大城市會開設武器店。')); } return false; }
   for (const c of colsNear(nx, nz)) {
     if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
@@ -2417,7 +2429,7 @@ function actAt(x, y) { VM.swing = .35; const t = pickAt(x / innerWidth * 2 - 1, 
 function doAct(t) {
   if (!t) return;
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
-  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) openGui('shop', id.slice(5)); else if (id === 'altar') openAltar(); else openGui(id); }
+  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'altar') openAltar(); else openGui(id); }
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
 }
@@ -2445,7 +2457,17 @@ function fx3(pos, txt, color = '#fff', cls = '') {
   const d = document.createElement('div'); d.className = 'fx ' + cls; d.textContent = txt; d.style.left = (q.x * .5 + .5) * innerWidth + 'px'; d.style.top = (-q.y * .5 + .5) * innerHeight + 'px'; d.style.color = color;
   $('#fxl').appendChild(d); setTimeout(() => d.remove(), 1100);
 }
+/* 開啟雪原後缺少保暖衣的指引；沒有這個需求時回傳 null */
+function coatObjective() {
+  if (!S.zones.includes('snow') || S.own.coat) return null;
+  const E = TOUCH ? '點擊' : '按 E', lv = xpLevel(S.xp), need = XP_LV[ARMS_LV] - S.xp;
+  if (!armsOpen()) return { t: '升級解鎖武器店', d: '雪原極度寒冷，需要保暖衣才能進入。大城市的武器店要 Lv ' + ARMS_LV + ' 才營業（目前 Lv ' + lv + '，還差 ' + need + ' 經驗）。多採集、加工、販售可以累積經驗。' };
+  const lack = S.money < OWN.coat.cost ? '（要 ' + fmt(OWN.coat.cost) + '，目前 ' + fmt(S.money) + '，還需要賺一點錢）' : '';
+  if (inCity()) return { t: '購買保暖衣', d: '到路北側最右邊的「武器店」購買保暖衣' + lack + '。', x: CITY.x + 35, z: CITY.z - 13, c: '#f87171', n: '武器店', here: '對準武器店的店門' + E + '，購買保暖衣（' + fmt(OWN.coat.cost) + '）。' };
+  return { t: '購買保暖衣', d: '雪原需要保暖衣才能進入。搭出生點左邊的計程車到大城市，到武器店購買' + lack + '。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的武器店。' };
+}
 function objective() {
+  const co = coatObjective(); if (co && ownAny()) return co;
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
     if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee', n: '機械行', here: '對準機械行的店門' + (TOUCH ? '點擊' : '按 E') + '，購買切片機。' };
@@ -2518,6 +2540,7 @@ function gainXP(n, why) {
   n = Math.round(n); if (!(n > 0) || !S) return;
   const before = xpLevel(S.xp); S.xp += n; const after = xpLevel(S.xp);
   const bar = $('#xpbar'); if (bar) { let em = $('#xpgain'); if (!em) { em = document.createElement('em'); em.id = 'xpgain'; bar.appendChild(em); } em.textContent = '+' + n + ' XP'; em.style.animation = 'none'; void em.offsetWidth; em.style.animation = ''; }
+  if (before < ARMS_LV && after >= ARMS_LV) setTimeout(unlockArms, 900);
   if (after > before) { sfx.level && sfx.level(); toast('升級！達到 Lv ' + after + (after >= XP_LV.length - 1 ? '（滿級）' : '')); const sp = bar && bar.querySelector('span'); if (sp) { sp.classList.remove('up'); void sp.offsetWidth; sp.classList.add('up'); } }
   renderXP();
 }
@@ -2539,9 +2562,9 @@ function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'branch', 'codex'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
+  pc: { t: '工作電腦', tabs: ['web', 'branch', 'codex'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
 };
-const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
+const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
 function openGui(kind, sec) {
   const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now();
@@ -2553,9 +2576,9 @@ function openGui(kind, sec) {
   $('#gui').hidden = false; $('#gui').classList.toggle('sheet', kind === 'line'); $('#gtitle').textContent = g.t; $('#startHint').hidden = true;
   showSec(sec || g.tabs[0]);
 }
-function guiTabs() { const g = GUIS[GUI.kind]; return g.tabs.filter(t => t !== 'branch' || S.branch || branchReady()); }
+function guiTabs() { const g = GUIS[GUI.kind]; return g.tabs.filter(t => (t !== 'branch' || S.branch || branchReady()) && (t !== 'arms' || armsOpen())); }
 function renderGuiTabs() { const tabs = guiTabs(); $('#gtabs').innerHTML = tabs.length > 1 ? tabs.map(t => `<button class="${t === tab ? 'on' : ''}" data-act="sec" data-sec="${t}">${TABN[t]}${t === 'branch' && !S.branch ? ' ●' : ''}</button>`).join('') : ''; }
-const PANEL = { mach: 'up', gear: 'up', mall: 'up' };
+const PANEL = { mach: 'up', gear: 'up', mall: 'up', arms: 'up' };
 function showSec(sec) { tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
 function closeGui() {
   if (!GUI.kind) return; if (GUI.kind === 'line' && M.active) { toast('產線還在運轉，請先完成這一輪加工。'); return; }
@@ -2892,9 +2915,10 @@ function renderInv() {
   $('#invGrid').innerHTML = Array.from({ length: n }, (_, i) => slotHTML(items[i], i, i === S.hb)).join('');
   const it = items[invSel ?? S.hb];
   $('#invInfo').innerHTML = it ? (it.t === 'gel' ? `<b>${SP[it.sp].name}凝膠</b> × ${it.n}<br><span style="color:var(--sub)">帶到工坊的加工產線，每 2 份可做成 1 個酥脆捏捏。</span>` : `<b>${SP[it.p.sp].name} · 酥脆捏捏</b><br>酥脆 ${Math.round(effCrisp(it.p) * 100)}% · 耐久 ${Math.round(it.p.dur)}% · 裝飾 ${it.p.deco.length} · 合理價約 ${fmt(fair(it.p, 'live'))}<br><span style="color:var(--sub)">可到裝飾桌加上零件，或到直播台／工作電腦販售。</span>`) + `<div class="small" style="margin-top:6px;color:var(--sub)">點擊格子可放到快捷列第 ${S.hb + 1} 格選取。</div>` : `<span style="color:var(--sub)">背包：凝膠與捏捏都會顯示在這裡。庫存 ${S.stock.length}/${cap()}</span>`;
+  $('#invInfo').innerHTML += '<div class="small" style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line);color:var(--sub)"><b style="color:var(--tx)">裝備</b>　保暖衣：' + (S.own.coat ? '<span style="color:var(--good)">已擁有</span>' : '未擁有') + '　長劍：' + (S.own.sword ? '<span style="color:var(--good)">已擁有</span>' : '未擁有') + '</div>';
   renderQuest();
 }
-const RENDER = { bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
+const RENDER = { bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), arms: () => renderShop('arms'), mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
 
 /* ---------- 點擊事件 ---------- */
 document.addEventListener('click', e => {
@@ -2984,6 +3008,7 @@ function showTitle() {
   unlockMouse(); TITLE.on = true; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
 }
 function startPlay() {
+  if (S.coatMigrated) { S.coatMigrated = false; save(); setTimeout(() => toast('偵測到你已經開啟雪原：已補發保暖衣（現在雪原需要保暖衣才能進入）'), 1500); }
   if (S.ownMigrated) { S.ownMigrated = false; save(); setTimeout(() => toast('偵測到改版前的存檔：已補發你原本擁有的加工機器、裝飾桌與直播設備'), 900); }
   TITLE.on = false; document.body.classList.remove('titleon'); $('#title').hidden = true;
   $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast('歡迎來到月光谷。左上角是目前目標。');
@@ -3353,8 +3378,11 @@ const OWN = {
   dryer: { name: '乾燥烘箱', cost: 800, shop: 'mach', desc: '烘乾定型，品質再升一級（拖曳控溫）。' },
   decor: { name: '裝飾桌', cost: 350, shop: 'gear', desc: '在捏捏上擺放裝飾零件，提高售價與人氣。' },
   live: { name: '直播設備組', cost: 600, shop: 'gear', desc: '補光環燈、攝影機與舞台。可以開直播販售捏捏。' },
+  coat: { name: '保暖衣', cost: 900, shop: 'arms', desc: '厚實的防寒外套。**穿上它才能進入雪原**，沒有保暖衣會被刺骨的寒氣擋在雪原之外。' },
+  sword: { name: '長劍', cost: 1200, shop: 'arms', desc: '一把保養良好的長劍。目前只供收藏，之後會派上用場。' },
 };
-const SHOP_UPS = { mach: ['slicer', 'coater', 'dryer'], gear: ['gear'], mall: ['cap', 'shelf', 'boots', 'net', 'farm'] };
+const ARMS_LV = 5, armsOpen = () => xpLevel(S.xp) >= ARMS_LV;
+const SHOP_UPS = { mach: ['slicer', 'coater', 'dryer'], gear: ['gear'], mall: ['cap', 'shelf', 'boots', 'net', 'farm'], arms: [] };
 function ownAny() { return !!(S.own.slicer || S.own.coater || S.own.dryer); }
 function slotMark(parent, [x, z], t, sub, r) {
   const m = new THREE.Group(); m.position.set(x, G(x, z) + .04, z); parent.add(m);
@@ -3384,6 +3412,18 @@ function makeTaxi(color = '#facc15', sign = true) {
   return g;
 }
 /* ---------- 大城市 ---------- */
+function drawShopSign(c, name, accent, locked) {
+  const t = c.getContext('2d'); t.fillStyle = '#0b1220'; t.fillRect(0, 0, 512, 128); t.textAlign = 'center';
+  t.fillStyle = locked ? '#64748b' : accent; t.font = 'bold 64px "Noto Sans TC","Microsoft JhengHei",sans-serif'; t.fillText(name, 256, locked ? 70 : 86);
+  if (locked) { t.fillStyle = '#94a3b8'; t.font = 'bold 34px "Noto Sans TC","Microsoft JhengHei",sans-serif'; t.fillText('Lv ' + ARMS_LV + ' 解鎖營業', 256, 114); }
+}
+/* 升到 Lv5：武器店開張（重繪招牌與標籤、跳出提示） */
+function unlockArms() {
+  const a = W.armsSign; if (a) { drawShopSign(a.c, a.name, a.accent, false); a.tx.needsUpdate = true; }
+  if (W.armsLabel && W.city) { const p = W.armsLabel.position.clone(); dropObj(W.armsLabel); const lb = textSprite('武器店', '#f87171', '長劍、保暖衣'); lb.position.copy(p); W.city.add(lb); W.armsLabel = lb; }
+  sfx.pop && sfx.pop(); toast('大城市新開了武器店！可以買到長劍與保暖衣'); objSig = '';
+  modal('<h2>武器店開張了</h2><p>你已經升到 Lv ' + ARMS_LV + '，大城市的路北側新開了一間<b>武器店</b>。</p><p>店裡賣：<br><b>保暖衣</b>（' + fmt(OWN.coat.cost) + '）：穿上才能進入雪原。<br><b>長劍</b>（' + fmt(OWN.sword.cost) + '）：目前只供收藏，之後會派上用場。</p><p class="small" style="color:var(--sub)">搭出生點左邊的計程車前往大城市，武器店在路北側最右邊。</p>');
+}
 function buildCity() {
   const g = new THREE.Group(); g.position.set(CITY.x, 0, CITY.z); W.scene.add(g); W.city = g;
   const asph = std('#3b4250', { roughness: .95 }), walk = std('#a3a8b0', { roughness: .9 }), wline = new THREE.MeshBasicMaterial({ color: '#f1f5f9' }), ylw = new THREE.MeshBasicMaterial({ color: '#facc15' });
@@ -3398,7 +3438,7 @@ function buildCity() {
     b.castShadow = !LOW; b.receiveShadow = true; if (solid) addCol({ box: [CITY.x + x - w / 2, CITY.z + z - d / 2, CITY.x + x + w / 2, CITY.z + z + d / 2] }); return b;
   };
   const rd = seeded(31), cols = ['#64748b', '#475569', '#94a3b8', '#7c8aa0', '#5b6b80', '#a1a1aa'];
-  [-46, -34, 34, 46].forEach(x => bld(x, -21, 11, 14, 12 + rd() * 14, pick(cols)));
+  [-46, -34, 46].forEach(x => bld(x, -21, 11, 14, 12 + rd() * 14, pick(cols)));
   for (let x = -60; x <= 60; x += 13) bld(x + rd() * 3, -42 - rd() * 8, 11, 14, 18 + rd() * 30, pick(cols));
   for (let x = -60; x <= 60; x += 13) { if (Math.abs(x) < 10) continue; bld(x + rd() * 2, 24, 11, 12, 10 + rd() * 20, pick(cols)); }
   for (let i = 0; i < 26; i++) { const a = i / 26 * PI2, r = 110 + rd() * 30; bld(Math.cos(a) * r, Math.sin(a) * r, 14, 14, 30 + rd() * 50, pick(cols), false); }
@@ -3407,14 +3447,16 @@ function buildCity() {
     const b = bld(x, -20, w, 12, 8, col); b.material.emissiveIntensity = .12;
     mesh(new THREE.PlaneGeometry(w - 2.4, 3.2), new THREE.MeshStandardMaterial({ color: '#7dd3fc', emissive: '#7dd3fc', emissiveIntensity: .35, roughness: .1 }), x, 1.9, -13.94, g);
     box(w - 1, .18, 1.8, std(accent, { roughness: .6 }), x, 3.75, -13.2, g).rotation.x = .18;
-    const c = document.createElement('canvas'); c.width = 512; c.height = 128; const t = c.getContext('2d'); t.fillStyle = '#0b1220'; t.fillRect(0, 0, 512, 128); t.fillStyle = accent; t.font = 'bold 64px "Noto Sans TC","Microsoft JhengHei",sans-serif'; t.textAlign = 'center'; t.fillText(name, 256, 86);
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128; drawShopSign(c, name, accent, id === 'arms' && !armsOpen());
     const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; mesh(new THREE.PlaneGeometry(w - 2, 2), new THREE.MeshBasicMaterial({ map: tx }), x, 5.6, -13.9, g);
+    if (id === 'arms') W.armsSign = { c, tx, name, accent, x };
     const hb = hitBox(w - 2, 3.4, 2.2, x, 1.7, -12.6, g); addInter(hb, 'station', 'shop:' + id, name);
-    const lb = textSprite(name, accent, sub); lb.position.set(x, 9.2, -13.5); g.add(lb);
+    const lb = textSprite(name, accent, sub); lb.position.set(x, 9.2, -13.5); g.add(lb); if (id === 'arms') W.armsLabel = lb;
   };
   shop('mach', -18, 12, '#334155', '機械行', '加工機器與升級', '#22d3ee');
   shop('mall', 0, 13, '#475569', '生活百貨', '倉儲、網路、跑鞋', '#34d399');
   shop('gear', 18, 12, '#3f3f63', '器材行', '直播設備、裝飾桌', '#e879f9');
+  shop('arms', 35, 11, '#4a3b3b', '武器店', armsOpen() ? '長劍、保暖衣' : 'Lv 5 解鎖營業', '#f87171');
   // 路燈、行道樹、長椅
   const pole = std('#334155', { metalness: .7, roughness: .4 }), leaf = std('#4c9440', { flatShading: true }), pot = std('#57534e');
   for (let x = -52; x <= 52; x += 13) [-8.6, 8.6].forEach(z => { if (Math.abs(x) < 5) return; cyl(.08, .1, 5, 8, pole, x, 2.5, z, g); box(1.1, .12, .3, glow('#fef9c3'), x + .4 * Math.sign(-z), 5, z - .4 * Math.sign(z), g); });
@@ -3440,13 +3482,13 @@ function taxiRide() {
 /* ---------- 商店 ---------- */
 function buyOwn(k) {
   const o = OWN[k]; if (!o || S.own[k]) return; if (S.money < o.cost) return toast('資金不足');
-  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); renderShop(tab); renderTop(); save(); toast(`已購買${o.name}，已經送到月光谷的中央平地`);
+  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); refreshCold(); objSig = ''; renderShop(tab); renderTop(); save(); toast(k === 'coat' ? '已購買保暖衣！現在可以前往雪原了' : k === 'sword' ? '已購買長劍（目前只供收藏）' : `已購買${o.name}，已經送到月光谷的中央平地`);
 }
 function renderShop(kind) {
-  const intro = { mach: '加工機器與機器升級。買了才會出現在基地的產線上，每台機器對應一道加工流程。', gear: '直播設備、裝飾桌與裝飾零件。', mall: '倉儲、網站伺服器與生活用品。' }[kind];
+  const intro = { mach: '加工機器與機器升級。買了才會出現在基地的產線上，每台機器對應一道加工流程。', gear: '直播設備、裝飾桌與裝飾零件。', mall: '倉儲、網站伺服器與生活用品。', arms: '武器與防具。保暖衣是進入雪原的必備品；長劍目前只供收藏，之後會派上用場。' }[kind];
   let h = `<div class="hint">${intro}　目前資金 <b style="color:var(--warn)">${fmt(S.money)}</b></div>`;
   const owns = Object.keys(OWN).filter(k => OWN[k].shop === kind);
-  if (owns.length) h += '<h3>設備</h3>' + owns.map(k => { const o = OWN[k], has = S.own[k]; return `<div class="card up"><div class="info"><b>${o.name}</b>${has ? ' <span class="tag">已擁有</span>' : ''}<div class="small" style="color:var(--sub)">${o.desc}</div></div><button class="btn sm" data-act="buyOwn" data-k="${k}" ${has || S.money < o.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(o.cost)}</button></div>`; }).join('');
+  if (owns.length) h += '<h3>設備</h3>' + owns.map(k => { const o = OWN[k], has = S.own[k]; return `<div class="card up"><div class="info"><b>${o.name}</b>${has ? ' <span class="tag">已擁有</span>' : ''}<div class="small" style="color:var(--sub)">${o.desc.replace(/\*\*([^*]+)\*\*/g, '<b style="color:var(--tx)">$1</b>')}</div></div><button class="btn sm" data-act="buyOwn" data-k="${k}" ${has || S.money < o.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(o.cost)}</button></div>`; }).join('');
   const ups = SHOP_UPS[kind] || [];
   if (ups.length) h += '<h3>升級</h3>' + ups.map(k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max, need = u.need && !S.own[u.need]; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${need ? '需要先購買' + OWN[u.need].name : u.desc}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || need || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; }).join('');
   if (kind === 'gear') h += '<h3>裝飾零件包</h3>' + Object.keys(PACKS).map(k => { const has = S.packs.includes(k), pk = PACKS[k], items = Object.values(DECO).filter(d => d.pack === k).map(d => dot(d.c) + d.n).join('　'); return `<div class="card up"><div class="info"><b>${pk.name}</b><div class="small" style="color:var(--sub)">${items}</div></div><button class="btn sm" data-act="buyPack" data-k="${k}" ${has || S.money < pk.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(pk.cost)}</button></div>`; }).join('');
