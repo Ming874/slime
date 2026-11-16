@@ -2460,8 +2460,8 @@ function finishTutorial() {
   if (S.tutDone) return; S.tutDone = true; const gift = !S.own.slicer; S.own.slicer = true; refreshBase(); objSig = ''; if (W.starterLabel) { dropObj(W.starterLabel); W.starterLabel = null; } gainXP(5); save();
   modal(`<h2>第一個捏捏完成！</h2><p>聽到那聲「喀滋」了嗎？這就是捏捏讓人停不下來的地方。</p>${gift ? '<p>奶奶的倉庫裡還留著一台<b>舊切片機</b>，已經幫你裝到中央平地北邊的<b>加工產線</b>上。用機器做的捏捏更酥脆、更值錢。</p>' : ''}<p><b>接下來</b>：把捏捏<b>賣掉</b> → 存錢 → 在<b>工作電腦的「網購」</b>買更多機器。</p>`, [{ t: '好！' }]);
 }
-function act() { if (GUI.kind || !W.ready) return; VM.swing = .35; doAct(TARGET); }
-function actAt(x, y) { VM.swing = .35; const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); doAct(t); }
+function act() { if (GUI.kind || !W.ready) return; if (TARGET && TARGET.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(TARGET); }
+function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
 function doAct(t) {
   if (!t) return;
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
@@ -3609,34 +3609,86 @@ function bindTouch(cv) {
 /* ============================================================
    第一人稱手持：快捷列選到捏捏或凝膠時，畫面右下角顯示拿在手上
    ============================================================ */
-const VM = { g: null, key: '', swing: 0 };
+const VM = { g: null, key: '', swing: 0, sq: 0 };
+/* 第一人稱的手：卡通風格的工坊師傅手（低多邊形）。四指＋拇指、手腕、工作服袖口
+   5 種手勢：空手、托凝膠、握捏捏、伸手採集、用力擠壓；切換時約 0.1 秒過渡 */
+const VM_POSE = {
+  empty: { x: .01, y: -.03, z: .03, rx: -.2, ry: .25, rz: -.7, c: .42, t: .35, sp: .06 },
+  gel: { x: 0, y: 0, z: 0, rx: .12, ry: .18, rz: -.12, c: 1.12, t: .85, sp: .02 },
+  prod: { x: 0, y: .005, z: 0, rx: .14, ry: .18, rz: -.12, c: 1.25, t: .95, sp: 0 },
+  reach: { x: -.03, y: .04, z: -.08, rx: -.62, ry: .3, rz: -.3, c: .1, t: .08, sp: .16 },
+  squeeze: { x: -.035, y: .03, z: -.12, rx: -.5, ry: .3, rz: -.3, c: 1.32, t: 1.05, sp: 0 },
+};
 function initViewModel() {
   if (W.cam.parent !== W.scene) W.scene.add(W.cam);
-  const g = VM.g = new THREE.Group(); W.cam.add(g); g.position.set(.36, -.27, -.78); g.scale.setScalar(.72);
-  const skin = new THREE.MeshStandardMaterial({ color: '#f5c9a8', roughness: .6 }), sleeve = new THREE.MeshStandardMaterial({ color: '#22d3ee', roughness: .55 });
-  const arm = new THREE.Group(); arm.rotation.set(-.3, .3, .12); g.add(arm);
-  const fd = new THREE.Vector3(.3, -.55, .78).normalize(), fore = mesh(new THREE.CylinderGeometry(.045, .06, .9, 14), sleeve, fd.x * .48, -.06 + fd.y * .48, .02 + fd.z * .48, arm); fore.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), fd);
-  const hand = mesh(new THREE.SphereGeometry(.06, 16, 12), skin, 0, -.05, .02, arm); hand.scale.set(1.15, .75, 1.3);
-  mesh(new THREE.SphereGeometry(.024, 10, 8), skin, -.06, -.025, -.01, arm).scale.set(1, 1.7, 1);
-  VM.hold = new THREE.Group(); VM.hold.position.set(0, .02, -.01); arm.add(VM.hold);
-  VM.J = makeJelly(6, true); VM.J.ov.visible = false; VM.J.group.scale.setScalar(.065); VM.J.group.position.y = .04; VM.hold.add(VM.J.group);
-  VM.gel = mesh(new THREE.SphereGeometry(.065, 20, 14), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1, transparent: true, opacity: .88 }), 0, .03, 0, VM.hold); VM.gel.scale.set(1, .72, 1);
+  const g = VM.g = new THREE.Group(); W.cam.add(g);
+  const lp = o => new THREE.MeshStandardMaterial(Object.assign({ flatShading: true, roughness: .7 }, o));
+  const skin = lp({ color: '#f2c29b' }), skinD = lp({ color: '#e0a77e' }), sleeve = lp({ color: '#2f7f9e', roughness: .85 }), cuff = lp({ color: '#e9dcc0', roughness: .9 }), stitch = lp({ color: '#f59e0b' }), nail = lp({ color: '#fbe3d0', roughness: .4 });
+  const arm = VM.arm = new THREE.Group(); arm.rotation.set(-.3, .3, .12); g.add(arm);
+  // 前臂（工作服袖子）、袖口、手腕：沿著從手往畫面右下方延伸的方向
+  const fd = new THREE.Vector3(.3, -.55, .78).normalize(), up = new THREE.Vector3(0, 1, 0);
+  const along = (m, d) => { m.position.copy(fd).multiplyScalar(d); m.quaternion.setFromUnitVectors(up, fd); arm.add(m); return m; };
+  along(new THREE.Mesh(new THREE.CylinderGeometry(.072, .085, .9, 7), sleeve), .62);
+  along(new THREE.Mesh(new THREE.CylinderGeometry(.078, .078, .07, 7), cuff), .17);
+  along(new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, .012, 7), stitch), .145);
+  along(new THREE.Mesh(new THREE.CylinderGeometry(.043, .05, .1, 7), skin), .1);
+  // 手掌（以手腕為支點轉動）
+  const hand = VM.hand = new THREE.Group(); hand.scale.setScalar(1.2); arm.add(hand);
+  const palm = mesh(new THREE.BoxGeometry(.13, .045, .13), skin, 0, 0, -.035, hand); palm.scale.set(1, 1, 1);
+  mesh(new THREE.BoxGeometry(.12, .04, .05), skinD, 0, -.004, .035, hand); // 掌根
+  VM.palm = palm;
+  // 手指：每根兩節，指尖有指甲；彎曲角度由手勢決定
+  const F = [[-.046, .043, .036, .9], [-.016, .05, .041, 1], [.016, .047, .038, .96], [.045, .038, .031, .85]];
+  VM.fingers = F.map(([x, l1, l2, r]) => {
+    const k1 = new THREE.Group(); k1.position.set(x, .004, -.1); hand.add(k1);
+    const s1 = mesh(new THREE.CapsuleGeometry(.0165 * r, l1, 2, 6), skin, 0, 0, -l1 / 2, k1); s1.rotation.x = Math.PI / 2;
+    const k2 = new THREE.Group(); k2.position.z = -l1; k1.add(k2);
+    const s2 = mesh(new THREE.CapsuleGeometry(.015 * r, l2, 2, 6), skin, 0, 0, -l2 / 2, k2); s2.rotation.x = Math.PI / 2;
+    mesh(new THREE.BoxGeometry(.018 * r, .006, .016), nail, 0, .013 * r, -l2 + .002, k2);
+    return { k1, k2, x };
+  });
+  // 拇指：從掌側伸出，往掌心內收
+  const tb = new THREE.Group(); tb.position.set(-.068, -.002, -.02); tb.rotation.y = .9; hand.add(tb);
+  const tk = new THREE.Group(); tb.add(tk);
+  mesh(new THREE.CapsuleGeometry(.02, .04, 2, 6), skin, 0, 0, -.025, tk).rotation.x = Math.PI / 2;
+  const tk2 = new THREE.Group(); tk2.position.z = -.05; tk.add(tk2);
+  mesh(new THREE.CapsuleGeometry(.017, .032, 2, 6), skin, 0, 0, -.018, tk2).rotation.x = Math.PI / 2;
+  mesh(new THREE.BoxGeometry(.02, .006, .017), nail, 0, .015, -.034, tk2);
+  VM.thumb = { tk, tk2 };
+  // 手上拿的東西放在掌心
+  VM.hold = new THREE.Group(); VM.hold.position.set(0, .05, -.075); hand.add(VM.hold);
+  VM.J = makeJelly(6, true); VM.J.ov.visible = false; VM.J.group.scale.setScalar(.05); VM.J.group.position.y = -.005; VM.hold.add(VM.J.group);
+  VM.gel = mesh(new THREE.SphereGeometry(.05, 20, 14), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1, transparent: true, opacity: .9 }), 0, 0, 0, VM.hold); VM.gel.scale.set(1, .72, 1);
+  VM.p = Object.assign({}, VM_POSE.empty); VM.sq = 0; VM.holdK = 0;
   g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
   g.visible = false;
 }
 function heldKey() { const it = held(); return it ? (it.t === 'prod' ? 'p' : 'g') + SPECIES.indexOf(SP[it.t === 'prod' ? it.p.sp : it.sp]) : ''; }
 function viewModelStep(dt) {
   if (!VM.g) initViewModel();
-  const it = held(), show = !!it && !GUI.kind && !TITLE.on; VM.g.visible = show; if (!show) { VM.key = ''; return; }
-  const key = it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp;
-  if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .35); const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; VM.J.group.visible = it.t === 'prod'; VM.gel.visible = it.t === 'gel'; if (it.t === 'prod') jellyColors(VM.J, sp); else VM.gel.material.color.set(sp.color); }
-  VM.swing = Math.max(0, VM.swing - dt * 2.2);
+  const show = !GUI.kind && !TITLE.on && !W.camAway; VM.g.visible = show; if (!show) { VM.key = ''; return; }
+  const it = held(), key = it ? (it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp) : '';
+  if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') jellyColors(VM.J, sp); else VM.gel.material.color.set(sp.color); } }
+  VM.swing = Math.max(0, VM.swing - dt * 2.2); VM.sq = Math.max(0, VM.sq - dt);
+  // 選擇手勢：擠壓 > 對準史萊姆時伸手 > 拿著的東西 > 空手
+  const aimSlime = TARGET && TARGET.type === 'slime', pose = VM.sq > 0 ? 'squeeze' : aimSlime ? 'reach' : it ? (it.t === 'prod' ? 'prod' : 'gel') : 'empty';
+  const T = VM_POSE[pose], k = 1 - Math.exp(-dt * 32); for (const n in T) VM.p[n] += (T[n] - VM.p[n]) * k; const p = VM.p;
+  // 伸手或擠壓時，手上的東西先收進掌心（縮小），避免手指張開時穿模
+  const keep = it && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
+  VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
+  VM.fingers.forEach((f, i) => { const c = p.c * (1 + (i - 1.5) * .05); f.k1.rotation.x = c * .95; f.k2.rotation.x = c * 1.15; f.k1.rotation.y = (f.x * 8) * p.sp; });
+  VM.thumb.tk.rotation.x = p.t * .5; VM.thumb.tk.rotation.y = -p.t * .55; VM.thumb.tk2.rotation.x = p.t * .9;
+  VM.arm.position.set(p.x, p.y, p.z); VM.hand.rotation.set(p.rx, p.ry, p.rz);
+  // 依畫面比例固定在右下角；直向手機放大並移到下方偏右
+  const d = .78, hh = Math.tan(W.cam.fov * Math.PI / 360) * d, hw = hh * W.cam.aspect, port = W.cam.aspect < .9;
+  const sc = port ? hh * 1.45 : hh * 1.32, ax = port ? hw * .36 : hw * .44, ay = port ? -hh * .56 : -hh * .5;
   const mv = P.ground ? clamp(Math.hypot(P.vx, P.vz) / 4.3, 0, 1.4) : 0;
-  const bx = Math.sin(P.bob * .5) * .012 * mv, by = Math.abs(Math.cos(P.bob * .5)) * .014 * mv, sw = Math.sin(VM.swing / .35 * Math.PI);
+  const bx = Math.sin(P.bob * .5) * .012 * mv, by = Math.abs(Math.cos(P.bob * .5)) * .014 * mv, sw = Math.sin(VM.swing / .35 * Math.PI) * (pose === 'squeeze' ? .3 : 1);
   // 手上的凝膠會隨走路、揮動與吸收凝膠而 Q 彈晃動
   VM.jv = (VM.jv || 0) + ((-(VM.j || 0)) * 220 - (VM.jv || 0) * 9) * dt + (by * 40 + sw * 4) * dt; VM.j = clamp((VM.j || 0) + VM.jv * dt, -.35, .35);
-  VM.g.position.set(.36 + bx, -.27 - by - sw * .05 - (P.sneak ? .03 : 0), -.78 + sw * .04); VM.g.rotation.set(sw * .45, 0, -sw * .2 + P.roll * 2);
-  VM.J.group.rotation.y += dt * .7; VM.gel.rotation.y += dt * .7; VM.gel.scale.set(1 - VM.j * .5, .72 * (1 + VM.j), 1 - VM.j * .5);
+  const grip = pose === 'squeeze' ? 0 : p.c * .06; // 手指握緊時凝膠被壓扁一點
+  VM.g.scale.setScalar(sc); VM.g.position.set(ax + bx, ay - by - sw * .04 - (P.sneak ? .03 : 0), -d + sw * .03); VM.g.rotation.set(sw * .35, 0, -sw * .15 + P.roll * 2);
+  VM.J.group.rotation.y += dt * .5; VM.gel.rotation.y += dt * .5; VM.gel.scale.set((1 - VM.j * .5) * (1 - grip), .72 * (1 + VM.j) * (1 + grip * .6), (1 - VM.j * .5) * (1 - grip));
 }
 /* ---------- 準心環：對準史萊姆時顯示採集進度（3 格）或休息倒數 ---------- */
 function initRing() {
@@ -3699,7 +3751,7 @@ function worldStep(dt) {
   W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt);
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks();
   slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
-  if (W.goo) { const got = W.goo.update(dt, W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
+  if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
   for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }
   renderCoach();
   if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = targetLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
