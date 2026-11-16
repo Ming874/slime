@@ -102,7 +102,7 @@ body.touch #startHint{display:none!important}
 #btnJump{right:108px;bottom:calc(var(--slot) + 60px + env(safe-area-inset-bottom))}
 #btnRun{right:40px;bottom:calc(var(--slot) + 158px + env(safe-area-inset-bottom))}
 #btnSneak{right:116px;bottom:calc(var(--slot) + 140px + env(safe-area-inset-bottom))}
-#startHint{position:absolute;left:50%;top:62%;transform:translateX(-50%);background:#0b0f17d0;border:1px solid #ffffff2a;border-radius:12px;padding:12px 18px;text-align:center;line-height:1.8;font-size:14px}
+#startHint{position:absolute;left:50%;top:74%;transform:translateX(-50%);background:#0b0f17d0;border:1px solid #ffffff2a;border-radius:12px;padding:12px 18px;text-align:center;line-height:1.8;font-size:14px}
 #startHint b{color:var(--acc)}
 
 /* ================= 介面視窗 ================= */
@@ -397,3 +397,14 @@ body.titleon #hud{display:none}
 @keyframes xpg{0%{opacity:0;transform:translateY(4px)}12%{opacity:1}75%{opacity:1}100%{opacity:0;transform:translateY(-6px)}}
 #xpbar span.up{animation:xpup .9s ease-out}
 @keyframes xpup{0%{transform:translateX(-50%) scale(1)}30%{transform:translateX(-50%) scale(1.9);color:#fde047}100%{transform:translateX(-50%) scale(1)}}
+
+/* 新手教學：畫面中央一步一步的提示 */
+#coach{position:absolute;left:50%;top:calc(50% + 62px);transform:translateX(-50%);background:#0f172ae8;border:1px solid #6ee7a888;border-radius:12px;padding:8px 14px 8px 10px;font-size:15px;font-weight:600;white-space:nowrap;box-shadow:0 0 0 4px #6ee7a81c,0 6px 20px #0006;animation:coachIn .25s ease-out;line-height:1.45}
+#coach small{display:block;font-size:12px;font-weight:400;color:#cbd5e1;margin-left:30px}
+#coach kbd{display:inline-block;background:#fff;color:#000;border-radius:4px;padding:0 6px;font:700 12px/18px Inter,sans-serif;margin:0 3px}
+#coach .st{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#6ee7a8;color:#052e1b;font-size:13px;font-weight:800;margin-right:8px;vertical-align:1px}
+#coach.flash{border-color:#fbbf24aa;color:#fde68a;box-shadow:0 0 0 4px #fbbf2422,0 6px 20px #0006}
+#coach.flash .st{background:#fbbf24;color:#3b2500}
+@keyframes coachIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translateX(-50%)}}
+body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(50% + 56px)}
+.tline{font-size:14px;color:#cbd5e1;margin:-4px 0 14px;line-height:1.6;max-width:320px}
