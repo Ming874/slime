@@ -65,7 +65,7 @@ const UPS = {
   cap: { name: '倉儲貨架', desc: '庫存上限 +6', base: 100, max: 5 },
   shelf: { name: '網站伺服器', desc: '網站貨架 +2 格', base: 200, max: 5 },
   gear: { name: '直播燈光設備', desc: '直播基礎觀眾 +15%', base: 250, max: 5, need: 'live' },
-  farm: { name: '養殖槽', desc: '每 12 秒自動產出凝膠（可再生養殖）', base: 300, max: 5 },
+  farm: { name: '養殖槽', desc: '每 30 分鐘自動收集一批凝膠（每級 +4 份，離線也會累積）', base: 300, max: 5 },
   boots: { name: '輕量跑鞋', desc: '移動速度 +10%', base: 160, max: 3 },
 };
 const NAMES = ['小布丁', '軟糖控', '捏捏狂人', 'ASMR愛好者', '夜貓子', '蛋糕星人', '阿宅', 'Mochi', '果凍妹', '路過的人', '史萊姆粉', '雲朵', '薄荷', '咪咪', '大叔'];
@@ -88,7 +88,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null, own: {}, tutDone: false, lineMade: false,
+    pos: null, hb: 0, sens: 1, q: null, own: {}, tutDone: false, lineMade: false, farmT: 0,
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -127,6 +127,7 @@ function sanitize(o) {
   if (!('tutDone' in o)) s.tutDone = !!o.seen && ((+o.sales || 0) > 0 || arr(o.stock).length > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0));
   if (!('lineMade' in o)) s.lineMade = !!(s.own.slicer || s.own.coater || s.own.dryer) && s.tutDone;
   s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade;
+  s.farmT = Math.max(0, +s.farmT || 0); if (s.farmT > Date.now()) s.farmT = Date.now();
   if (s.mk && !(SP[s.mk.sp] && s.mk.step >= 0 && s.mk.step < 3 && Array.isArray(s.mk.prec) && s.mk.prec.length === s.mk.step)) s.mk = null;
   return s;
 }
@@ -3523,7 +3524,7 @@ function renderShop(kind) {
   const owns = Object.keys(OWN).filter(k => kind === 'eshop' ? ['mach', 'gear'].includes(OWN[k].shop) : OWN[k].shop === kind);
   if (owns.length) h += '<h3>設備</h3>' + owns.map(k => { const o = OWN[k], has = S.own[k]; return `<div class="card up"><div class="info"><b>${o.name}</b>${has ? ' <span class="tag">已擁有</span>' : ''}<div class="small" style="color:var(--sub)">${o.desc.replace(/\*\*([^*]+)\*\*/g, '<b style="color:var(--tx)">$1</b>')}</div></div><button class="btn sm" data-act="buyOwn" data-k="${k}" ${has || S.money < o.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(o.cost)}</button></div>`; }).join('');
   const ups = kind === 'eshop' ? [...SHOP_UPS.mach, ...SHOP_UPS.gear, ...SHOP_UPS.mall] : SHOP_UPS[kind] || [];
-  if (ups.length) h += '<h3>升級</h3>' + ups.map(k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max, need = u.need && !S.own[u.need]; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${need ? '需要先購買' + OWN[u.need].name : u.desc}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || need || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; }).join('');
+  if (ups.length) h += '<h3>升級</h3>' + ups.map(k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max, need = u.need && !S.own[u.need]; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${need ? '需要先購買' + OWN[u.need].name : u.desc}${k === 'farm' && lv > 0 ? '　下次收集 ' + fmtSec(farmLeft()) : ''}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || need || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; }).join('');
   if (kind === 'gear' || kind === 'eshop') h += '<h3>裝飾零件包</h3>' + Object.keys(PACKS).map(k => { const has = S.packs.includes(k), pk = PACKS[k], items = Object.values(DECO).filter(d => d.pack === k).map(d => dot(d.c) + d.n).join('　'); return `<div class="card up"><div class="info"><b>${pk.name}</b><div class="small" style="color:var(--sub)">${items}</div></div><button class="btn sm" data-act="buyPack" data-k="${k}" ${has || S.money < pk.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(pk.cost)}</button></div>`; }).join('');
   // 每秒都會重繪：內容沒變就不動 DOM，否則按鈕按下到放開之間被替換，點擊會被吞掉
   setHTML($('#upList'), h);
@@ -3718,7 +3719,7 @@ function drsStep(dt) {
   if (k !== DRS.k) { DRS.k = k; W.r.setPixelRatio(DRS.base * k); W.r.setSize(innerWidth, innerHeight, false); }
 }
 /* ---------- 主迴圈 ---------- */
-let lastT = performance.now(), secAcc = 0, webAcc = 0, farmAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
+let lastT = performance.now(), secAcc = 0, webAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
 const tmpC = new THREE.Color(), tmpC2 = new THREE.Color(), tmpV = new THREE.Vector3(), tmpM = new THREE.Matrix4();
 const ENVC = [0, 1, 2, 3, 4].map(() => new THREE.Color());
 const SUN_D = new THREE.Vector3(30, 55, 22).normalize(), SUN_R = new THREE.Vector3().crossVectors(SUN_D, new THREE.Vector3(0, 1, 0)).normalize(), SUN_U = new THREE.Vector3().crossVectors(SUN_R, SUN_D).normalize();
@@ -3764,7 +3765,7 @@ function worldStep(dt) {
 function loop(now) {
   const dt = clamp((now - lastT) / 1000, 0, .1); lastT = Math.max(lastT, now);
   trendAcc += dt; if (trendAcc > 90) { trendAcc = 0; pickTrend(); }
-  farmAcc += dt; if (S.up.farm > 0 && farmAcc >= 12 / S.up.farm) { farmAcc = 0; const sp = pick(unlockedSpecies()); S.gel[sp.id] = (S.gel[sp.id] || 0) + 1; discover(sp.id); if (tab === 'make' && !M.active) renderMake(); }
+  if (S.up.farm > 0) { if (!S.farmT) S.farmT = Date.now(); else if (Date.now() - S.farmT >= FARM_MS) farmCollect(1); }
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
@@ -3784,7 +3785,18 @@ function loop(now) {
   } catch (err) { console.error(err); }
   requestAnimationFrame(loop);
 }
+/* 養殖槽：每 30 分鐘自動收集一批凝膠（每級 4 份）；離線最多補 4 批 */
+const FARM_MS = 30 * 60 * 1000;
+function farmCollect(cycles, quiet) {
+  if (!(S.up.farm > 0) || cycles < 1) return 0; const us = unlockedSpecies(), n = cycles * 4 * S.up.farm;
+  for (let i = 0; i < n; i++) { const sp = pick(us); S.gel[sp.id] = (S.gel[sp.id] || 0) + 1; discover(sp.id); }
+  S.farmT += cycles * FARM_MS; if (Date.now() - S.farmT >= FARM_MS) S.farmT = Date.now();
+  if (!quiet) { toast(`養殖槽自動收集了 ${n} 份凝膠`); sfx.pop && sfx.pop(); }
+  renderHotbar(true); if (tab === 'make' && !M.active) renderMake(); save(); return n;
+}
+const farmLeft = () => S.up.farm > 0 && S.farmT ? Math.max(0, Math.ceil((S.farmT + FARM_MS - Date.now()) / 1000)) : 0;
 function offlineCatchUp() {
+  if (S.up.farm > 0 && S.farmT) { const c = Math.min(4, Math.floor((Date.now() - S.farmT) / FARM_MS)); if (c > 0) { const n = farmCollect(c, true); setTimeout(() => toast(`離線期間養殖槽收集了 ${n} 份凝膠`), 1400); } }
   const el = Math.min((Date.now() - S.last) / 1000, 1800); if (el < 8 || !S.web.length) return;
   let gain = 0, n = 0; for (let i = 0; i < Math.floor(el / 4); i++) { const before = S.earned; if (webTick()) { gain += S.earned - before; n++; } }
   if (n) setTimeout(() => toast(`離線期間網站賣出 ${n} 件，+${fmt(gain)}`), 800);
