@@ -48,6 +48,15 @@ const SPECIES = [
   { id: 'aurora', name: '極光史萊姆', zone: 'snow', color: '#34d399', color2: '#a78bfa', rar: 4, price: 90, w: 1 },
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
+// 切法：marks 切幾刀、tol 判定寬度倍率、pm 售價倍率、wear 直播時的耐久消耗倍率、th 切片厚度
+const CUTS = {
+  thick: { n: '厚塊', marks: 3, tol: 1.45, pm: .9, wear: .7, th: .26, col: '#22d3ee', desc: '容易切準・耐久高' },
+  thin: { n: '薄片', marks: 6, tol: .72, pm: 1.35, wear: 1.3, th: .1, col: '#a5f3fc', desc: '很難切準・價格高' },
+  star: { n: '星形', marks: 4, tol: 1, pm: 1.2, wear: 1, th: .16, col: '#fde047', shape: 'star', desc: '造型切・觀眾最愛' },
+  heart: { n: '愛心', marks: 4, tol: 1, pm: 1.2, wear: 1, th: .16, col: '#f9a8d4', shape: 'heart', desc: '造型切・觀眾最愛' },
+};
+const cutMul = p => (p.cut && CUTS[p.cut] ? CUTS[p.cut].pm * (.92 + .16 * (p.cq || 0)) : 1) * (p.wonky ? .6 : 1);
+const wearOf = p => p.cut && CUTS[p.cut] ? CUTS[p.cut].wear : 1;
 const short = id => SP[id].name.replace('史萊姆', '');
 const DECO = {
   bead: { n: '珍珠', v: .04, pack: 'base', c: '#f1f5f9' }, cube: { n: '方塊', v: .04, pack: 'base', c: '#94a3b8' }, ring: { n: '圓環', v: .05, pack: 'base', c: '#e879f9' },
@@ -88,7 +97,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null, own: {}, tutDone: false, lineMade: false, farmT: 0,
+    pos: null, hb: 0, sens: 1, q: null, own: {}, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0,
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -97,7 +106,7 @@ function sanitize(o) {
   const arr = v => Array.isArray(v) ? v : [], obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
   for (const k in s.up) { if (!UPS[k]) delete s.up[k]; else s.up[k] = clamp(Math.floor(+s.up[k] || 0), 0, UPS[k].max); }
   ['money', 'fans', 'earned', 'workers', 'auto', 'rep', 'sales'].forEach(k => { s[k] = +s[k]; if (!isFinite(s[k]) || s[k] < 0) s[k] = 0; });
-  const fixP = p => { p.crisp = clamp(+p.crisp || .5, 0, 1); p.dur = clamp(isFinite(+p.dur) ? +p.dur : 100, 0, 100); p.deco = arr(p.deco).filter(d => d && DECO[d.k]).slice(0, 6); p.cracks = arr(p.cracks).filter(Array.isArray).slice(-30); return p; };
+  const fixP = p => { p.crisp = clamp(+p.crisp || .5, 0, 1); p.dur = clamp(isFinite(+p.dur) ? +p.dur : 100, 0, 100); p.deco = arr(p.deco).filter(d => d && DECO[d.k]).slice(0, 6); p.cracks = arr(p.cracks).filter(Array.isArray).slice(-30); if (CUTS[p.cut]) p.cq = clamp(+p.cq || 0, 0, 1); else { delete p.cut; delete p.cq; } if (p.wonky) p.wonky = true; else delete p.wonky; return p; };
   const okP = p => p && typeof p === 'object' && SP[p.sp] && isFinite(+p.id);
   s.stock = arr(s.stock).filter(okP).map(fixP); s.web = arr(s.web).filter(okP).map(fixP);
   const ids = new Set(); let maxId = 0;
@@ -111,7 +120,7 @@ function sanitize(o) {
   s.codex = obj(s.codex); s.regulars = obj(s.regulars);
   s.rate = arr(s.rate).filter(n => n >= 1 && n <= 5).slice(-40); if (!s.rate.length) s.rate = [4, 4, 5];
   s.reviews = arr(s.reviews).filter(v => v && REVIEWS[v.s]).slice(0, 8);
-  s.contracts = arr(s.contracts).filter(c => c && (c.sp === 'any' || SP[c.sp]) && isFinite(+c.dl));
+  s.contracts = arr(s.contracts).filter(c => c && (c.sp === 'any' || SP[c.sp]) && isFinite(+c.dl)); s.contracts.forEach(c => { if (!CUTS[c.cut]) c.cut = null; });
   s.customers = arr(s.customers).filter(c => c && SP[c.sp] && isFinite(+c.dl));
   if (s.branch && !BRANCHES[s.branch]) s.branch = null;
   if (s.pos && !(Number.isFinite(s.pos.x) && Number.isFinite(s.pos.z) && Number.isFinite(s.pos.yaw))) s.pos = null;
@@ -126,7 +135,7 @@ function sanitize(o) {
   // 改版前的存檔：已經做過東西就視為完成教學；有機器的視為用過產線
   if (!('tutDone' in o)) s.tutDone = !!o.seen && ((+o.sales || 0) > 0 || arr(o.stock).length > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0));
   if (!('lineMade' in o)) s.lineMade = !!(s.own.slicer || s.own.coater || s.own.dryer) && s.tutDone;
-  s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade;
+  s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade; if (!CUTS[s.cut]) s.cut = 'thick'; s.cutN = Math.max(0, Math.floor(+s.cutN) || 0);
   s.farmT = Math.max(0, +s.farmT || 0); if (s.farmT > Date.now()) s.farmT = Date.now();
   if (s.mk && !(SP[s.mk.sp] && s.mk.step >= 0 && s.mk.step < 3 && Array.isArray(s.mk.prec) && s.mk.prec.length === s.mk.step)) s.mk = null;
   return s;
@@ -147,8 +156,8 @@ const slots = () => 4 + S.up.shelf * 2;
 const effCrisp = p => p.crisp * (0.35 + 0.65 * p.dur / 100);
 const decoBonus = p => p.deco.reduce((a, d) => a + (DECO[d.k] ? DECO[d.k].v : 0), 0);
 const CH = { live: 1.4, web: 0.9, shop: 1.25, corp: 1.5 };
-const priceOf = (p, ch) => p.crude ? 10 : getPrice(ch, p.sp);
-function fair(p, ch) { if (p.crude) return 12; const sp = SP[p.sp]; return sp.price * (0.4 + 1.1 * effCrisp(p)) * (1 + decoBonus(p)) * (trend.sp === p.sp ? 1.35 : 1) * (CH[ch] || 1); }
+const priceOf = (p, ch) => p.crude ? 10 : Math.max(1, Math.round(getPrice(ch, p.sp) * cutMul(p)));
+function fair(p, ch) { if (p.crude) return 12; const sp = SP[p.sp]; return sp.price * (0.4 + 1.1 * effCrisp(p)) * (1 + decoBonus(p)) * (trend.sp === p.sp ? 1.35 : 1) * (CH[ch] || 1) * cutMul(p); }
 const defPrice = (spId, ch) => Math.round(SP[spId].price * 1.28 * CH[ch]);
 const getPrice = (ch, spId) => S.price[ch][spId] ?? defPrice(spId, ch);
 const demand = (price, f) => clamp(1.5 - 0.75 * price / Math.max(1, f), 0, 1.3);
@@ -483,7 +492,7 @@ function makeStage(cv, mode) {
   st.resize = () => { if (st.init()) st.v.resize(); };
   st.set = p => { if (st.p !== p) { st.p = p; st.sel = -1; st.ptr = null; } };
   st.rebuildDeco = () => { if (st.ready) jellyDeco(st.J, st.p); };
-  function apply() { st.shown = st.p; const J = st.J; J.group.visible = !!st.p; if (!st.p) { jellyDeco(J, null); return; } jellyColors(J, SP[st.p.sp]); jellyTexture(J, st.p); jellyDeco(J, st.p); }
+  function apply() { st.shown = st.p; const J = st.J; J.group.visible = !!st.p; if (!st.p) { jellyDeco(J, null); return; } jellyColors(J, SP[st.p.sp]); jellyTexture(J, st.p); jellyDeco(J, st.p); jellyCut(J, st.p); }
   function bind() {
     cv.addEventListener('pointerdown', e => {
       e.preventDefault(); if (!st.p) return; try { cv.setPointerCapture(e.pointerId); } catch (_) { }
@@ -507,7 +516,7 @@ function makeStage(cv, mode) {
     const p = st.p, q = st.ptr; if (!p || !q) return;
     if (p.dur <= 0) { sfx.squish(1); popAt(cv.parentElement, q.px, q.py, '扁扁…', '#94a3b8'); st.onFlat && st.onFlat(); return; }
     if (mode === 'squeeze') popAt(cv.parentElement, q.px, q.py, pick(['喀滋', '咔嚓', '啵滋', '喀啦', '酥～']), pick(['#fde047', '#22d3ee', '#f0abfc', '#ffffff']));
-    const eff = effCrisp(p); sfx.crunch(.6 + eff * .6, eff); if (navigator.vibrate) navigator.vibrate(12); p.dur = Math.max(0, p.dur - 2.2); p.played = true;
+    const eff = effCrisp(p); sfx.crunch(.6 + eff * .6, eff); if (navigator.vibrate) navigator.vibrate(12); p.dur = Math.max(0, p.dur - 2.2 * wearOf(p)); p.played = true;
     let u = q.uv.x, v = q.uv.y, a = rnd(0, PI2); const cr = [u, v];
     for (let k = 0; k < 4; k++) { a += rnd(-.8, .8); const l = rnd(.03, .08); u += Math.cos(a) * l; v += Math.sin(a) * l; cr.push(u, v); }
     p.cracks.push(cr); if (p.cracks.length > 30) p.cracks.shift(); jellyTexture(st.J, p);
@@ -516,7 +525,7 @@ function makeStage(cv, mode) {
   st.remoteCrunch = m => {
     const p = st.p; if (!p || !st.ready) return; const hit = new THREE.Vector3(...m.hit); st.rem = { hit, t: .22 };
     if (m.cr) { p.cracks.push(m.cr); if (p.cracks.length > 30) p.cracks.shift(); jellyTexture(st.J, p); }
-    p.dur = Math.max(0, p.dur - 2.2); sfx.crunch(.6 + m.eff * .6, m.eff); st.C.emit(st.J.mesh.localToWorld(hit.clone()), Math.round(8 + m.eff * 14), SP[p.sp].color); st.flash = 1;
+    p.dur = Math.max(0, p.dur - 2.2 * wearOf(p)); sfx.crunch(.6 + m.eff * .6, m.eff); st.C.emit(st.J.mesh.localToWorld(hit.clone()), Math.round(8 + m.eff * 14), SP[p.sp].color); st.flash = 1;
   };
   st.step = dt => {
     if (!st.ready) return; dt = Math.min(dt, .033); st.t += dt; if (st.shown !== st.p) apply();
@@ -1360,9 +1369,11 @@ function lineStep(dt) {
   if (moving || !MK.beltInit) { MK.beltInit = true; MK.beltX.forEach((x, i) => { x += dt * (moving ? .8 : 0); if (x > 7.4) x -= 15; MK.beltX[i] = x; MK.belt.setMatrixAt(i, tmpM.makeTranslation(x, .71, 0)); }); MK.belt.instanceMatrix.needsUpdate = true; }
   const J = MK.J, spId = M.active ? M.sp : (M.last ? M.last.sp : M.sp);
   J.group.visible = ownAny() && (M.active || !!M.last); if (spId) { jellyColors(J, SP[spId]); MK.tank.material.color.set(SP[spId].color); MK.tank.material.emissive.set(SP[spId].color); }
-  const tx = M.active ? MX[M.step] : (M.last ? 8.2 : -6.4); MK.bx += (tx - MK.bx) * Math.min(1, dt * 3); const onTurn = !M.active && M.last && MK.bx > 7.6;
-  J.group.position.set(MK.bx + (M.active && act(M.step) ? Math.sin(t * 40) * .01 : 0), onTurn ? 1.15 + Math.sin(t * 2) * .05 : 1.14, 0);
-  J.group.rotation.y = onTurn ? t * .8 : 0; MK.turn.rotation.y = t * .8; J.group.scale.set(.42, .42 * (M.active && M.step >= 1 ? .92 : 1), .42);
+  const slicing = M.active && M.step === 0 && M.g && !!M.g.marks;
+  const tx = slicing ? MX[0] - LT / 2 + LT * (M.phase === 'run' ? slicePos(M.g) : 0) : M.active ? MX[M.step] : (M.last ? 8.2 : -6.4); if (slicing && M.phase === 'run') MK.bx = tx; else MK.bx += (tx - MK.bx) * Math.min(1, dt * 3); const onTurn = !M.active && M.last && MK.bx > 7.6;
+  J.group.position.set(MK.bx + (M.active && !slicing && act(M.step) ? Math.sin(t * 40) * .01 : 0), onTurn ? 1.15 + Math.sin(t * 2) * .05 : 1.14, 0);
+  J.group.rotation.y = onTurn ? t * .8 : 0; MK.turn.rotation.y = t * .8; MK.sx = (MK.sx || 1) + ((slicing ? 2.4 : 1) - (MK.sx || 1)) * Math.min(1, dt * 5); J.group.scale.set(.42 * MK.sx, .42 * (slicing ? .86 : M.active && M.step >= 1 ? .92 : 1), .42);
+  jellyCut(J, !M.active && M.last ? M.last : null); cutLinesStep(slicing); if (!MK.pieces) MK.pieces = []; piecesStep(dt);
   if (W.sample) W.sample.rotation.y = t * .6; if (W.liveSample) { W.liveSample.rotation.y = -t * .4; W.liveSample.position.y = 1.4 + Math.sin(t * 2) * .04; }
   if (W.neon) W.neon.forEach((n, i) => n.scale.y = .7 + .3 * Math.abs(Math.sin(t * 1.5 + i))); if (W.recLed) W.recLed.visible = L.on ? Math.sin(t * 6) > 0 : false;
 }
@@ -2393,8 +2404,9 @@ function playerStep(dt) {
 // 產線特寫鏡頭：放在天棚下方（原本在屋頂上方，畫面被屋頂整片擋住），
 // 並依畫面比例拉遠，讓整條產線出現在下方介面之上的區域
 function lineViewPose() {
-  const vf = W.cam.fov * Math.PI / 180, dist = clamp(9.6 / (Math.tan(vf / 2) * W.cam.aspect), 8, 19), ly = W.lineG ? W.lineG.position.y : WS_Y, lz = W.lineG ? W.lineG.position.z : -8, y = ly + 4.7;
-  const p = new THREE.Vector3(.4, y, lz + dist), pitch = Math.atan2(y - (ly + 1.5), dist) + vf * .24;
+  const vf = W.cam.fov * Math.PI / 180, focus = M.active, ly = W.lineG ? W.lineG.position.y : WS_Y, lz = W.lineG ? W.lineG.position.z : -8, lx = W.lineG ? W.lineG.position.x : 0;
+  const dist = focus ? clamp(3.6 / (Math.tan(vf / 2) * W.cam.aspect), 6.6, 13) : clamp(9.6 / (Math.tan(vf / 2) * W.cam.aspect), 8, 19), y = ly + (focus ? 3.8 : 4.7);
+  const p = new THREE.Vector3(focus ? lx + MX[M.step] : .4, y, lz + dist), pitch = Math.atan2(y - (ly + 1.3), dist) + vf * (focus ? .2 : .24);
   return { p, t: p.clone().add(new THREE.Vector3(0, -Math.sin(pitch), -Math.cos(pitch))) };
 }
 const camT = new THREE.Vector3();
@@ -2402,7 +2414,9 @@ function cameraStep(dt) {
   const cam = W.cam;
   if (GUI.kind === 'line') {
     const v = lineViewPose(), q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(v.p, v.t, new THREE.Vector3(0, 1, 0)));
-    cam.position.lerp(v.p, Math.min(1, dt * 4)); cam.quaternion.slerp(q, Math.min(1, dt * 4)); W.camAway = true; return;
+    cam.position.lerp(v.p, Math.min(1, dt * 4)); cam.quaternion.slerp(q, Math.min(1, dt * 4)); W.camAway = true;
+    if (W.shake > 0) { W.shake = Math.max(0, W.shake - dt * .5); cam.position.x += rnd(-1, 1) * W.shake; cam.position.y += rnd(-1, 1) * W.shake; }
+    return;
   }
   // 頭部晃動：上下＋左右輕擺；側移時鏡頭微微傾斜；落地時鏡頭下沉回彈；奔跑時視野加寬
   const hsp = Math.hypot(P.vx, P.vz), mv = P.ground ? clamp(hsp / 4.3, 0, 1.4) : 0, bob = Math.abs(Math.sin(P.bob)) * .05 * mv - .025 * mv, side = Math.sin(P.bob) * .025 * mv;
@@ -2629,7 +2643,7 @@ function refresh() { if (GUI.kind && tab) RENDER[tab](); renderTop(); renderHotb
 /* ---------- 加工：三台機器各有不同的操作流程 ---------- */
 const M = { sp: null, step: -1, active: false, phase: '', pt: 0, g: null, scores: [], last: null, hold: false, kdir: 0 };
 const MG = [
-  { name: '切片', how: '游標由左往右掃過，經過每條切割線時按「切」。', key: '空白鍵' },
+  { name: '切片', how: '看著輸送帶上的史萊姆：發光的切割線碰到紅色雷射時下刀。', key: '空白鍵／點擊畫面' },
   { name: '裹糖晶', how: '按住讓滾筒加速、放開會減速，讓指針停在綠色區間越久越好。', key: '按住空白鍵' },
   { name: '乾燥', how: '拖曳火力旋鈕，讓它跟上不斷移動的黃色目標溫度。', key: '← → 或 A D' },
 ];
@@ -2638,31 +2652,41 @@ function startMake() {
   if (!ownAny()) return toast('還沒有任何加工機器，到工作電腦的「網購」購買');
   const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）');
   if (S.stock.length >= cap()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
-  S.gel[sp] -= 2; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
+  S.gel[sp] -= 2; M.cut = S.own.slicer ? (CUTS[S.cut] ? S.cut : 'thick') : null; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
   M.active = true; M.last = null; MK.bx = -6.4; beginStep(); renderHotbar(true); renderMake();
 }
 function beginStep() {
   M.phase = 'ready'; M.pt = 1.4; M.hold = false; M.kdir = 0; const lv = lvlOf(M.step);
-  if (M.step === 0) { const marks = []; for (let i = 0; i < 4; i++) marks.push(.15 + i * .22 + rnd(-.04, .04)); M.g = { t: 0, dur: 3.6, marks, hit: marks.map(() => null), tol: .045 + .012 * lv }; }
+  if (M.step === 0) {
+    // 越熟練判定越寬（最多 +35%）；切過 40 刀之後輸送帶會忽快忽慢
+    const C = CUTS[M.cut] || CUTS.thick, k = C.marks, marks = [], skill = 1 + Math.min(.35, (S.cutN || 0) / 150), vary = (S.cutN || 0) >= 40 ? .5 : 0;
+    for (let i = 0; i < k; i++) marks.push(.14 + i * .72 / (k - 1) + rnd(-.02, .02));
+    M.g = { t: 0, dur: 2.6 + k * .45, marks, hit: marks.map(() => null), tol: (.045 + .012 * lv) * C.tol * skill, vary };
+    if (vary && !S.tipVary) { S.tipVary = true; toast('你的切片越來越熟練了：輸送帶現在會忽快忽慢，看準了再下刀！'); }
+  }
   else if (M.step === 1) { const w = .2 + .035 * lv, c = rnd(.45, .7); M.g = { t: 0, dur: 5, thr: 0, v: 0, inz: 0, lo: c - w / 2, hi: c + w / 2 }; }
   else M.g = { t: 0, dur: 5.5, knob: .5, err: 0, n: 0, tw: .07 + .015 * lv, seed: rnd(0, 10) };
 }
+// 史萊姆在切片機下的位置（0→1）；變速時仍保持單調前進
+const slicePos = g => { const u = clamp(g.t / g.dur, 0, 1); return g.vary ? u + g.vary * Math.sin(u * Math.PI * 4) / (Math.PI * 4) : u; };
+const LT = 2.4; // 切片時史萊姆經過刀下的行程
 const dryTarget = g => clamp(.5 + .28 * Math.sin(g.t * .9 + g.seed) + .12 * Math.sin(g.t * 2.3 + g.seed * 2), .08, .92);
 function makeAction(kind, val) {
   if (!M.active) return; if (kind === 'hold') { M.hold = val; const b = $('#mgHold'); if (b) b.classList.toggle('on', !!val); return; }
   if (M.phase !== 'run') return; const g = M.g;
   if (M.step === 0 && kind === 'tap') {
-    const pos = g.t / g.dur; let best = -1, bd = 1; g.marks.forEach((m, i) => { if (g.hit[i] == null) { const d = Math.abs(pos - m); if (d < bd) { bd = d; best = i; } } });
-    MK.pulse[0] = .25; sfx.machine(0);
-    if (best >= 0 && bd < g.tol * 2.2) { g.hit[best] = clamp(1 - Math.max(0, bd - g.tol * .4) / (g.tol * 1.8), 0, 1); } else sfx.squish(.4);
+    const pos = slicePos(g); let best = -1, bd = 1; g.marks.forEach((m, i) => { if (g.hit[i] == null) { const d = Math.abs(pos - m); if (d < bd) { bd = d; best = i; } } });
+    if (best >= 0 && bd < g.tol * 2.2) { const q = clamp(1 - Math.max(0, bd - g.tol * .4) / (g.tol * 1.8), 0, 1); g.hit[best] = q; sliceFx(q); } else sliceFx(-1);
+    updMakeUI();
   }
   if (M.step === 2 && kind === 'knob') g.knob = clamp(val, 0, 1);
 }
 function makeTick(dt) {
   if (!M.active) return; const g = M.g;
   if (M.phase === 'ready') { M.pt -= dt; if (M.pt <= 0) { M.phase = 'run'; renderMake(); } return; }
+  if (M.stop > 0) { M.stop -= dt; return; } // 下刀瞬間的停頓
   g.t += dt;
-  if (M.step === 0) { const pos = g.t / g.dur; g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) g.hit[i] = 0; }); }
+  if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) { g.hit[i] = 0; updMakeUI(); } }); }
   if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
   if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
   if (g.t >= g.dur) finishStep(); else updMakeUI();
@@ -2672,18 +2696,79 @@ function finishStep() {
   if (M.step === 0) sc = g.hit.reduce((a, b) => a + (b || 0), 0) / g.marks.length;
   else if (M.step === 1) sc = clamp(g.inz / (g.dur * .8), 0, 1);
   else sc = clamp(1 - (g.err / Math.max(g.n, .01)) / .25, 0, 1);
+  if (M.step === 0) S.cutN = (S.cutN || 0) + g.hit.filter(h => h > .3).length;
   M.scores[M.step] = sc; sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
   toast(`${MG[M.step].name}：${sc > .9 ? '完美' : sc > .7 ? '很好' : sc > .45 ? '普通' : '失手了'}（${Math.round(sc * 100)}%）`);
   M.si++;
   if (M.si >= M.steps.length) {
     M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
+    if (M.scores[0] != null && M.cut) { p.cut = M.cut; p.cq = Math.round(M.scores[0] * 100) / 100; if (M.scores[0] < .35) { p.wonky = true; setTimeout(() => toast('切歪了，做出一個「歪歪捏捏」：比較便宜，但有收藏家特別喜歡。凝膠沒有浪費。'), 600); } }
     S.stock.push(p); M.last = p; if (!S.lineMade) { S.lineMade = true; objSig = ''; } gainXP(5 + p.crisp * 10); save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
   } else { M.step = M.steps[M.si]; beginStep(); }
   renderMake();
 }
+function cutShape(kind, r) {
+  const sh = new THREE.Shape();
+  if (kind === 'star') { for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r, x = Math.cos(a) * rr, y = Math.sin(a) * rr; i ? sh.lineTo(x, y) : sh.moveTo(x, y); } sh.closePath(); }
+  else { const k = r / 1.05; sh.moveTo(0, -k); sh.bezierCurveTo(.55 * k, -.55 * k, 1.05 * k, -.05 * k, 1 * k, .4 * k); sh.bezierCurveTo(.95 * k, .85 * k, .4 * k, 1 * k, 0, .55 * k); sh.bezierCurveTo(-.4 * k, 1 * k, -.95 * k, .85 * k, -k, .4 * k); sh.bezierCurveTo(-1.05 * k, -.05 * k, -.55 * k, -.55 * k, 0, -k); }
+  return sh;
+}
+// 切面材質：切得越準越平整發亮
+const faceMat = (sp, q) => new THREE.MeshPhysicalMaterial({ color: new THREE.Color(sp.color).lerp(new THREE.Color('#ffffff'), .38), roughness: .6 - .52 * q, clearcoat: q, clearcoatRoughness: .3 - .26 * q, emissive: sp.color, emissiveIntensity: .06 + .28 * q, transparent: true, polygonOffset: true, polygonOffsetFactor: -1 });
+function sliceFx(q) {
+  MK.pulse[0] = .25; sfx.machine(0); MK.laserHit = .15;
+  const wp = W.lineG.localToWorld(new THREE.Vector3(MX[0] + .2, 1.3, 0)), sp = SP[M.sp];
+  if (q < 0) { sfx.squish(.35); fx3(wp.clone().setY(wp.y + 1.3), '空刀', '#94a3b8'); W.shake = .02; return; }
+  M.stop = .07; W.shake = .04 + q * .05; if (navigator.vibrate) navigator.vibrate(q > .9 ? [12, 20, 12] : 10);
+  sfx.crunch(.7 + q * .6, .45 + q * .55); if (q > .9) setTimeout(() => sfx.perfect(), 60);
+  if (W.goo) W.goo.emit(wp, 5 + Math.round(q * 9), sp.color, { gy: W.lineG.position.y + .72, speed: 1.3, up: 2.6, size: .045 });
+  if (W.goo && q > .9) W.goo.emit(wp, 5, '#ffffff', { gy: W.lineG.position.y + .72, speed: .8, up: 3.2, size: .03 });
+  spawnSlice(q);
+  fx3(wp.clone().setY(wp.y + 1.3), q > .9 ? '完美切面！' : q > .6 ? '很好' : q > .3 ? '有點歪' : '切歪了', q > .9 ? '#f0abfc' : q > .6 ? '#34d399' : '#fbbf24', q > .9 ? 'big' : '');
+}
+function spawnSlice(q) {
+  const C = CUTS[M.cut] || CUTS.thick, sp = SP[M.sp], th = C.th, side = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .15, clearcoat: 1, transparent: true }), face = faceMat(sp, q);
+  let geo; if (C.shape) { geo = new THREE.ExtrudeGeometry(cutShape(C.shape, .34), { depth: th, bevelEnabled: false }); geo.translate(0, 0, -th / 2); geo.rotateY(Math.PI / 2); } else geo = new THREE.BoxGeometry(th, .66, .74);
+  const m = new THREE.Mesh(geo, C.shape ? [face, side] : [face, face, side, side, side, side]); m.position.set(MX[0] + th / 2 + .03, 1.14, 0); m.castShadow = !LOW; W.lineG.add(m);
+  MK.pieces.push({ m, vx: 1 + rnd(0, .4), vy: 1.5, vz: rnd(-.35, .35), spin: -(3 + rnd(0, 2)), rz: 0, life: 2.4, th });
+  while (MK.pieces.length > 8) dropPiece(MK.pieces.shift());
+}
+function dropPiece(p) { W.lineG.remove(p.m); p.m.geometry.dispose(); [].concat(p.m.material).forEach(x => x.dispose()); }
+function piecesStep(dt) {
+  for (let i = MK.pieces.length - 1; i >= 0; i--) {
+    const p = MK.pieces[i], m = p.m; p.rz = Math.max(-Math.PI / 2, p.rz + p.spin * dt); m.rotation.z = p.rz;
+    p.vy -= 9.8 * dt; m.position.x += p.vx * dt; m.position.y += p.vy * dt; m.position.z += p.vz * dt;
+    const rest = .73 + (.33 + (p.th / 2 - .33) * Math.abs(p.rz) / (Math.PI / 2)); if (m.position.y <= rest && p.vy < 0) { m.position.y = rest; p.vy = 0; p.vx = .8; p.vz *= .85; }
+    p.life -= dt; if (p.life < .6) [].concat(m.material).forEach(x => x.opacity = Math.max(0, p.life / .6));
+    if (p.life <= 0 || m.position.x > 7.6) { dropPiece(p); MK.pieces.splice(i, 1); }
+  }
+}
+// 切割線（跟著史萊姆移動）與刀下的紅色雷射
+function cutLinesStep(on) {
+  if (!MK.cutL) {
+    MK.cutL = Array.from({ length: 6 }, () => { const m = box(.035, .98, 1, new THREE.MeshBasicMaterial({ color: '#22d3ee', transparent: true, opacity: .9, depthWrite: false }), 0, 1.14, 0, W.lineG); m.visible = false; return m; });
+    MK.laser = box(.014, 1.3, 1.75, new THREE.MeshBasicMaterial({ color: '#ff3b5c', transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide }), MX[0], 1.42, 0, W.lineG); MK.laser.visible = false;
+  }
+  MK.laser.visible = !!on; MK.laserHit = Math.max(0, (MK.laserHit || 0) - 1 / 60); MK.laser.material.opacity = .32 + MK.laserHit * 3;
+  const g = M.g, C = on ? CUTS[M.cut] || CUTS.thick : null, pos = on && M.phase === 'run' ? slicePos(g) : 0;
+  MK.cutL.forEach((m, i) => { m.visible = !!on && i < g.marks.length && g.hit[i] == null; if (!m.visible) return; m.position.x = MK.bx + LT * (.5 - g.marks[i]); const near = Math.abs(pos - g.marks[i]) < g.tol * 1.3; m.material.color.set(near ? '#ffffff' : C.col); m.scale.set(near ? 1.6 : 1, near ? 1.12 : 1, 1); });
+}
+// 成品上保留的切面（厚塊：一整面；薄片：一層層；星形／愛心：造型面）
+function jellyCut(J, p) {
+  const key = p && p.cut && CUTS[p.cut] ? p.cut + (p.wonky ? 'w' : '') + Math.round((p.cq || 0) * 10) + p.sp : '';
+  if (J.cutKey === key) return; J.cutKey = key;
+  if (J.cutM) { J.group.remove(J.cutM); J.cutM.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); J.cutM = null; }
+  if (!key) return; const C = CUTS[p.cut], q = p.cq || 0, g = new THREE.Group(), sp = SP[p.sp];
+  const add = (geo, x = 0, z = 0) => { geo.rotateX(-Math.PI / 2); const m = new THREE.Mesh(geo, faceMat(sp, q)); m.position.set(x, 1.012, z); g.add(m); };
+  if (C.shape) add(new THREE.ShapeGeometry(cutShape(C.shape, .66)));
+  else if (p.cut === 'thin') [-.48, -.16, .16, .48].forEach(z => add(new THREE.PlaneGeometry(1.3, .26), 0, z));
+  else add(new THREE.PlaneGeometry(1.3, 1.3));
+  if (p.wonky) { g.rotation.y = .42; g.position.x = .1; g.rotation.z = .05; }
+  J.group.add(g); J.cutM = g;
+}
 function updMakeUI() {
   const g = M.g; if (!g) return; const tb = $('#mgTime'); if (tb) tb.style.width = clamp(g.t / g.dur, 0, 1) * 100 + '%';
-  if (M.step === 0) { const c = $('#mgCur'); if (c) c.style.left = clamp(g.t / g.dur, 0, 1) * 100 + '%'; $$('#mgTrack .mark').forEach((m, i) => m.className = 'mark' + (g.hit[i] == null ? '' : g.hit[i] > .3 ? ' ok' : ' bad')); }
+  if (M.step === 0) $$('#cutDots i').forEach((d, i) => d.className = g.hit[i] == null ? '' : g.hit[i] > .85 ? 'pf' : g.hit[i] > .3 ? 'ok' : 'bad');
   if (M.step === 1) { const n = $('#mgNeedle'); if (n) n.style.left = g.v * 100 + '%'; }
   if (M.step === 2) { const t = $('#mgTgt'), k = $('#mgKnob'), x = dryTarget(g); if (t) { t.style.left = (x - g.tw) * 100 + '%'; t.style.width = g.tw * 200 + '%'; } if (k) k.style.left = g.knob * 100 + '%'; }
 }
@@ -2697,13 +2782,13 @@ function renderMake() {
     const g = M.g, st = `<div class="steps">${STEPS.map((x, i) => { const own = S.own[MKEY[i]], done = M.scores[i] != null && i !== M.step; return `<span class="${!own ? 'off' : i === M.step ? 'on' : done ? 'done' : ''}">${i + 1}. ${x}${!own ? '（未購買）' : done ? ' ' + Math.round(M.scores[i] * 100) + '%' : ''}</span>`; }).join('')}</div>`;
     const how = `<div class="mghow"><b>${UPS[MKEY[M.step]].name}</b>：${MG[M.step].how}${TOUCH ? '' : `<span style="color:var(--sub)">（${MG[M.step].key}）</span>`}${M.phase === 'ready' ? '<span class="ready">準備…</span>' : ''}</div>`;
     let body = '';
-    if (M.step === 0) body = `<div class="track" id="mgTrack">${g.marks.map(m => `<i class="mark" style="left:${m * 100}%"></i>`).join('')}<i class="cur" id="mgCur" style="left:0"></i></div><button class="btn big" style="width:100%" data-mg="tap">切！</button>`;
+    if (M.step === 0) { const C = CUTS[M.cut] || CUTS.thick; body = `<div class="cutdots" id="cutDots">${g.marks.map(() => '<i></i>').join('')}</div><div class="hint" style="margin:0"><b style="color:${C.col}">${C.n}切</b>　${C.marks} 刀。發光的切割線碰到<b style="color:#ff6b81">紅色雷射</b>時${TOUCH ? '在畫面上<b>由上往下滑一刀</b>' : '按<b>空白鍵</b>或<b>點擊畫面</b>'}</div>`; }
     else if (M.step === 1) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><button class="btn big hold" style="width:100%" id="mgHold" data-mg="hold">按住加速</button>`;
     else body = `<div class="track dry" id="mgDry"><div class="tgt" id="mgTgt"></div><div class="knob" id="mgKnob" style="left:50%"></div></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0">左右拖曳火力旋鈕${TOUCH ? '' : '，或按 ← →'}</div>`;
     setHTML(mini, st + how + body); updMakeUI();
-  } else setHTML(mini, `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">${ownAny() ? '已擁有：' + MKEY.filter(k => S.own[k]).map(k => UPS[k].name).join('、') + '。缺少的機器步驟以 0 分計算。' : '尚未購買任何機器。'}庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`);
+  } else setHTML(mini, (S.own.slicer ? `<div class="small" style="color:var(--sub);margin-bottom:4px">切法（成品會保留切面，訂單可能指定切法）</div><div class="row wrap cutpick">${Object.keys(CUTS).map(k => `<button class="zbtn ${S.cut === k ? 'on' : ''}" data-act="pickCut" data-k="${k}"><b style="color:${CUTS[k].col}">${CUTS[k].n}</b><br><small>${CUTS[k].desc}<br>售價 ×${CUTS[k].pm}</small></button>`).join('')}</div>` : '') + `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">${ownAny() ? '已擁有：' + MKEY.filter(k => S.own[k]).map(k => UPS[k].name).join('、') + '。缺少的機器步驟以 0 分計算。' : '尚未購買任何機器。'}庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`);
   const r = $('#makeResult');
-  if (M.last && !M.active) { const p = M.last, pct = Math.round(p.crisp * 100); setHTML(r, `<div class="card item" style="cursor:default"><div class="sw" style="background:${swatch(SP[p.sp])};width:52px;height:52px"></div><div class="grow"><b>${SP[p.sp].name} · 酥脆捏捏</b><br>酥脆度 <b style="color:var(--warn)">${pct}%</b>　${pct >= 90 ? '極品' : pct >= 70 ? '優良' : '再接再厲'}<br><small style="color:var(--sub)">已放入背包。可拿到裝飾桌加工，或到直播台販售。</small></div></div>`); }
+  if (M.last && !M.active) { const p = M.last, pct = Math.round(p.crisp * 100); setHTML(r, `<div class="card item" style="cursor:default"><div class="sw" style="background:${swatch(SP[p.sp])};width:52px;height:52px"></div><div class="grow"><b>${p.wonky ? '歪歪' : ''}${SP[p.sp].name} · ${p.cut ? CUTS[p.cut].n + '切' : '酥脆'}捏捏</b><br>${p.cut ? '切面 ' + (p.cq > .85 ? '平整發亮' : p.cq > .5 ? '還算平整' : '有點歪') + '　' : ''}酥脆度 <b style="color:var(--warn)">${pct}%</b>　${pct >= 90 ? '極品' : pct >= 70 ? '優良' : '再接再厲'}<br><small style="color:var(--sub)">已放入背包。可拿到裝飾桌加工，或到直播台販售。</small></div></div>`); }
   else setHTML(r, '');
 }
 // 加工小遊戲的指標操作
@@ -2721,10 +2806,17 @@ function renderMake() {
   mini.addEventListener('pointerup', up); mini.addEventListener('pointercancel', up); mini.addEventListener('lostpointercapture', up);
 })();
 
+(() => {
+  const cv = document.getElementById('worldCv'); let sw = null;
+  const slicing = () => GUI.kind === 'line' && M.active && M.step === 0;
+  cv.addEventListener('pointerdown', e => { if (!slicing()) return; if (e.pointerType === 'mouse') { if (e.button === 0) makeAction('tap'); return; } sw = { x: e.clientX, y: e.clientY, done: false }; });
+  cv.addEventListener('pointermove', e => { if (!sw || sw.done || !slicing()) return; const dy = e.clientY - sw.y; if (dy > 26 && Math.abs(e.clientX - sw.x) < dy * 1.2 + 20) { sw.done = true; makeAction('tap'); } });
+  ['pointerup', 'pointercancel'].forEach(ev => cv.addEventListener(ev, () => { sw = null; }));
+})();
 /* ---------- 庫存卡片 ---------- */
 function itemHTML(p, act, selId, extra = '') {
   const sp = SP[p.sp];
-  return `<div class="card item ${selId === p.id ? 'sel' : ''}" data-act="${act}" data-id="${p.id}"><div class="sw" style="background:${swatch(sp)}"></div><div><div class="nm">${p.crude ? '粗製' : ''}${short(p.sp)}</div><div class="meta">酥脆 ${Math.round(effCrisp(p) * 100)}% · 耐久 ${Math.round(p.dur)}%</div><div class="meta">${p.deco.length ? '裝飾 ' + p.deco.length : '無裝飾'} · 約 ${fmt(fair(p, 'live'))}${extra}</div></div></div>`;
+  return `<div class="card item ${selId === p.id ? 'sel' : ''}" data-act="${act}" data-id="${p.id}"><div class="sw" style="background:${swatch(sp)}"></div><div><div class="nm">${p.wonky ? '歪歪' : ''}${p.crude ? '粗製' : ''}${short(p.sp)}${p.cut ? `<small style="color:${CUTS[p.cut].col}"> ${CUTS[p.cut].n}</small>` : ''}</div><div class="meta">酥脆 ${Math.round(effCrisp(p) * 100)}% · 耐久 ${Math.round(p.dur)}%</div><div class="meta">${p.deco.length ? '裝飾 ' + p.deco.length : '無裝飾'} · 約 ${fmt(fair(p, 'live'))}${extra}</div></div></div>`;
 }
 const stockById = id => S.stock.find(p => p.id === +id);
 
@@ -2783,7 +2875,7 @@ function updateLiveHUD() {
   $('#stageInfo').innerHTML = p ? `上台：<b>${SP[p.sp].name}</b>　酥脆 ${Math.round(effCrisp(p) * 100)}%　耐久 ${Math.round(p.dur)}%<br>售價 <b>${fmt(priceOf(p, 'live'))}</b>（合理價 ${fmt(fair(p, 'live'))}）` : '從下方選一個捏捏上台，按住它擠壓、滑動連續捏';
   $('#reqBox').innerHTML = L.req && L.on ? `<span class="reqb">觀眾指定：${L.req.text}　剩 ${Math.ceil(L.req.t)}s　（成交 ×1.8）</span>` : '';
 }
-function reqMatch(p) { return L.req && (L.req.kind === 'sp' ? p.sp === L.req.sp : effCrisp(p) >= .7); }
+function reqMatch(p) { return L.req && (L.req.kind === 'sp' ? p.sp === L.req.sp : L.req.kind === 'cut' ? p.cut === L.req.cut : effCrisp(p) >= .7); }
 function liveSale(p) {
   let price = priceOf(p, 'live'), bonus = 1;
   if (reqMatch(p)) { bonus = 1.8; L.req = null; S.fans += 3; chat('系統', '指定任務完成！限時銷售成交！', 'dm'); }
@@ -2803,7 +2895,7 @@ function updateLive(dt) {
     if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(priceOf(p, 'live'), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
     L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); chat(pick(NAMES), pick(CHAT_IDLE)); }
     if (L.req) { L.req.t -= dt; if (L.req.t <= 0) { L.req = null; chat('系統', '指定任務已結束', 'dm'); } }
-    else { L.reqT -= dt; if (L.reqT <= 0) { L.reqT = rnd(25, 40); if (Math.random() < .6) { const has = [...new Set(S.stock.map(p => p.sp))], id = has.length && Math.random() < .7 ? pick(has) : pick(unlockedSpecies()).id; L.req = { kind: 'sp', sp: id, t: 40, text: `要「${SP[id].name}」` }; } else L.req = { kind: 'cr', t: 40, text: '要酥脆度 ≥ 70% 的' }; chat('系統', '新的觀眾指定：' + L.req.text, 'dm'); } }
+    else { L.reqT -= dt; if (L.reqT <= 0) { L.reqT = rnd(25, 40); if (Math.random() < .6) { const has = [...new Set(S.stock.map(p => p.sp))], id = has.length && Math.random() < .7 ? pick(has) : pick(unlockedSpecies()).id; L.req = { kind: 'sp', sp: id, t: 40, text: `要「${SP[id].name}」` }; } else if (S.own.slicer && Math.random() < .5) { const ck = pick(Object.keys(CUTS)); L.req = { kind: 'cut', cut: ck, t: 40, text: `要「${CUTS[ck].n}切」的` }; } else L.req = { kind: 'cr', t: 40, text: '要酥脆度 ≥ 70% 的' }; chat('系統', '新的觀眾指定：' + L.req.text, 'dm'); } }
   } else { L.hype = Math.max(0, L.hype - 10 * dt); L.viewers = Math.max(0, L.viewers - dt * 10); L.combo = 0; L.req = null; }
 }
 
@@ -2834,10 +2926,12 @@ const rating = () => { const a = S.rate.slice(-20); return a.reduce((x, y) => x 
 function webTick() {
   // 前兩筆訂單保證賣出：讓新玩家很快拿到第一筆收入
   const first = S.sales < 2; if (!S.web.length || (!first && Math.random() > clamp(0.25 + S.fans / 400 + (rating() - 3) * .1, .05, .9))) return null;
-  const p = pick(S.web), f = fair(p, 'web'), price = priceOf(p, 'web'); if (!first && Math.random() > demand(price, f) * .7) return null;
+  const p = pick(S.web), f = fair(p, 'web'), coll = p.wonky && Math.random() < .3; let price = priceOf(p, 'web'); if (!first && !coll && Math.random() > demand(price, f) * .7) return null;
+  if (coll) price = Math.round(price / .6 * 1.6); // 收藏家：歪得剛剛好，願意出高價
   addMoney(price); S.sales++; S.fans += .3; gainXP(2); S.web = S.web.filter(q => q !== p);
   const stars = clamp(Math.round(1 + 2.2 * effCrisp(p) + 1.8 * clamp(f / price, 0, 1.3)), 1, 5); S.rate.push(stars); if (S.rate.length > 40) S.rate.shift();
-  S.reviews.unshift({ s: stars, t: pick(REVIEWS[stars]), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars };
+  const cutTxt = p.cut ? (p.cq > .85 ? `${CUTS[p.cut].n}切面平整發亮，好美！` : p.cq < .45 ? '切面有點歪歪的。' : '') : '';
+  S.reviews.unshift(coll ? { s: 5, t: '收藏家：歪得剛剛好，收藏了！', who: pick(NAMES), sp: SP[p.sp].name } : { s: stars, t: pick(REVIEWS[stars]) + (cutTxt ? ' ' + cutTxt : ''), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars };
 }
 function renderWeb() {
   const r = rating();
@@ -2882,13 +2976,13 @@ function renderBranch0() {
     <div class="card small">庫存 ${S.stock.length}/${cap()}　凝膠合計 ${Object.values(S.gel).reduce((a, b) => a + b, 0)}</div>`;
   } else if (S.branch === 'corp') {
     bx.innerHTML = `<h2>企業合作</h2><div class="hint">大公司定期釋出訂單，報酬約為合理價 ×1.5，但需在期限內交付足夠品質的商品。逾期會損失信譽。</div><div class="card small">企業信譽 <b>${S.rep}</b>　承接中 ${S.contracts.length}/3</div>` +
-      (S.contracts.length ? S.contracts.map(c => { const ok = contractItems(c); return `<div class="card"><b>${c.sp === 'any' ? '任意種類' : SP[c.sp].name}</b> × ${c.n}　酥脆 ≥ ${Math.round(c.min * 100)}%<br>報酬 <b style="color:var(--warn)">${fmt(c.reward)}</b>　剩餘 <b data-dl="${c.dl}"></b><div class="row" style="margin-top:6px"><span class="small grow">符合庫存 ${ok.length}/${c.n}</span><button class="btn sm" data-act="deliver" data-id="${c.id}" ${ok.length < c.n ? 'disabled' : ''}>交貨</button></div></div>`; }).join('') : '<div class="empty">目前沒有訂單，請稍候…</div>');
+      (S.contracts.length ? S.contracts.map(c => { const ok = contractItems(c); return `<div class="card"><b>${c.sp === 'any' ? '任意種類' : SP[c.sp].name}</b>${c.cut ? `（${CUTS[c.cut].n}切）` : ''} × ${c.n}　酥脆 ≥ ${Math.round(c.min * 100)}%<br>報酬 <b style="color:var(--warn)">${fmt(c.reward)}</b>　剩餘 <b data-dl="${c.dl}"></b><div class="row" style="margin-top:6px"><span class="small grow">符合庫存 ${ok.length}/${c.n}</span><button class="btn sm" data-act="deliver" data-id="${c.id}" ${ok.length < c.n ? 'disabled' : ''}>交貨</button></div></div>`; }).join('') : '<div class="empty">目前沒有訂單，請稍候…</div>');
   } else {
     bx.innerHTML = `<h2>溫馨小店</h2><div class="hint">顧客會上門指定想要的種類。滿足熟客可累積好感度，熟客會給更高價與小費。顧客等太久會失望離開。</div><div class="card small">熟客 ${Object.values(S.regulars).filter(v => v >= 5).length} 位（好感 ≥ 5）</div>` +
       (S.customers.length ? S.customers.map(c => { const ok = shopItem(c), aff = S.regulars[c.name] || 0; return `<div class="card"><b>${esc(c.name)}</b> ${aff >= 5 ? '<span class="tag">熟客</span>' : ''} <small style="color:var(--sub)">好感 ${aff}</small><br>想要：<b>${SP[c.sp].name}</b>　酥脆 ≥ ${Math.round(c.min * 100)}%<div class="meter2" style="margin:6px 0"><i data-dlbar="${c.dl}"></i></div><button class="btn sm" data-act="serve" data-id="${c.id}" ${ok ? '' : 'disabled'}>${ok ? `出貨 ${fmt(shopPrice(c, ok))}` : '背包沒有符合商品'}</button></div>`; }).join('') : '<div class="empty">店裡暫時沒有客人…</div>');
   }
 }
-function contractItems(c) { return S.stock.filter(p => (c.sp === 'any' || p.sp === c.sp) && effCrisp(p) >= c.min).sort((a, b) => effCrisp(a) - effCrisp(b)).slice(0, c.n); }
+function contractItems(c) { return S.stock.filter(p => (c.sp === 'any' || p.sp === c.sp) && (!c.cut || p.cut === c.cut) && effCrisp(p) >= c.min).sort((a, b) => effCrisp(a) - effCrisp(b)).slice(0, c.n); }
 function shopItem(c) { return S.stock.filter(p => p.sp === c.sp && effCrisp(p) >= c.min).sort((a, b) => effCrisp(a) - effCrisp(b))[0]; }
 function shopPrice(c, p) { return fair(p, 'shop') * (1 + Math.min(S.regulars[c.name] || 0, 10) * .02); }
 function branchTick(dt) {
@@ -2899,7 +2993,7 @@ function branchTick(dt) {
   }
   if (S.branch === 'corp') {
     const now = Date.now(); S.contracts = S.contracts.filter(c => { if (now > c.dl) { S.rep = Math.max(0, S.rep - 1); toast('訂單逾期，企業信譽 -1'); return false; } return true; }); BT.ct += dt;
-    if (BT.ct > 20 && S.contracts.length < 3) { BT.ct = 0; const us = unlockedSpecies(), n = 2 + Math.floor(Math.random() * 3), any = Math.random() < .4, sp = any ? 'any' : pick(us).id, min = clamp(.35 + .05 * S.rep + rnd(0, .15), .3, .9), base = any ? us.reduce((a, s) => a + s.price, 0) / us.length : SP[sp].price; S.contracts.push({ id: S.nextId++, sp, n, min, reward: Math.round(n * base * (0.4 + 1.1 * (min + .1)) * 1.5 * (1 + S.rep * .05)), dl: now + 240000 }); toast('收到新的企業訂單（工作電腦 → 事業）'); }
+    if (BT.ct > 20 && S.contracts.length < 3) { BT.ct = 0; const us = unlockedSpecies(), n = 2 + Math.floor(Math.random() * 3), any = Math.random() < .4, sp = any ? 'any' : pick(us).id, min = clamp(.35 + .05 * S.rep + rnd(0, .15), .3, .9), base = any ? us.reduce((a, s) => a + s.price, 0) / us.length : SP[sp].price; const cut = Math.random() < .35 ? pick(Object.keys(CUTS)) : null; S.contracts.push({ id: S.nextId++, sp, n, min, cut, reward: Math.round(n * base * (0.4 + 1.1 * (min + .1)) * 1.5 * (1 + S.rep * .05) * (cut ? 1.25 : 1)), dl: now + 240000 }); toast('收到新的企業訂單（工作電腦 → 事業）'); }
   }
   if (S.branch === 'shop') {
     const now = Date.now(); S.customers = S.customers.filter(c => { if (now > c.dl) { S.regulars[c.name] = Math.max(0, (S.regulars[c.name] || 0) - 1); toast(`${c.name} 等太久離開了`); return false; } return true; }); BT.sc += dt;
@@ -2971,6 +3065,7 @@ document.addEventListener('click', e => {
     case 'hb': { const i = +el.dataset.i; if (GUI.kind === 'inv') { invSel = i; if (i < 9) S.hb = i; renderInv(); } else S.hb = i; renderHotbar(true); break; }
     case 'pickSp': M.sp = id; M.last = null; tab === 'bench' ? renderBench() : renderMake(); break;
     case 'startMake': startMake(); break;
+    case 'pickCut': if (CUTS[k] && !M.active) { S.cut = k; renderMake(); save(); } break;
     case 'decoSel': D.id = +id; renderDecor(); break;
     case 'addDeco': { const p = decorSt.p; if (!p) return; if (p.deco.length >= 6) return toast('最多 6 個零件'); p.deco.push({ k, x: rnd(-.45, .45), z: rnd(-.45, .45), s: 1, r: 0 }); decorSt.sel = p.deco.length - 1; decorSt.rebuildDeco(); sfx.tick(); renderDecorTools(); save(); break; }
     case 'delDeco': { const p = decorSt.p; if (p && decorSt.sel >= 0) { p.deco.splice(decorSt.sel, 1); decorSt.sel = -1; decorSt.rebuildDeco(); renderDecorTools(); save(); } break; }
@@ -3097,7 +3192,8 @@ function nPlayer(m) {
 function nProd(p) {
   if (!p || typeof p !== 'object' || !SP[p.sp]) return null;
   const deco = (Array.isArray(p.deco) ? p.deco : []).filter(d => d && DECO[d.k]).slice(0, 6).map(d => ({ k: d.k, x: nNum(d.x, -1, 1), z: nNum(d.z, -1, 1), s: nNum(d.s, .3, 2.5, 1), r: nNum(d.r, -7, 7) }));
-  return { id: Math.floor(nNum(p.id, 0, 1e9)), sp: p.sp, crisp: nNum(p.crisp, 0, 1, .5), dur: nNum(p.dur, 0, 100, 100), deco, cracks: (Array.isArray(p.cracks) ? p.cracks : []).slice(-30).map(nCrack).filter(Boolean) };
+  const o = { id: Math.floor(nNum(p.id, 0, 1e9)), sp: p.sp, crisp: nNum(p.crisp, 0, 1, .5), dur: nNum(p.dur, 0, 100, 100), deco, cracks: (Array.isArray(p.cracks) ? p.cracks : []).slice(-30).map(nCrack).filter(Boolean) };
+  if (CUTS[p.cut]) { o.cut = p.cut; o.cq = nNum(p.cq, 0, 1); } if (p.wonky) o.wonky = true; return o;
 }
 // 可以由房主轉發的事件與欄位（白名單）：其他欄位一律丟棄，發送者身分由房主蓋上
 const RELAY = {
@@ -3669,7 +3765,7 @@ function viewModelStep(dt) {
   if (!VM.g) initViewModel();
   const show = !GUI.kind && !TITLE.on && !W.camAway; VM.g.visible = show; if (!show) { VM.key = ''; return; }
   const it = held(), key = it ? (it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp) : '';
-  if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') jellyColors(VM.J, sp); else VM.gel.material.color.set(sp.color); } }
+  if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') { jellyColors(VM.J, sp); jellyCut(VM.J, it.p); } else VM.gel.material.color.set(sp.color); } }
   VM.swing = Math.max(0, VM.swing - dt * 2.2); VM.sq = Math.max(0, VM.sq - dt);
   // 選擇手勢：擠壓 > 對準史萊姆時伸手 > 拿著的東西 > 空手
   const aimSlime = TARGET && TARGET.type === 'slime', pose = VM.sq > 0 ? 'squeeze' : aimSlime ? 'reach' : it ? (it.t === 'prod' ? 'prod' : 'gel') : 'empty';

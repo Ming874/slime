@@ -408,3 +408,12 @@ body.titleon #hud{display:none}
 @keyframes coachIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translateX(-50%)}}
 body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(50% + 56px)}
 .tline{font-size:14px;color:#cbd5e1;margin:-4px 0 14px;line-height:1.6;max-width:320px}
+
+/* 切片：每一刀的結果 */
+.cutdots{display:flex;gap:8px;justify-content:center;margin:2px 0 8px}
+.cutdots i{width:16px;height:16px;border-radius:50%;border:2px solid #475569;background:#0b0f17}
+.cutdots i.pf{background:#f0abfc;border-color:#f0abfc;box-shadow:0 0 8px #f0abfc}
+.cutdots i.ok{background:#34d399;border-color:#34d399}
+.cutdots i.bad{background:#fb7185;border-color:#fb7185}
+.cutpick{margin-bottom:8px}
+.cutpick .zbtn{flex:1;min-width:92px;text-align:center}
