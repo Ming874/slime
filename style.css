@@ -431,3 +431,7 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 .seg button.on{border-color:var(--acc);background:#22d3ee1a}
 .seg button.on b{color:var(--acc)}
 .chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+/* 雙人產線：幫朋友裹糖 */
+#coop{position:absolute;left:50%;bottom:calc(120px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(420px,90vw);background:#10161ff2;border:1px solid var(--warn);border-radius:14px;padding:10px 12px;pointer-events:auto;z-index:60;text-align:center}
+#coop b{display:block;margin-bottom:6px;color:var(--warn)}
+#coop .btn{width:100%;margin-top:8px}

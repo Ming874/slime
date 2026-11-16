@@ -80,6 +80,17 @@ const UPS = {
 const NAMES = ['小布丁', '軟糖控', '捏捏狂人', 'ASMR愛好者', '夜貓子', '蛋糕星人', '阿宅', 'Mochi', '果凍妹', '路過的人', '史萊姆粉', '雲朵', '薄荷', '咪咪', '大叔'];
 const CHAT_CRUNCH = ['喀滋喀滋，好療癒', '這個聲音太爽了', '耳朵好舒服', '再捏一次！', '好酥好脆', '我要睡著了', '這顏色好美', '手感看起來超棒', '連擊連擊！', '哇啊啊'];
 const CHAT_IDLE = ['晚安', '第一次來，好可愛', '主播聲音好好聽', '今天有什麼新貨？', '想要那個顏色', '上架了嗎', '看著就解壓', '捏捏捏捏捏'];
+// {sp} 正在捏的種類、{cut} 切法、{combo} 連擊數、{name} 主播名字
+const CHAT_T = {
+  crunch: ['{sp}的聲音好脆！', '這個{cut}切面好亮', '{combo} 連擊！{name}手好快', '{name}再捏一次{sp}！', '喀滋喀滋，{sp}好療癒', '{combo} 連擊了耶，停不下來', '{name}的捏捏聲是全站最好聽的', '{sp}的顏色在燈下好漂亮', '{cut}切的手感看起來超棒', '{combo} 連擊！{sp}要被捏扁了', '戴耳機聽{sp}真的會睡著', '{name}今天手感很好喔'],
+  idle: ['{name}晚安～', '第一次來，{sp}好可愛', '今天是{sp}專場嗎', '{name}今天有什麼新貨？', '想看{name}捏{sp}', '{sp}還有貨嗎', '{name}的工坊越來越大了', '剛下班，來聽{sp}紓壓', '上次買的{sp}超讚', '{cut}切的有賣嗎'],
+};
+function liveLine(kind) {
+  const p = stockById(L.stageId), v = { sp: p ? short(p.sp) : '捏捏', cut: p && p.cut ? CUTS[p.cut].n : '', combo: L.combo, name: (NET.on && NET.name) || S.name || '主播' };
+  const pool = [...CHAT_T[kind], ...(kind === 'crunch' ? CHAT_CRUNCH : CHAT_IDLE)].filter(t => (!t.includes('{cut}') || v.cut) && (!t.includes('{combo}') || L.combo >= 3)), now = Date.now(); L.said = L.said || new Map();
+  for (let k = 0; k < 10; k++) { const t = pick(pool).replace(/\{(\w+)\}/g, (_, x) => v[x]); if (now - (L.said.get(t) || 0) > 300000) { L.said.set(t, now); return t; } }
+  return null;
+}
 const CHAT_EXPENSIVE = ['有點貴耶…', '價格能再便宜一點嗎', '錢包在哭泣'];
 const REVIEWS = { 5: ['超酥脆！回購！', '聲音太療癒了', '完美，五星推薦'], 4: ['不錯，酥脆度很好', '包裝精緻', '值得'], 3: ['普通，還行', '價格普通', '有點軟'], 2: ['不太酥脆…', '有點貴', '期待落差'], 1: ['不脆，貴，失望', '品質不行', '不會再買'] };
 const REG_NAMES = ['小綠', '阿花', '暖暖', '大叔', '貓店長', '莓莓', '阿山', '雪兒'];
@@ -2199,7 +2210,7 @@ function slimeStep(dt, t) {
     } else if (s.noticed && dist > nR + 5) s.noticed = false;
     if (!s.mirror) {
       s.turn -= dt; s.flee = Math.max(0, s.flee - dt);
-      if (s.tut) { s.wSpd = 0; s.flee = 0; if (!cool && (s.noticed || dist < 7) && !s.air && !s.crouch && s.rest <= 0 && Math.random() < dt * .3) s.hopInPlace = true; }
+      if (s.tut || s.giant) { s.wSpd = 0; s.flee = 0; if (!cool && (s.noticed || dist < 7) && !s.air && !s.crouch && s.rest <= 0 && Math.random() < dt * .3) s.hopInPlace = true; }
       else if (cool) { s.wSpd = 0; }
       else if (s.flee > 0 || (s.noticed && s.pers === 'shy' && !sneak && dist < nR + 2)) {
         if (s.flee <= 0) s.flee = rnd(2.2, 3.2);
@@ -2282,7 +2293,13 @@ function slimeStep(dt, t) {
   });
 }
 /* ---------- 受擊 ---------- */
-function slimeHitCore(sl) { if (sl.cool > 0) return { res: 'shy' }; sl.hits++; sl.sq = 1; sl.since = 0; if (sl.hits >= 3) { sl.cool = sl.tut ? 2.5 : 6; sl.hits = 0; sl.happy = .6; return { res: 'harvest' }; } return { res: 'hit', hits: sl.hits }; }
+function slimeHitCore(sl, who) {
+  if (sl.cool > 0) return { res: 'shy' };
+  if (sl.giant) { // 1.5 秒內要有兩位不同的玩家捏到，才算一下
+    const now = performance.now(); (sl.gh = sl.gh || new Map()).set(who || NET.me || 'me', now); sl.sq = 1; sl.since = 0;
+    if ([...sl.gh.values()].filter(t => now - t < 1500).length < 2) return { res: 'need2' };
+    sl.gh.clear(); sl.hits++; if (sl.hits >= 3) { sl.hits = 0; sl.cool = 45; sl.happy = .6; giantWin(sl); return { res: 'giant' }; } return { res: 'hit', hits: sl.hits };
+  } sl.hits++; sl.sq = 1; sl.since = 0; if (sl.hits >= 3) { sl.cool = sl.tut ? 2.5 : 6; sl.hits = 0; sl.happy = .6; return { res: 'harvest' }; } return { res: 'hit', hits: sl.hits }; }
 function slimeReact(sl, local, kind) {
   const dx = sl.x - P.x, dz = sl.z - P.z, d = Math.hypot(dx, dz) || 1, U = sl.U;
   if (local) U.uDent.value.set(local.x, local.y, local.z, U.uDent.value.w); else U.uDent.value.set(0, .75, .95, U.uDent.value.w);
@@ -2297,7 +2314,7 @@ function hitSlime(sl, pt) {
   sl.perf = sl.hits > 0 && sl.cool <= 0 && gap > .24 && gap < .46 ? (sl.perf || 0) + 1 : 0;
   const local = pt ? sl.m.userData.body.worldToLocal(pt.clone()) : null;
   if (sl.mirror) { netSend({ t: 'hit', id: sl.id }); slimeReact(sl, local, sl.cool > 0 ? 'shy' : 'hit'); sl.sq = 1; sfx.squish(.6, slPitch(sl)); splashAt(sl, pt, 6); return; }
-  applyHit(sl, slimeHitCore(sl), local, pt);
+  applyHit(sl, slimeHitCore(sl, NET.me), local, pt);
 }
 function splashAt(sl, pt, n) {
   if (!W.goo) return; const p = pt ? pt.clone() : sl.m.position.clone().setY(sl.m.position.y + .7 * sl.sc), dx = sl.x - P.x, dz = sl.z - P.z, d = Math.hypot(dx, dz) || 1;
@@ -2305,6 +2322,8 @@ function splashAt(sl, pt, n) {
 }
 function applyHit(sl, r, local, pt, remote) {
   const top = sl.m.position.clone().setY(sl.m.position.y + (SL_H + .35) * sl.sc);
+  if (r.res === 'need2') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, '巨型史萊姆要兩個人一起捏！（1.5 秒內）', '#fbbf24'); sfx.squish(.7, .6); return; }
+  if (r.res === 'giant') { if (!remote) slimeReact(sl, local, 'harvest'); splashAt(sl, pt, 20); fx3(top, '合力捏開了！', '#f0abfc', 'big'); sfx.perfect(); return; }
   if (r.res === 'shy') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, `休息中，${Math.max(1, Math.ceil(sl.cool || 0))} 秒後恢復`, '#93c5fd'); sfx.squish(.35, slPitch(sl) * .9); ringPulse('cool'); return; }
   if (!remote) { slimeReact(sl, local, r.res); splashAt(sl, pt, r.res === 'harvest' ? 12 : 7); sfx.squish(.85, slPitch(sl)); }
   if (navigator.vibrate) navigator.vibrate(r.res === 'harvest' ? [10, 30, 14] : 8);
@@ -2506,8 +2525,9 @@ function pickAt(ndcX, ndcY) {
   const objs = [];
   W.slimes.forEach(s => { if (s.m.visible && Math.hypot(s.x - P.x, s.z - P.z) < 9) objs.push(s.m.userData.body); });
   W.inter.forEach(it => { if (it.off) return; const p = it.wp || (it.wp = it.hit.getWorldPosition(new THREE.Vector3())); if (Math.hypot(p.x - P.x, p.z - P.z) < 14) objs.push(it.hit); }); // 互動物件都是固定的，位置算一次即可
+  AV.forEach(a => { if (a.hb && Math.hypot(a.x - P.x, a.z - P.z) < 8) objs.push(a.hb); });
   const h = RAY.intersectObjects(objs, false); RAY.far = Infinity; if (!h.length) return null;
-  const o = h[0].object; if (o.userData.sl) return { type: 'slime', sl: o.userData.sl, d: h[0].distance, pt: h[0].point.clone() };
+  const o = h[0].object; if (o.userData.av) return { type: 'avatar', id: o.userData.av, d: h[0].distance }; if (o.userData.sl) return { type: 'slime', sl: o.userData.sl, d: h[0].distance, pt: h[0].point.clone() };
   const it = o.userData.it; if (!it) return null; if (it.kind === 'station' && h[0].distance > 5.5) return null; return { type: it.kind, it, d: h[0].distance };
 }
 function targetLabel(t) {
@@ -2519,6 +2539,7 @@ function targetLabel(t) {
     const tip = s.cool <= 0 && !s.flee && s.pers === 'shy' && !P.sneak ? ` · <span style="color:#7dd3fc">怕生</span>` : s.cool <= 0 && s.pers === 'curious' && s.noticed ? ' · <span style="color:#f9a8d4">好奇</span>' : '';
     return `${key}${s.sp.name} <span style="color:${RAR[s.sp.rar].c}">${RAR[s.sp.rar].n}</span>${st}${tip}`;
   }
+  if (t.type === 'avatar') { const pl = NET.players.get(t.id), h = held(); if (!pl) return ''; return h && h.t === 'gel' ? `${key}送 1 份${short(h.sp)}凝膠給 ${esc(pl.name)}` : `${esc(pl.name)}　<span style="color:var(--sub)">拿著凝膠可以送給對方</span>`; }
   if (t.type === 'station') { const h = held(); if (t.it.id === 'shelf' && h && h.t === 'prod') return `${key}把手上的${short(h.p.sp)}捏捏上架`; return `${key}使用${t.it.name}`; }
   if (t.type === 'gate') return `能量門 · 需解開「${GATES[t.it.id].title}」`;
   if (t.type === 'puzzle') return `${key}${t.it.name}`;
@@ -2552,6 +2573,7 @@ function doAct(t) {
   if (!t) return;
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
   else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
+  else if (t.type === 'avatar') giftGel(t.id);
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
 }
@@ -2723,7 +2745,7 @@ function startMake() {
   if (!ownAny()) return toast('還沒有任何加工機器，到工作電腦的「網購」購買');
   const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）');
   if (S.stock.length >= cap()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
-  S.gel[sp] -= 2; M.cut = S.own.slicer ? (CUTS[S.cut] ? S.cut : 'thick') : null; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
+  S.gel[sp] -= 2; M.coopDone = null; M.coop = null; M.cut = S.own.slicer ? (CUTS[S.cut] ? S.cut : 'thick') : null; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
   M.active = true; M.last = null; MK.bx = -6.4; beginStep(); renderHotbar(true); renderMake();
 }
 function beginStep() {
@@ -2735,7 +2757,7 @@ function beginStep() {
     M.g = { t: 0, dur: 2.6 + k * .45, marks, hit: marks.map(() => null), tol: (.045 + .012 * lv) * C.tol * skill, vary };
     if (vary && !S.tipVary) { S.tipVary = true; toast('你的切片越來越熟練了：輸送帶現在會忽快忽慢，看準了再下刀！'); }
   }
-  else if (M.step === 1) { const w = .2 + .035 * lv, c = rnd(.45, .7); M.g = { t: 0, dur: 5, thr: 0, v: 0, inz: 0, lo: c - w / 2, hi: c + w / 2 }; }
+  else if (M.step === 1) { const w = .2 + .035 * lv, c = rnd(.45, .7); M.g = { t: 0, dur: 5, thr: 0, v: 0, inz: 0, lo: c - w / 2, hi: c + w / 2 }; M.coop = null; const f = NET.on && P ? nearFriend(8) : null; if (f) { M.coop = f; M.pt = 2.4; netEmit({ t: 'coop', to: f.id, on: true, lo: M.g.lo, hi: M.g.hi }); toast(`${f.name} 在旁邊：裹糖交給朋友來做！`); } }
   else M.g = { t: 0, dur: 5.5, knob: .5, err: 0, n: 0, tw: .07 + .015 * lv, seed: rnd(0, 10) };
 }
 // 史萊姆在切片機下的位置（0→1）；變速時仍保持單調前進
@@ -2743,7 +2765,7 @@ const slicePos = g => { const u = clamp(g.t / g.dur, 0, 1); return g.vary ? u + 
 const LT = 2.4; // 切片時史萊姆經過刀下的行程
 const dryTarget = g => clamp(.5 + .28 * Math.sin(g.t * .9 + g.seed) + .12 * Math.sin(g.t * 2.3 + g.seed * 2), .08, .92);
 function makeAction(kind, val) {
-  if (!M.active) return; if (kind === 'hold') { M.hold = val; const b = $('#mgHold'); if (b) b.classList.toggle('on', !!val); return; }
+  if (!M.active) return; if (kind === 'hold') { if (M.coop) return; M.hold = val; const b = $('#mgHold'); if (b) b.classList.toggle('on', !!val); return; }
   if (M.phase !== 'run') return; const g = M.g;
   if (M.step === 0 && kind === 'tap') {
     const pos = slicePos(g); let best = -1, bd = 1; g.marks.forEach((m, i) => { if (g.hit[i] == null) { const d = Math.abs(pos - m); if (d < bd) { bd = d; best = i; } } });
@@ -2758,6 +2780,7 @@ function makeTick(dt) {
   if (M.stop > 0) { M.stop -= dt; return; } // 下刀瞬間的停頓
   g.t += dt;
   if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) { g.hit[i] = 0; updMakeUI(); } }); }
+  if (M.step === 1 && M.coop && (M.coopT = (M.coopT || 0) + dt) > .1) { M.coopT = 0; netEmit({ t: 'coopV', to: M.coop.id, v: g.v }); }
   if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
   if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
   if (g.t >= g.dur) finishStep(); else updMakeUI();
@@ -2768,11 +2791,13 @@ function finishStep() {
   else if (M.step === 1) sc = clamp(g.inz / (g.dur * .8), 0, 1);
   else sc = clamp(1 - (g.err / Math.max(g.n, .01)) / .25, 0, 1);
   if (M.step === 0) S.cutN = (S.cutN || 0) + g.hit.filter(h => h > .3).length;
+  if (M.step === 1 && M.coop) { netEmit({ t: 'coop', to: M.coop.id, on: false, sc }); M.coopDone = M.coop.name; M.coop = null; M.hold = false; }
   M.scores[M.step] = sc; sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
   toast(`${MG[M.step].name}：${sc > .9 ? '完美' : sc > .7 ? '很好' : sc > .45 ? '普通' : '失手了'}（${Math.round(sc * 100)}%）`);
   M.si++;
   if (M.si >= M.steps.length) {
     M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
+    if (M.coopDone) { p.crisp = Math.min(1, p.crisp + .05); setTimeout(() => toast(`和 ${M.coopDone} 合作的產線：酥脆度 +5%`), 300); M.coopDone = null; }
     if (M.scores[0] != null && M.cut) { p.cut = M.cut; p.cq = Math.round(M.scores[0] * 100) / 100; if (M.scores[0] < .35) { p.wonky = true; setTimeout(() => toast('切歪了，做出一個「歪歪捏捏」：比較便宜，但有收藏家特別喜歡。凝膠沒有浪費。'), 600); } }
     S.stock.push(p); M.last = p; if (!S.lineMade) { S.lineMade = true; objSig = ''; } gainXP(5 + p.crisp * 10); save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
   } else { M.step = M.steps[M.si]; beginStep(); }
@@ -2854,6 +2879,7 @@ function renderMake() {
     const how = `<div class="mghow"><b>${UPS[MKEY[M.step]].name}</b>：${MG[M.step].how}${TOUCH ? '' : `<span style="color:var(--sub)">（${MG[M.step].key}）</span>`}${M.phase === 'ready' ? '<span class="ready">準備…</span>' : ''}</div>`;
     let body = '';
     if (M.step === 0) { const C = CUTS[M.cut] || CUTS.thick; body = `<div class="cutdots" id="cutDots">${g.marks.map(() => '<i></i>').join('')}</div><div class="hint" style="margin:0"><b style="color:${C.col}">${C.n}切</b>　${C.marks} 刀。發光的切割線碰到<b style="color:#ff6b81">紅色雷射</b>時${TOUCH ? '在畫面上<b>由上往下滑一刀</b>' : '按<b>空白鍵</b>或<b>點擊畫面</b>'}</div>`; }
+    else if (M.step === 1 && M.coop) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0"><b>${esc(M.coop.name)}</b> 正在幫你裹糖，看著滾筒轉吧！</div>`;
     else if (M.step === 1) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><button class="btn big hold" style="width:100%" id="mgHold" data-mg="hold">按住加速</button>`;
     else body = `<div class="track dry" id="mgDry"><div class="tgt" id="mgTgt"></div><div class="knob" id="mgKnob" style="left:50%"></div></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0">左右拖曳火力旋鈕${TOUCH ? '' : '，或按 ← →'}</div>`;
     setHTML(mini, st + how + body); updMakeUI();
@@ -2922,7 +2948,7 @@ liveSt.onCrunch = (st, eff, info) => {
   if (L.watch || !L.on) return;
   if (NET.on && info && L.rv.size) netEmit({ t: 'lcr', hit: info.hit, cr: info.cr, eff }); // 沒有觀眾時不必廣播
   const now = performance.now(); L.combo = now - L.lastC < 1200 ? L.combo + 1 : 1; L.lastC = now; L.hype = Math.min(100, L.hype + 5 + Math.min(L.combo, 20) * .4);
-  if (Math.random() < .4) chat(pick(NAMES), pick(CHAT_CRUNCH));
+  if (Math.random() < .4) { const t = liveLine('crunch'); if (t) chat(pick(NAMES), t); }
   if (Math.random() < .05 * clamp(L.viewers / 30, .3, 2)) { const n = Math.round(rnd(5, 30) * (1 + L.combo / 10)); addMoney(n); S.fans += 0.3; sfx.coin(); if (L.ss) L.ss.tips += n; const e = document.createElement('div'); e.className = 'don'; e.textContent = `${pick(NAMES)} 斗內 ${fmt(n)}`; $('#donate').appendChild(e); setTimeout(() => e.remove(), 3000); while ($('#donate').children.length > 3) $('#donate').firstChild.remove(); }
   renderTop();
 };
@@ -2964,7 +2990,7 @@ function updateLive(dt) {
     L.hype = Math.max(0, L.hype - 3 * dt); if (performance.now() - L.lastC > 1500) L.combo = 0;
     const tgt = (12 + S.fans * 0.8) * (1 + .15 * S.up.gear) * (.4 + L.hype / 60) * (p ? 1 : .5) + L.rv.size * 15; L.viewers += (tgt - L.viewers) * dt * .8; L.saleT += dt;
     if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(priceOf(p, 'live'), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
-    L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); chat(pick(NAMES), pick(CHAT_IDLE)); }
+    L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); const t = liveLine('idle'); if (t) chat(pick(NAMES), t); }
     if (L.req) { L.req.t -= dt; if (L.req.t <= 0) { L.req = null; chat('系統', '指定任務已結束', 'dm'); } }
     else { L.reqT -= dt; if (L.reqT <= 0) { L.reqT = rnd(25, 40); if (Math.random() < .6) { const has = [...new Set(S.stock.map(p => p.sp))], id = has.length && Math.random() < .7 ? pick(has) : pick(unlockedSpecies()).id; L.req = { kind: 'sp', sp: id, t: 40, text: `要「${SP[id].name}」` }; } else if (S.own.slicer && Math.random() < .5) { const ck = pick(Object.keys(CUTS)); L.req = { kind: 'cut', cut: ck, t: 40, text: `要「${CUTS[ck].n}切」的` }; } else L.req = { kind: 'cr', t: 40, text: '要酥脆度 ≥ 70% 的' }; chat('系統', '新的觀眾指定：' + L.req.text, 'dm'); } }
   } else { L.hype = Math.max(0, L.hype - 10 * dt); L.viewers = Math.max(0, L.viewers - dt * 10); L.combo = 0; L.req = null; }
@@ -3217,8 +3243,8 @@ document.addEventListener('click', e => {
 function showHelp() {
   const keys = TOUCH
     ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span></div>'
-    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（加工時為停機）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
-  modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。每一下之間抓穩約 0.3 秒的節奏，連續「完美」可以多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
+    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
+  modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。每一下之間抓穩約 0.3 秒的節奏，連續「完美」可以多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。拿著捏捏對準網站貨架就能上架；站上直播舞台就開直播。多人時：巨型史萊姆要兩人一起捏、拿著凝膠對準朋友可以送給對方、朋友站在產線旁會幫你裹糖。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
 }
 
 
@@ -3310,6 +3336,10 @@ const RELAY = {
   watch: m => ({ t: 'watch', to: nStr(m.to, 64), on: !!m.on }),
   lreq: m => ({ t: 'lreq', to: nStr(m.to, 64) }),
   like: m => ({ t: 'like', to: nStr(m.to, 64) }),
+  gift: m => ({ t: 'gift', to: nStr(m.to, 64), sp: SP[m.sp] ? m.sp : null, n: Math.round(nNum(m.n, 1, 5, 1)) }),
+  coop: m => ({ t: 'coop', to: nStr(m.to, 64), on: !!m.on, lo: nNum(m.lo, 0, 1), hi: nNum(m.hi, 0, 1, 1), sc: m.sc == null ? null : nNum(m.sc, 0, 1) }),
+  coopH: m => ({ t: 'coopH', to: nStr(m.to, 64), h: !!m.h }),
+  coopV: m => ({ t: 'coopV', to: nStr(m.to, 64), v: nNum(m.v, 0, 1) }),
 };
 const netClean = m => RELAY[m.t] ? RELAY[m.t](m) : null;
 function prepName() {
@@ -3410,6 +3440,7 @@ function netLeave(silent) {
   NET.on = false; NET.host = false; NET.hc = null; NET.conns.clear(); NET.last.clear(); NET.players.clear(); L.rv.clear(); L.watch = null;
   AV.forEach(a => dropObj(a.g)); AV.clear(); if (W.liveTag) { dropObj(W.liveTag); W.liveTag = null; W.liveTagName = null; }
   if (W.ready) {
+    if (W.giant) { dropSlime(W.giant); W.slimes = W.slimes.filter(q => q !== W.giant); W.giant = null; } coopHide();
     if (W.mirror) { W.slimes.forEach(dropSlime); W.slimes = []; W.mirror = false; W.spawned.clear(); spawnAllSlimes(); }
     else if (wasHost) {
       // 房主收掉為其他玩家生成、自己還沒解鎖區域的史萊姆
@@ -3445,7 +3476,7 @@ function hostRecv(id, m) {
   if (m.t === 'hit') {
     // 只接受玩家附近的史萊姆，避免遠端亂打整張地圖
     const sl = W.slimes.find(s => s.id === m.id), c = NET.conns.get(id);
-    if (sl && c && c.open && Math.hypot(sl.x - pl.x, sl.z - pl.z) < 14) { const r = slimeHitCore(sl); try { c.send(Object.assign({ t: 'hitr', id: sl.id }, r)); } catch (_) { } slimeReact(sl, null, r.res); }
+    if (sl && c && c.open && Math.hypot(sl.x - pl.x, sl.z - pl.z) < 14) { const r = slimeHitCore(sl, id); try { c.send(Object.assign({ t: 'hitr', id: sl.id }, r)); } catch (_) { } slimeReact(sl, null, r.res); }
     return;
   }
   const out = netClean(m); if (!out) return;
@@ -3462,14 +3493,57 @@ function clientRecv(m) {
       NET.players = mp; return;
     }
     case 'sl': if (Array.isArray(m.a)) mirrorSlimes(m.a); return;
-    case 'hitr': { const sl = W.slimes.find(s => s.id === m.id); if (sl && ['shy', 'hit', 'harvest'].includes(m.res)) applyHit(sl, { res: m.res, hits: Math.round(nNum(m.hits, 0, 3)) }, null, null, true); return; }
+    case 'hitr': { const sl = W.slimes.find(s => s.id === m.id); if (sl && ['shy', 'hit', 'harvest', 'need2', 'giant'].includes(m.res)) applyHit(sl, { res: m.res, hits: Math.round(nNum(m.hits, 0, 3)) }, null, null, true); return; }
     case 'welcome': toast(`已加入房間 ${nStr(m.room, 8)}`); return;
+    case 'giant': giantReward(nNum(m.x, -1e4, 1e4), nNum(m.z, -1e4, 1e4)); return;
     case 'full': NET.retry = 0; setMp('房間人數已滿'); toast('房間人數已滿，無法加入'); netLeave(true); return;
     case 'bye': NET.retry = 0; toast('房主已關閉房間，已切換為單人模式'); netLeave(true); return;
     case 'join': case 'leave': onNet({ t: m.t, name: nStr(m.name, 12) || '玩家', from: nStr(m.from, 64) }); return;
   }
   const c = netClean(m); if (!c) return; c.from = nStr(m.from, 64); c.name = nStr(m.name, 12) || '玩家'; onNet(c);
 }
+/* 房間裡有兩人以上時，房主在森林生成一隻巨型史萊姆 */
+const GIANT_SL = [0, 30];
+function giantStep() {
+  if (NET.on && NET.host && NET.players.size >= 2 && !W.giant && W.ready) {
+    const sp = unlockedSpecies().slice().sort((a, b) => b.rar - a.rar)[0], m = slimeMesh(sp), [x, z] = GIANT_SL;
+    const sl = newSlime(sp, m, { id: ++W.sid, sc: 2.1, zid: 'forest', hx: x, hz: z, x, z, giant: true, pers: 'calm' }); m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); W.giant = sl;
+    toast('森林裡出現了巨型史萊姆！要兩個人一起捏才捏得動（出生點北方）');
+  }
+  if (W.giant && (!NET.on || (NET.host && NET.players.size < 2))) { dropSlime(W.giant); W.slimes = W.slimes.filter(s => s !== W.giant); W.giant = null; }
+  // 巨型史萊姆頭上的標籤（客戶端看到的是鏡像）
+  const g = W.slimes.find(s => s.giant);
+  if (g && !W.giantLabel) { W.giantLabel = textSprite('巨型史萊姆', '#fbbf24', '兩個人在 1.5 秒內一起捏'); W.giantLabel.userData.keep = true; W.scene.add(W.giantLabel); }
+  if (W.giantLabel) { W.giantLabel.visible = !!g; if (g) W.giantLabel.position.set(g.x, H(g.x, g.z) + 4.4, g.z); }
+}
+function giantWin(sl) { const m = { t: 'giant', x: sl.x, z: sl.z }; bcast(m); giantReward(sl.x, sl.z); }
+function giantReward(x, z) {
+  if (!P || Math.hypot(P.x - x, P.z - z) > 14) return;
+  const us = unlockedSpecies(), rare = us.slice().sort((a, b) => b.rar - a.rar)[0]; S.gel[rare.id] = (S.gel[rare.id] || 0) + 3; for (let i = 0; i < 3; i++) { const sp = pick(us); S.gel[sp.id] = (S.gel[sp.id] || 0) + 1; }
+  discover(rare.id); gainXP(20); sfx.level(); toast(`合力捏開巨型史萊姆！獲得 6 份凝膠（含 3 份${rare.name}）`); renderHotbar(true); save();
+}
+/* 把手上的凝膠送給朋友（對準朋友按 E） */
+function giftGel(id) {
+  const h = held(), pl = NET.players.get(id); if (!pl) return;
+  if (!h || h.t !== 'gel') return toast('手上拿著凝膠，才能送給' + pl.name);
+  S.gel[h.sp]--; netEmit({ t: 'gift', to: id, sp: h.sp, n: 1 }); sfx.pop(); toast(`送給 ${pl.name} 1 份${SP[h.sp].name}凝膠`); renderHotbar(true); save();
+}
+/* ---------- 雙人產線：朋友站在旁邊時，裹糖這一步交給朋友 ---------- */
+const COOP = { on: false, from: '', name: '', lo: 0, hi: 1, v: 0, h: false, last: 0 };
+function nearFriend(r) { let best = null, bd = r; NET.players.forEach((p, id) => { if (id === NET.me || p.x == null) return; const d = Math.hypot(p.x - P.x, p.z - P.z); if (d < bd) { bd = d; best = { id, name: p.name }; } }); return best; }
+function coopShow(m) {
+  Object.assign(COOP, { on: true, from: m.from, name: m.name, lo: m.lo, hi: m.hi, v: 0, h: false, last: Date.now() });
+  $('#coopZ').style.left = m.lo * 100 + '%'; $('#coopZ').style.width = (m.hi - m.lo) * 100 + '%'; $('#coopWho').textContent = m.name; $('#coop').hidden = false;
+  sfx.open(); toast(`${m.name} 請你幫忙裹糖！按住${TOUCH ? '按鈕' : '空白鍵'}讓指針停在綠色區間`);
+}
+function coopHide(m) {
+  if (!COOP.on) return; COOP.on = false; COOP.h = false; $('#coop').hidden = true;
+  if (m && m.sc != null) { gainXP(6); S.fans += 1; toast(`幫 ${COOP.name} 裹糖完成（${Math.round(m.sc * 100)}%），經驗 +6`); }
+}
+function coopHold(h) { if (!COOP.on || COOP.h === h) return; COOP.h = h; $('#coopBtn').classList.toggle('on', h); netEmit({ t: 'coopH', to: COOP.from, h }); }
+addEventListener('keydown', e => { if (COOP.on && e.code === 'Space' && !CHAT.open) { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) coopHold(true); } }, true);
+addEventListener('keyup', e => { if (COOP.on && e.code === 'Space') { e.stopImmediatePropagation(); coopHold(false); } }, true);
+(() => { const b = document.getElementById('coopBtn'); if (!b) return; b.addEventListener('pointerdown', e => { e.preventDefault(); coopHold(true); }); ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => b.addEventListener(ev, () => coopHold(false))); })();
 function dropPlayer(id) {
   const c = NET.conns.get(id); NET.conns.delete(id); NET.last.delete(id); const p = NET.players.get(id); NET.players.delete(id); L.rv.delete(id);
   if (c) { try { c.close(); } catch (_) { } }
@@ -3487,6 +3561,10 @@ function onNet(m) {
     case 'don': if (m.to === NET.me && L.on && L.rv.has(m.from)) { addMoney(m.amt); S.fans += 1; toast(`${m.name} 在直播中斗內你 ${fmt(m.amt)}`); chat(m.name, `斗內 ${fmt(m.amt)}！`, 'dm'); renderTop(); } else if (L.watch && L.watch.id === m.to) chat(m.name, `斗內 ${fmt(m.amt)}！`, 'dm'); break;
     case 'watch': if (m.to === NET.me) { if (m.on) { if (!L.rv.has(m.from)) { L.rv.add(m.from); toast(`${m.name} 正在看你的直播`); chat('系統', `${m.name} 進入了直播間`, 'dm'); } liveBroadcast(); } else L.rv.delete(m.from); } break;
     case 'lreq': if (m.to === NET.me) liveBroadcast(); break;
+    case 'gift': if (m.to === NET.me && m.sp) { S.gel[m.sp] = (S.gel[m.sp] || 0) + m.n; discover(m.sp); sfx.pop(); toast(`${m.name} 送你 ${m.n} 份${SP[m.sp].name}凝膠！`); renderHotbar(true); save(); } break;
+    case 'coop': if (m.to === NET.me) m.on ? coopShow(m) : coopHide(m); break;
+    case 'coopH': if (m.to === NET.me && M.coop && M.coop.id === m.from) M.hold = m.h; break;
+    case 'coopV': if (m.to === NET.me && COOP.on && COOP.from === m.from) { COOP.v = m.v; COOP.last = Date.now(); const n = $('#coopN'); if (n) n.style.left = m.v * 100 + '%'; } break;
     case 'like': if (m.to === NET.me) { S.fans += 2; sfx.pop(); toast(`${m.name} 參觀了你的展示場並按讚！粉絲 +2`); } break;
   }
 }
@@ -3503,7 +3581,7 @@ function netTick() {
     // 每位玩家只收到自己附近的史萊姆（原本整張地圖上百隻、每秒廣播 10 次）
     NET.conns.forEach((c, id) => {
       const pl = NET.players.get(id); if (!c.open || !pl || backlog(c)) return; const a = [];
-      for (const s of W.slimes) if (!s.tut && Math.abs(s.x - pl.x) < SL_RANGE && Math.abs(s.z - pl.z) < SL_RANGE) a.push([s.id, SPECIES.indexOf(s.sp), Math.round(s.x * 50) / 50, Math.round(s.z * 50) / 50, Math.round(s.cool * 10) / 10, s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0]);
+      for (const s of W.slimes) if (!s.tut && Math.abs(s.x - pl.x) < SL_RANGE && Math.abs(s.z - pl.z) < SL_RANGE) a.push([s.id, SPECIES.indexOf(s.sp), Math.round(s.x * 50) / 50, Math.round(s.z * 50) / 50, Math.round(s.cool * 10) / 10, s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0, s.giant ? 1 : 0]);
       try { c.send({ t: 'sl', a }); } catch (_) { }
     });
   } else {
@@ -3523,10 +3601,10 @@ function mirrorSlimes(a) {
   if (!W.mirror) { W.slimes.forEach(dropSlime); W.slimes = []; W.mirror = true; }
   const byId = new Map(W.slimes.map(s => [s.id, s])), now = performance.now();
   for (const e of a.slice(0, 600)) {
-    if (!Array.isArray(e)) continue; const [id, si, x, z, cool, hits, sq, sc, happy] = e;
+    if (!Array.isArray(e)) continue; const [id, si, x, z, cool, hits, sq, sc, happy, gi] = e;
     if (!Number.isFinite(id) || !Number.isFinite(x) || !Number.isFinite(z)) continue;
     let s = byId.get(id);
-    if (!s) { const sp = (Number.isInteger(si) && SPECIES[si]) || SPECIES[0], m = slimeMesh(sp); s = newSlime(sp, m, { id, mirror: true, x, z, tx: x, tz: z, hx: x, hz: z, sc: nNum(sc, 40, 120, 76) / 100 }); m.scale.setScalar(s.sc); m.userData.body.userData.sl = s; W.scene.add(m); W.slimes.push(s); byId.set(id, s); }
+    if (!s) { const sp = (Number.isInteger(si) && SPECIES[si]) || SPECIES[0], m = slimeMesh(sp); s = newSlime(sp, m, { id, mirror: true, giant: !!gi, x, z, tx: x, tz: z, hx: x, hz: z, sc: nNum(sc, 40, gi ? 260 : 120, 76) / 100 }); m.scale.setScalar(s.sc); m.userData.body.userData.sl = s; W.scene.add(m); W.slimes.push(s); byId.set(id, s); }
     s.seenT = now; s.tx = x; s.tz = z; s.cool = nNum(cool, 0, 60); s.hits = Math.round(nNum(hits, 0, 3));
     if (sq && s.sq < .3) { s.sq = 1; slimeReact(s, null, 'hit'); }
     if (happy && !(s.happy > 0)) { s.happy = .6; s.hap = 1.4; slimeReact(s, null, 'harvest'); }
@@ -3560,7 +3638,7 @@ function avatarsStep(dt) {
     if (!a) {
       const g = avatarMesh(p.color || '#22d3ee'), tag = textSprite(p.name || '玩家', p.color || '#22d3ee'); tag.position.y = 2.3; tag.scale.set(1.8, .56, 1); g.add(tag);
       const lt = textSprite('LIVE 直播中', '#fb7185'); lt.position.y = 2.85; lt.scale.set(1.7, .53, 1); lt.visible = false; g.add(lt);
-      g.position.set(p.x, p.y, p.z); W.scene.add(g); a = { g, lt, x: p.x, y: p.y, z: p.z, yaw: p.yaw, wasLive: false, bob: 0 }; AV.set(id, a);
+      g.position.set(p.x, p.y, p.z); W.scene.add(g); const hb = hitBox(1, 2, 1, 0, 1, 0, g); hb.userData.av = id; a = { g, lt, hb, x: p.x, y: p.y, z: p.z, yaw: p.yaw, wasLive: false, bob: 0 }; AV.set(id, a);
     }
     if (a.heldKey !== (p.held || '')) {
       a.heldKey = p.held || ''; if (a.hm) { dropObj(a.hm); a.hm = null; }
@@ -3610,7 +3688,7 @@ function renderLiveOthersOnly() {
    ============================================================ */
 const BASE = { line: [0, -9], decor: [-11, 1], live: [11, 1], pc: [4.5, 7], bench: [-4.5, 7], taxi: [-9, 15], shelf: [8.8, 7.4], rack: [-8.8, 7.4], farm: [-14.4, -4.6] };
 const OWN = {
-  slicer: { name: '切片機', cost: 200, shop: 'mach', desc: '加工產線的第一台機器（節奏切片）。購買後產線會出現在中央平地。' },
+  slicer: { name: '切片機', cost: 200, shop: 'mach', desc: '加工產線的第一台機器：看著輸送帶上的史萊姆下刀切片，可選厚塊、薄片、星形、愛心切法。' },
   coater: { name: '糖晶滾筒機', cost: 450, shop: 'mach', desc: '幫捏捏裹上糖晶，提高酥脆度（按住控速）。' },
   dryer: { name: '乾燥烘箱', cost: 800, shop: 'mach', desc: '烘乾定型，品質再升一級（拖曳控溫）。' },
   decor: { name: '裝飾桌', cost: 350, shop: 'gear', desc: '在捏捏上擺放裝飾零件，提高售價與人氣。' },
@@ -3968,6 +4046,7 @@ function cullChunks(at = P) {
 function worldStep(dt) {
   W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt);
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks();
+  giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
   if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); stageStep(); upgradeFx(dt);
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
