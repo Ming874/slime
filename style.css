@@ -430,3 +430,4 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 .seg button small{font-size:11px;color:var(--sub)}
 .seg button.on{border-color:var(--acc);background:#22d3ee1a}
 .seg button.on b{color:var(--acc)}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
