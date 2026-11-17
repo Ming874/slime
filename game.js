@@ -3941,22 +3941,22 @@ function initViewModel() {
   mesh(new THREE.BoxGeometry(.12, .04, .05), skinD, 0, -.004, .035, hand); // 掌根
   VM.palm = palm;
   // 手指：每根兩節，指尖有指甲；彎曲角度由手勢決定
-  const F = [[-.046, .043, .036, .9], [-.016, .05, .041, 1], [.016, .047, .038, .96], [.045, .038, .031, .85]];
+  const F = [[.046, .043, .036, .9], [.016, .05, .041, 1], [-.016, .047, .038, .96], [-.045, .038, .031, .85]]; // 右手掌心朝上：拇指在右、小指在左
   VM.fingers = F.map(([x, l1, l2, r]) => {
     const k1 = new THREE.Group(); k1.position.set(x, .004, -.1); hand.add(k1);
     const s1 = mesh(new THREE.CapsuleGeometry(.0165 * r, l1, 2, 6), skin, 0, 0, -l1 / 2, k1); s1.rotation.x = Math.PI / 2;
     const k2 = new THREE.Group(); k2.position.z = -l1; k1.add(k2);
     const s2 = mesh(new THREE.CapsuleGeometry(.015 * r, l2, 2, 6), skin, 0, 0, -l2 / 2, k2); s2.rotation.x = Math.PI / 2;
-    mesh(new THREE.BoxGeometry(.018 * r, .006, .016), nail, 0, .013 * r, -l2 + .002, k2);
+    mesh(new THREE.BoxGeometry(.018 * r, .006, .016), nail, 0, -.013 * r, -l2 + .002, k2); // 指甲長在手背（掌心的另一面）
     return { k1, k2, x };
   });
   // 拇指：從掌側伸出，往掌心內收
-  const tb = new THREE.Group(); tb.position.set(-.068, -.002, -.02); tb.rotation.y = .9; hand.add(tb);
+  const tb = new THREE.Group(); tb.position.set(.068, -.002, -.02); tb.rotation.y = -.9; hand.add(tb);
   const tk = new THREE.Group(); tb.add(tk);
   mesh(new THREE.CapsuleGeometry(.02, .04, 2, 6), skin, 0, 0, -.025, tk).rotation.x = Math.PI / 2;
   const tk2 = new THREE.Group(); tk2.position.z = -.05; tk.add(tk2);
   mesh(new THREE.CapsuleGeometry(.017, .032, 2, 6), skin, 0, 0, -.018, tk2).rotation.x = Math.PI / 2;
-  mesh(new THREE.BoxGeometry(.02, .006, .017), nail, 0, .015, -.034, tk2);
+  mesh(new THREE.BoxGeometry(.02, .006, .017), nail, 0, -.015, -.034, tk2);
   VM.thumb = { tk, tk2 };
   // 手上拿的東西放在掌心
   VM.hold = new THREE.Group(); VM.hold.position.set(0, .05, -.075); hand.add(VM.hold);
@@ -3993,7 +3993,7 @@ function viewModelStep(dt) {
   const keep = it && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
   VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
   VM.fingers.forEach((f, i) => { const c = p.c * (1 + (i - 1.5) * .05); f.k1.rotation.x = c * .95; f.k2.rotation.x = c * 1.15; f.k1.rotation.y = (f.x * 8) * p.sp; });
-  VM.thumb.tk.rotation.x = p.t * .5; VM.thumb.tk.rotation.y = -p.t * .55; VM.thumb.tk2.rotation.x = p.t * .9;
+  VM.thumb.tk.rotation.x = p.t * .5; VM.thumb.tk.rotation.y = p.t * .55; VM.thumb.tk2.rotation.x = p.t * .9;
   VM.arm.position.set(p.x, p.y, p.z); VM.hand.rotation.set(p.rx, p.ry, p.rz);
   VM.gad.visible = S.up.net > 0; VM.gadL.forEach((m, i) => m.visible = i < S.up.net);
   // 依畫面比例固定在右下角；直向手機放大並移到下方偏右
