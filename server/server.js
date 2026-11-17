@@ -469,7 +469,8 @@ function serveStatic(req, res, url) {
     try { st = fs.statSync(file); } catch { continue; }
     if (!st.isFile()) continue;
     const cache = t.startsWith('/_next/static/') ? 'public, max-age=31536000, immutable' : 'no-cache';
-    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': cache });
+    const type = /^\/(apple-icon|icon\d*)$/.test(t) ? 'image/png' : t.endsWith('.webmanifest') ? 'application/manifest+json' : TYPES[path.extname(file)] || 'application/octet-stream';
+    res.writeHead(200, { 'content-type': type, 'cache-control': cache });
     return res.end(req.method === 'HEAD' ? undefined : fs.readFileSync(file));
   }
   const nf = path.join(STATIC_DIR, '404.html');

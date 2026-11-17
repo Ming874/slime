@@ -2383,6 +2383,7 @@ function bindInput() {
   cv.addEventListener('wheel', e => { if (GUI.kind) return; S.hb = (S.hb + (e.deltaY > 0 ? 1 : 8)) % 9; renderHotbar(true); }, { passive: true });
   addEventListener('keyup', e => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
   document.addEventListener('pointerlockchange', () => {
+    document.body.classList.toggle('plock', locked()); // 滑鼠鎖住時才顯示右上角的「按 Alt 放開滑鼠」提示（menus.css）
     if (locked()) { W.altFree = false; restoreHint(); }
     $('#startHint').hidden = locked() || TOUCH || !!GUI.kind || TITLE.on;
     if (!locked() && !GUI.kind && !TOUCH && !W.unlockByUs && !TITLE.on && !CHAT.open && $('#modal').hidden) openGui('pause');
@@ -2684,16 +2685,20 @@ function waypointStep() {
 }
 let cmpSig = '';
 function renderCompass() {
-  const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .75, items = [], o0 = W.obj;
+  const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .8, items = [], o0 = W.obj;
   const sig = `${P.yaw.toFixed(3)}|${Math.round(P.x * 2)}|${Math.round(P.z * 2)}|${w}|${o0 && o0.x}|${o0 && o0.z}|${S.zones.length}`; if (sig === cmpSig) return; cmpSig = sig;
-  const put = (ang, html, cls, color) => { let r = Math.atan2(Math.sin(ang - P.yaw), Math.cos(ang - P.yaw)); if (Math.abs(r) > range / 2) return; items.push(`<span class="cmk ${cls}" style="left:${(.5 - r / range) * w}px;${color ? 'color:' + color : ''}">${html}</span>`); };
-  [['北', 0], ['西', Math.PI / 2], ['南', Math.PI], ['東', -Math.PI / 2]].forEach(([n, a]) => put(a, n, 'dir'));
-  for (let a = 0; a < 24; a++) if (a % 6) put(a / 24 * PI2, '', 'tick');
-  const bearing = (x, z) => Math.atan2(-(x - P.x), -(z - P.z));
-  put(bearing(0, 0), '', 'pin', '#22d3ee');
-  const o = W.obj; if (o && o.x != null) put(bearing(o.x, o.z), '', 'pin', o.c || '#c4b5fd');
-  Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].x * 1.4, GATES[k].z * 1.4), '', 'pin', '#fbbf24'); });
+  const put = (ang, html, cls, color) => { let r = Math.atan2(Math.sin(ang - P.yaw), Math.cos(ang - P.yaw)); if (Math.abs(r) > range / 2) return; items.push(`<span class="cmk ${cls}" style="left:${(.5 - r / range) * w}px;${color ? '--pc:' + color : ''}">${html}</span>`); };
+  // 方位：北（紅字）、東西南、四個斜向；刻度每 5 度一格，每 15 度長一點
+  [['北', 0, ' n'], ['西', Math.PI / 2, ''], ['南', Math.PI, ''], ['東', -Math.PI / 2, '']].forEach(([n, a, c]) => put(a, n, 'dir' + c));
+  [['西北', Math.PI / 4], ['西南', Math.PI * .75], ['東南', -Math.PI * .75], ['東北', -Math.PI / 4]].forEach(([n, a]) => put(a, n, 'dir2'));
+  for (let a = 0; a < 72; a++) if (a % 9) put(a / 72 * PI2, '', a % 3 ? 'tick' : 'tick big');
+  const bearing = (x, z) => Math.atan2(-(x - P.x), -(z - P.z)), dist = (x, z) => Math.round(Math.hypot(x - P.x, z - P.z));
+  put(bearing(0, 0), '<i></i>', 'pin home', '#22d3ee');
+  const o = W.obj; if (o && o.x != null) put(bearing(o.x, o.z), `<i></i><b>${dist(o.x, o.z)}m</b>`, 'pin goal', o.c || '#c4b5fd');
+  Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].x * 1.4, GATES[k].z * 1.4), '<i></i>', 'pin gate', '#fbbf24'); });
   el.innerHTML = items.join('');
+  const deg = Math.round(((-P.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360, dn = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'][Math.round(deg / 45) % 8];
+  const dg = $('#cmpDeg'); if (dg) dg.textContent = `${dn} ${String(deg).padStart(3, '0')}°`;
 }
 /* ---------- 經驗值與等級（與粉絲無關） ---------- */
 const XP_LV = [0, 20, 50, 100, 180, 300, 480, 720, 1050, 1500, 2100];   // 到達各等級所需的累計經驗，最高 10 級
@@ -2715,7 +2720,7 @@ function renderXP() {
 function renderTop() {
   $('#sMoney').textContent = fmt(S.money); $('#sFans').textContent = '粉絲 ' + Math.floor(S.fans);
   const t = trend.sp ? SP[trend.sp] : null; $('#sTrend').innerHTML = t ? `流行 ${dot(t.color)}${short(trend.sp)} ×1.35` : '流行 —';
-  $('#btnSound').textContent = '音效：' + (S.sound ? '開' : '關'); $('#btnSens').textContent = '靈敏度：' + SENS_N[S.sens];
+  if (GUI.kind === 'pause') ui('pause'); // 暫停選單（音效、靈敏度、雲端存檔狀態）由 React 重繪
 }
 function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast('流行色更新：' + SP[trend.sp].name + '（售價 ×1.35）'); }
 
@@ -3215,8 +3220,8 @@ document.addEventListener('click', e => {
     case 'netLeave': netLeave(); renderPause(); break;
     case 'tContinue': startPlay(); break;
     case 'tNew': if (lsGet(SAVE_KEY)) modal('<h2>開始新遊戲？</h2><p>目前的存檔會被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定', f: newGame }]); else newGame(); break;
-    case 'tMulti': $('#titleMain').hidden = true; $('#titleMp').hidden = false; $('#mpName').value = S.name || ''; break;
-    case 'tBack': $('#titleMain').hidden = false; $('#titleMp').hidden = true; break;
+    case 'tMulti': TITLE.mp = true; renderTitle(); { const n = $('#mpName'); if (n) n.value = S.name || ''; } break;
+    case 'tBack': TITLE.mp = false; renderTitle(); break;
     case 'mpHost': netHost(); break;
     case 'mpJoin': netJoin($('#mpCode').value); break;
     case 'list': { const p = stockById(id); if (!p) return; if (p.played || p.dur < 100) return toast('玩過的捏捏不能上架到網站，只能在直播或其他通路販售'); if (S.web.length >= slots()) return toast('貨架已滿，請升級網站伺服器'); S.stock = S.stock.filter(q => q !== p); S.web.push(p); renderWeb(); renderHotbar(); save(); break; }
@@ -3255,19 +3260,11 @@ function showHelp() {
    ============================================================ */
 const TITLE = { on: false };
 function fmtTime(t) { if (!t) return '—'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
-function renderTitle() {
-  const has = !!lsGet(SAVE_KEY) && S.seen;
-  $('#titleMain').innerHTML = (has ? `<button class="btn big" data-act="tContinue">繼續遊戲</button>` : `<button class="btn big" data-act="tContinue">開始遊戲</button>`) +
-    (has ? `<button class="btn big ghost" data-act="tNew">新遊戲</button>` : '') +
-    `<button class="btn big ghost" data-act="tMulti">多人遊戲</button>
-     <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="sound" id="tSound">音效：${S.sound ? '開' : '關'}</button></div>`;
-  $('#titleFoot').innerHTML = (S.name ? esc(S.name) + ' · ' : '') + (has ? `存檔：${fmtTime(S.last)} · ${fmt(S.money)} · 粉絲 ${Math.floor(S.fans)} · 已發現區域 ${S.zones.length}/4 · 設備 ${Object.keys(S.own || {}).length}/5` : '月光谷正在等待新的工坊主人');
-  $('#titleMain').hidden = false; $('#titleMp').hidden = true;
-}
+function renderTitle() { ui('title'); } // 主選單由 React 負責（components/stations/Title.tsx）
 function showTitle() {
   if (GUI.kind) { GUI.kind = null; GUI.focus = null; tab = ''; guiHide(true); }
   if (L.watch) L.watch = null; L.on = false; M.active = false;
-  unlockMouse(); TITLE.on = true; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
+  unlockMouse(); TITLE.on = true; TITLE.mp = false; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
 }
 function startPlay() {
   if (S.coatMigrated) { S.coatMigrated = false; save(); setTimeout(() => toast('偵測到你已經開啟雪原：已補發保暖衣（現在雪原需要保暖衣才能進入）'), 1500); }
@@ -3283,21 +3280,8 @@ function titleStep(dt) {
   W.r.render(W.scene, W.cam);
 }
 // 帳號（Google 登入）：改暱稱、登出、刪除我的資料；畫面上不顯示 email
-function renderAcct() {
-  const C = window.SlimeCloud, box = $('#pauseAcct'); if (!box) return;
-  if (!C || !C.user) return setHTML(box, '');
-  setHTML(box, `<div class="card small acct"><b>帳號</b>
-    <div class="row"><input id="acctName" maxlength="12" value="${esc(C.user.name)}" aria-label="暱稱" autocomplete="off"><button class="btn sm" data-act="acctName">改暱稱</button></div>
-    <div class="sync" id="acctSync"></div>
-    <div class="row"><button class="btn ghost sm grow" data-act="logout">登出</button><button class="btn ghost sm grow" data-act="delMe">刪除我的資料</button></div>
-    <div class="row">${C.user.admin ? '<a href="/admin" target="_blank" rel="noopener">管理允許名單</a>' : ''}<span class="grow"></span><a href="/privacy" target="_blank" rel="noopener" style="color:var(--sub)">隱私權政策</a></div></div>`);
-  $('#acctSync').textContent = '雲端存檔：' + C.status();
-}
-function renderPause() {
-  renderTop(); renderAcct();
-  $('#saveInfo').textContent = '上次儲存：' + fmtTime(S.last) + '　（按 Esc、切換畫面、開關介面時都會自動儲存）';
-  $('#pauseNet').innerHTML = NET.on ? `<div class="card small"><b>多人房間 ${esc(NET.room)}</b>${NET.host ? '（你是房主）' : ''}<br>把房間代碼分享給朋友，就能一起玩。<div style="margin:6px 0;color:var(--sub)">${[...NET.players.values()].map(p => `${dot(p.color || '#22d3ee')}${esc(p.name || '玩家')}${p.live && p.live.on ? ' · 直播中' : ''}`).join('<br>')}</div><button class="btn sm red" data-act="netLeave">離開房間</button></div>` : '';
-}
+function renderAcct() { ui('pause'); } // 帳號區塊在暫停選單裡（components/stations/Pause.tsx）
+function renderPause() { renderTop(); ui('pause'); } // 暫停選單由 React 負責（components/stations/Pause.tsx）
 
 /* ============================================================
    聊天（多人）
@@ -4056,7 +4040,7 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; if (GUI.kind === 'pause' && window.SlimeCloud) { const el = $('#acctSync'); if (el) el.textContent = '雲端存檔：' + SlimeCloud.status(); } checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
+  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
@@ -4096,6 +4080,7 @@ function ui(name) { window.dispatchEvent(new CustomEvent('slime:ui', { detail: n
 window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
+  get title() { return TITLE; }, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
   SP, SPECIES, ZONES, RAR, UPS, OWN, PACKS, DECO, CUTS, TIER, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, tierOf, defPrice, demand, speedTxt, xpLevel, decoBonus,

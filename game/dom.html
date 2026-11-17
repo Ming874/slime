@@ -5,6 +5,7 @@
   <!-- ===== HUD ===== -->
   <div id="hud">
     <div id="compass"><div id="cmpStrip"></div><i class="cmp-mid"></i></div>
+    <div id="cmpDeg" class="cmp-deg" aria-hidden="true"></div>
     <div id="stats">
       <span class="hchip money" id="sMoney">¥0</span>
       <span class="hchip" id="sFans">粉絲 0</span>
@@ -26,10 +27,11 @@
       <div id="hotbar"></div>
     </div>
     <div id="topbtns">
-      <button class="hbtn" data-act="chat" id="btnChat" aria-label="聊天" hidden><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg></button>
-      <button class="hbtn" data-act="inv" aria-label="背包"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5h6v2M4 12h16"/></svg></button>
-      <button class="hbtn" data-act="pause" aria-label="選單"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button class="hbtn" data-act="chat" id="btnChat" aria-label="聊天（T）" hidden><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="hk">T</span></button>
+      <button class="hbtn" data-act="inv" aria-label="背包（I）"><svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="2"/><path d="M9 7V5h6v2M4 12h16"/></svg><span class="hl">背包</span><span class="hk">I</span></button>
+      <button class="hbtn" data-act="pause" aria-label="選單（Esc）"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="hl">選單</span><span class="hk">Esc</span></button>
     </div>
+    <div id="hfree" class="hfree" aria-hidden="true">遊玩時滑鼠鎖在畫面中央：按 <kbd>Alt</kbd> 放開滑鼠就能點按鈕</div>
     <div id="touch">
       <div id="joyBase"><div id="joyKnob"></div></div>
       <button class="tbtn" id="btnJump" aria-label="跳躍"><svg viewBox="0 0 24 24"><path d="M12 19V6M6 11l6-6 6 6"/></svg></button>
@@ -113,40 +115,13 @@
 
         <section class="panel" id="p-riddle"><div class="rx" data-rx="riddle"></div></section>
 
-        <section class="panel" id="p-pause">
-          <div class="menu">
-            <button class="btn big" data-act="closeGui">回到遊戲</button>
-            <button class="btn big ghost" data-act="saveNow">儲存遊戲</button>
-            <div id="pauseNet"></div>
-            <div id="pauseAcct"></div>
-            <div class="row"><button class="btn ghost grow" data-act="sound" id="btnSound">音效：開</button><button class="btn ghost grow" data-act="sens" id="btnSens">靈敏度：中</button></div>
-            <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="home">回到中央平地</button></div>
-            <button class="btn big red" data-act="toTitle">儲存並回到主選單</button>
-            <div class="small" id="saveInfo" style="text-align:center;color:var(--sub)"></div>
-          </div>
-        </section>
+        <section class="panel" id="p-pause"><div class="rx" data-rx="pause"></div></section>
 
       </div>
     </div>
   </div>
 </div>
 
-<div id="title" hidden>
-  <div class="tbox">
-    <div class="tlogo"><i class="logo"></i>SQUISH LAB</div>
-    <div class="tsub">史萊姆捏捏工坊</div>
-    <div class="tline">親手把史萊姆捏成酥脆療癒的作品，再讓更多人聽見。</div>
-    <div id="titleMain" class="tmenu"></div>
-    <div id="titleMp" class="tmenu" hidden>
-      <label class="small">玩家名稱<input id="mpName" maxlength="12" placeholder="你的名字" autocomplete="off"></label>
-      <button class="btn big" data-act="mpHost">建立房間</button>
-      <div class="row"><input id="mpCode" maxlength="6" placeholder="輸入房間代碼" autocomplete="off" style="text-transform:uppercase;margin:0"><button class="btn" data-act="mpJoin">加入</button></div>
-      <div id="mpStatus" class="small" style="min-height:18px;color:var(--warn)"></div>
-      <button class="btn ghost" data-act="tBack">返回</button>
-      <div class="hint" style="margin:0">多人連線透過 PeerJS 公共伺服器建立點對點連線。每位玩家保有自己的存檔；玩家位置、世界中的史萊姆與直播狀態會即時同步。</div>
-    </div>
-    <div class="tfoot" id="titleFoot"></div>
-  </div>
-</div>
+<div id="title" hidden><div class="rx rx-titlemount" data-rx="title"></div></div>
 <div id="fade" hidden></div>
 <div id="modal" hidden><div class="mbox" id="mbox"></div></div>

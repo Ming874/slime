@@ -24,6 +24,12 @@
 	# Next.js 的 /_next/static/ 檔名帶內容雜湊，可以快取一年；其他網站檔案（頁面、game.js 等）每次都向伺服器確認
 	# 是否有新版（有 ETag，沒變只回 304），部署後玩家立刻拿到新版；否則 Cloudflare 會把 .js／.css 快取 4 小時。
 	# /api/ 的快取標頭由 Node 自己決定（no-store），這裡不改
+	# Next.js 產生的圖示與網站資訊檔沒有常見副檔名，指定正確的類型
+	@pngicon path /apple-icon /icon1
+	header @pngicon Content-Type image/png
+	@manifest path /manifest.webmanifest
+	header @manifest Content-Type application/manifest+json
+
 	@immutable path /_next/static/*
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
 	@fresh not path /_next/static/* /api/*

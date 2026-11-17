@@ -10,7 +10,7 @@ export type Review = { s: number; who: string; t: string; sp: string };
 export type State = {
   money: number; fans: number; earned: number; xp: number; gel: Record<string, number>; stock: Product[]; web: Product[]; show: Product[];
   zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number }>;
-  reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string;
+  reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number;
 };
 type Up = { name: string; desc: string; max: number; mach?: number; need?: string };
 type Own = { name: string; cost: number; shop: string; desc: string };
@@ -18,6 +18,7 @@ type Own = { name: string; cost: number; shop: string; desc: string };
 export type Game = {
   S: State; M: { sp: string | null }; BN: { busy: boolean }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
   trend: { sp: string | null }; invSel: number | null; tab: string; kind: string | null; likeT: () => Record<string, number>;
+  title: { on: boolean; mp?: boolean }; hasSave: () => boolean; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
   SP: Record<string, Species>; SPECIES: Species[]; ZONES: { id: string; name: string; acc: string }[]; RAR: ({ n: string; c: string } | null)[];
   UPS: Record<string, Up>; OWN: Record<string, Own>; PACKS: Record<string, { name: string; cost: number }>;
   DECO: Record<string, { n: string; c: string; pack: string }>; CUTS: Record<string, { n: string; col: string; desc: string }>;

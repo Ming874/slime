@@ -11,6 +11,7 @@ import Panels from '@/components/stations/Panels';
 import './game.css';
 import './stations.css';
 import './station-content.css';
+import './menus.css';
 
 const ROOT = process.cwd();
 const versioned = (p: string) => `/${p}?v=${crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, 'public', p))).digest('hex').slice(0, 12)}`;
