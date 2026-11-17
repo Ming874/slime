@@ -1696,15 +1696,7 @@ function questTarget() {
     : { x: TABLET[0], z: TABLET[1], n: '古老的石碑', h: `對準石碑${E}，閱讀上面的古文。`, d: '火山腳下有一座發光的石碑，朝光柱的方向走，去讀一讀。' };
   return null;
 }
-function renderQuest() {
-  const el = $('#questBox'); if (!el) return; const k = nextQuest(), q = qState();
-  if (!k) { el.innerHTML = '<b>探索日誌</b><div class="small" style="color:var(--sub);margin-top:4px">你已經發現了月光谷的所有區域。</div>'; return; }
-  const Q = QUEST[k], ready = questReady(k), made = madeIn(Q.from); let prog = '';
-  if (k === 'coast') prog = `<div class="qprog">${[0, 1, 2, 3, 4].map(i => `<i class="${q.frags.includes(i) ? 'on' : ''}"></i>`).join('')}</div><div class="small" style="margin-top:4px">古地圖碎片 ${q.frags.length}/5</div>`;
-  if (k === 'volcano' && ready) prog = `<div class="small" style="margin-top:6px">紙條 ${q.notes.length}/3　已點亮 ${q.tide.length}/4</div>` + tideStepsHTML() + hintBlock('tide');
-  if (k === 'snow' && ready && q.read.tablet) prog = `<div class="riddle" style="font-size:13px;margin-top:6px">${TABLET_TXT}</div><div class="small" style="margin-top:6px">已滿足 ${cluesDone()}/4 條線索</div>` + pillarExtra() + hintBlock('pillar');
-  el.innerHTML = `<b>探索日誌：${Q.title}</b><div class="small" style="color:var(--sub);margin-top:4px;line-height:1.6">${Q.hint}${ready ? '' : `<br>（線索目前被封印：先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏，目前 ${made}/${Q.need}）`}</div>${prog}`;
-}
+function renderQuest() { ui('inv'); } // 探索日誌在背包分頁裡（components/stations/Inventory.tsx）
 
 /* ============================================================
    史萊姆（高畫質版）
@@ -3078,36 +3070,16 @@ function webTick() {
   const cutTxt = p.cut ? (p.cq > .85 ? `${CUTS[p.cut].n}切面平整發亮，好美！` : p.cq < .45 ? '切面有點歪歪的。' : '') : '';
   S.reviews.unshift(coll ? { s: 5, t: '收藏家：歪得剛剛好，收藏了！', who: pick(NAMES), sp: SP[p.sp].name } : { s: stars, t: pick(REVIEWS[stars]) + (cutTxt ? ' ' + cutTxt : ''), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars };
 }
-function renderWeb() {
-  const r = rating();
-  setHTML($('#webInfo'), `<div class="row"><div class="grow">店鋪評分 <b class="stars">${'★'.repeat(Math.round(r))}${'☆'.repeat(5 - Math.round(r))}</b> ${r.toFixed(1)}　粉絲 ${Math.floor(S.fans)}</div><div class="small">貨架 ${S.web.length}/${slots()}</div></div>`);
-  setHTML($('#webShelf'), S.web.length ? S.web.map(p => itemHTML(p, 'unlist', null, ` · 售 ${fmt(priceOf(p, 'web'))}`)).join('') : '<div class="empty">貨架空空如也，從下方上架商品。</div>');
-  setHTML($('#webStock'), S.stock.length ? S.stock.map(p => itemHTML(p, 'list', null, p.played || p.dur < 100 ? ' · 已玩過，不能上架' : '')).join('') : '<div class="empty">背包裡沒有捏捏。</div>');
-  if (!$('#webPrice').contains(document.activeElement)) setHTML($('#webPrice'), priceTable('web'));
-  setHTML($('#reviews'), S.reviews.length ? S.reviews.map(v => `<div><span class="stars">${'★'.repeat(v.s)}</span> ${esc(v.who)}：${esc(v.t)} <small style="color:var(--sub)">（${esc(v.sp)}）</small></div>`).join('') : '尚無評價');
-}
+function renderWeb() { ui('web'); } // 畫面改由 React 負責（components/stations/）
 
 /* ---------- 升級 ---------- */
 const upCost = k => Math.round(UPS[k].base * Math.pow(1.7, S.up[k]));
 const lvBar = (lv, max) => `<span class="lv">${Array.from({ length: max }, (_, j) => `<i class="${j < lv ? 'on' : ''}"></i>`).join('')}</span>`;
-function renderUp() {
-  const row = k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${u.desc}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; };
-  let h = '<h3>產線機器</h3>' + Object.keys(UPS).filter(k => UPS[k].mach).map(row).join('') + '<h3>設施與裝備</h3>' + Object.keys(UPS).filter(k => !UPS[k].mach).map(row).join('');
-  h += '<h3>裝飾零件包</h3>' + Object.keys(PACKS).map(k => { const has = S.packs.includes(k), pk = PACKS[k], items = Object.values(DECO).filter(d => d.pack === k).map(d => dot(d.c) + d.n).join('　'); return `<div class="card up"><div class="info"><b>${pk.name}</b><div class="small" style="color:var(--sub)">${items}</div></div><button class="btn sm" data-act="buyPack" data-k="${k}" ${has || S.money < pk.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(pk.cost)}</button></div>`; }).join('');
-  setHTML($('#upList'), h);
-}
+function renderUp() { ui('shop'); } // 畫面改由 React 負責（components/stations/）
 
 /* ---------- 展示場 ---------- */
-function renderMuseum() {
-  const fpm = S.show.reduce((a, p) => a + effCrisp(p), 0) * .004 * 60;
-  setHTML($('#museumBody'), `<div class="hint">把得意的作品放上展示台。展示中的作品會持續吸引參觀者（目前每分鐘約 +${fpm.toFixed(1)} 粉絲）${NET.on ? '，房間裡的朋友也能來「參觀朋友」分頁按讚。' : '。多人連線時，朋友可以來參觀並按讚。'}</div>
-  <h3>展示台 ${S.show.length}/4</h3><div class="grid">${S.show.map(p => itemHTML(p, 'unshow', null, ' · 點一下收回')).join('') || '<div class="empty">展示台還空著。</div>'}</div>
-  <h3>從背包放上展示台</h3><div class="grid">${S.stock.map(p => itemHTML(p, 'show')).join('') || '<div class="empty">背包裡沒有捏捏。</div>'}</div>`);
-}
-function renderVisit() {
-  const others = [...NET.players.entries()].filter(([id]) => id !== NET.me), now = Date.now(); W.likeT = W.likeT || {};
-  setHTML($('#visitBody'), others.length ? others.map(([id, p]) => `<div class="card"><b>${dot(p.color)}${esc(p.name)} 的展示場</b><div class="row wrap small" style="margin:6px 0">${(p.show || []).map(x => `<span class="chip">${dot(SP[x.sp].color)}${short(x.sp)}${x.cut ? ' · ' + CUTS[x.cut].n + '切' : ''} · 酥脆 ${x.cr}%</span>`).join('') || '<span style="color:var(--sub)">還沒有擺出作品</span>'}</div><button class="btn sm" data-act="like" data-id="${esc(id)}" ${(p.show || []).length && now - (W.likeT[id] || 0) > 60000 ? '' : 'disabled'}>按讚（對方粉絲 +2）</button></div>`).join('') : '<div class="empty">房間裡還沒有其他玩家。</div>');
-}
+function renderMuseum() { ui('museum'); } // 畫面改由 React 負責（components/stations/）
+function renderVisit() { W.likeT = W.likeT || {}; ui('visit'); } // 畫面改由 React 負責（components/stations/）
 /* ---------- 本週限定訂單：每週輪替 ---------- */
 const WEEK_MS = 7 * 864e5, weekNo = () => Math.floor((Date.now() + 3 * 864e5) / WEEK_MS);
 function weeklyOrders() {
@@ -3116,12 +3088,7 @@ function weeklyOrders() {
     return { id: w * 10 + i, sp: sp.id, cut: S.own.slicer ? cut : null, n, min, reward: Math.round(sp.price * 1.28 * 1.4 * n * (2.2 + i * .5)), fans: 4 + i * 3 }; });
 }
 const wkItems = o => S.stock.filter(p => p.sp === o.sp && (!o.cut || p.cut === o.cut) && effCrisp(p) >= o.min).sort((a, b) => effCrisp(a) - effCrisp(b)).slice(0, o.n);
-function renderWeekly() {
-  if (S.wk.w !== weekNo()) S.wk = { w: weekNo(), done: [] };
-  const left = (weekNo() + 1) * WEEK_MS - 3 * 864e5 - Date.now(), d = Math.floor(left / 864e5), h = Math.floor(left % 864e5 / 36e5);
-  setHTML($('#weeklyBody'), `<div class="hint">每週輪替的限時訂單，報酬比平常高很多。每張訂單每週只能完成一次。距離下次輪替：${d} 天 ${h} 小時</div>` + weeklyOrders().map(o => { const done = S.wk.done.includes(o.id), ok = wkItems(o);
-    return `<div class="card"><b>${dot(SP[o.sp].color)}${SP[o.sp].name}${o.cut ? `（${CUTS[o.cut].n}切）` : ''}</b> × ${o.n}　酥脆 ≥ ${Math.round(o.min * 100)}%<br>報酬 <b style="color:var(--warn)">${fmt(o.reward)}</b>　粉絲 +${o.fans}<div class="row" style="margin-top:6px"><span class="small grow">符合的庫存 ${ok.length}/${o.n}</span><button class="btn sm" data-act="wkDeliver" data-id="${o.id}" ${done || ok.length < o.n ? 'disabled' : ''}>${done ? '本週已完成' : '交貨'}</button></div></div>`; }).join(''));
-}
+function renderWeekly() { if (S.wk.w !== weekNo()) S.wk = { w: weekNo(), done: [] }; ui('weekly'); } // 畫面改由 React 負責（components/stations/）
 /* ---------- 中期三線 ---------- */
 const BT = { fac: 0, ct: 0, sc: 0 };
 const branchReady = () => !S.branch && S.earned >= 2500 && S.fans >= 60;
@@ -3205,22 +3172,10 @@ function chooseBranch(k) {
 
 /* ---------- 圖鑑 / 背包 ---------- */
 const GOAL = { species: 8, fans: 800, earned: 40000 };
-function renderCodex() {
-  const made = SPECIES.filter(s => S.codex[s.id] && S.codex[s.id].made > 0).length, g = [['製作過所有種類', made, GOAL.species], ['粉絲數', Math.floor(S.fans), GOAL.fans], ['累積營收', Math.floor(S.earned), GOAL.earned]], ok = g.every(x => x[1] >= x[2]);
-  let h = `<div class="card"><b>終局目標：開設「夢想捏捏博物館」</b><div class="small" style="color:var(--sub);margin:4px 0 8px">探索月光谷的所有區域，讓全世界都聽見史萊姆的酥脆聲。</div>` + g.map(x => `<div class="small">${x[0]}　${x[1].toLocaleString()} / ${x[2].toLocaleString()}</div><div class="meter2" style="margin:3px 0 7px"><i style="width:${clamp(x[1] / x[2] * 100, 0, 100)}%"></i></div>`).join('') + `<button class="btn" data-act="finish" ${ok && !S.done ? '' : 'disabled'}>${S.done ? '已達成' : '完成夢想'}</button></div><h3>史萊姆圖鑑</h3><div class="grid">`;
-  h += SPECIES.map(s => { const c = S.codex[s.id]; return `<div class="card item" style="cursor:default"><div class="sw" style="background:${c ? swatch(s) : '#1e293b'}"></div><div><div class="nm">${c ? s.name : '？？？'}</div><div class="meta">${ZONES.find(z => z.id === s.zone).name} · <span style="color:${RAR[s.rar].c}">${RAR[s.rar].n}</span></div><div class="meta">${c ? `已製作 ${c.made} 個` : (S.zones.includes(s.zone) ? '尚未發現' : '區域未開放')}</div></div></div>`; }).join('') + '</div>';
-  $('#codexBody').innerHTML = h;
-}
+function renderCodex() { ui('codex'); } // 畫面改由 React 負責（components/stations/）
 function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
 let invSel = null;
-function renderInv() {
-  const items = invItems(), n = Math.max(27, Math.ceil(items.length / 9) * 9);
-  $('#invGrid').innerHTML = Array.from({ length: n }, (_, i) => slotHTML(items[i], i, i === S.hb)).join('');
-  const it = items[invSel ?? S.hb];
-  $('#invInfo').innerHTML = it ? (it.t === 'gel' ? `<b>${SP[it.sp].name}凝膠</b> × ${it.n}<br><span style="color:var(--sub)">帶到工坊的加工產線，每 2 份可做成 1 個酥脆捏捏。</span>` : `<b>${SP[it.p.sp].name} · 酥脆捏捏</b><br>酥脆 ${Math.round(effCrisp(it.p) * 100)}% · 耐久 ${Math.round(it.p.dur)}% · 裝飾 ${it.p.deco.length} · 合理價約 ${fmt(fair(it.p, 'live'))}<br><span style="color:var(--sub)">可到裝飾桌加上零件，或到直播台／工作電腦販售。</span>`) + `<div class="small" style="margin-top:6px;color:var(--sub)">點擊格子可放到快捷列第 ${S.hb + 1} 格選取。</div>` : `<span style="color:var(--sub)">背包：凝膠與捏捏都會顯示在這裡。庫存 ${S.stock.length}/${cap()}</span>`;
-  $('#invInfo').innerHTML += '<div class="small" style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line);color:var(--sub)"><b style="color:var(--tx)">裝備</b>　保暖衣：' + (S.own.coat ? '<span style="color:var(--good)">已擁有</span>' : '未擁有') + '　長劍：' + (S.own.sword ? '<span style="color:var(--good)">已擁有</span>' : '未擁有') + '</div>';
-  renderQuest();
-}
+function renderInv() { ui('inv'); } // 畫面改由 React 負責（components/stations/）
 const RENDER = { bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), arms: () => renderShop('arms'), eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
 
 /* ---------- 點擊事件 ---------- */
@@ -3859,25 +3814,10 @@ function buyOwn(k) {
   const o = OWN[k]; if (!o || S.own[k]) return; if (S.money < o.cost) return toast('資金不足');
   S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); refreshCold(); objSig = ''; renderShop(tab); renderTop(); saveCloud(); toast(k === 'coat' ? '已購買保暖衣！現在可以前往雪原了' : k === 'sword' ? '已購買長劍（目前只供收藏）' : `已購買${o.name}，已經送到月光谷的中央平地`);
 }
-function renderShop(kind) {
-  const intro = { mach: '加工機器與機器升級。買了才會出現在基地的產線上，每台機器對應一道加工流程。', gear: '直播設備、裝飾桌與裝飾零件。', mall: '倉儲、網站伺服器與生活用品。', arms: '武器與防具。保暖衣是進入雪原的必備品；長劍目前只供收藏，之後會派上用場。', eshop: '網路購物：加工機器、裝飾桌、直播設備與各種升級，下單後直接宅配到中央平地。（武器店的商品要到大城市購買）' }[kind];
-  let h = `<div class="hint">${intro}　目前資金 <b style="color:var(--warn)">${fmt(S.money)}</b></div>`;
-  const owns = Object.keys(OWN).filter(k => kind === 'eshop' ? ['mach', 'gear'].includes(OWN[k].shop) : OWN[k].shop === kind);
-  if (owns.length) h += '<h3>設備</h3>' + owns.map(k => { const o = OWN[k], has = S.own[k]; return `<div class="card up"><div class="info"><b>${o.name}</b>${has ? ' <span class="tag">已擁有</span>' : ''}<div class="small" style="color:var(--sub)">${o.desc.replace(/\*\*([^*]+)\*\*/g, '<b style="color:var(--tx)">$1</b>')}</div></div><button class="btn sm" data-act="buyOwn" data-k="${k}" ${has || S.money < o.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(o.cost)}</button></div>`; }).join('');
-  const ups = kind === 'eshop' ? [...SHOP_UPS.mach, ...SHOP_UPS.gear, ...SHOP_UPS.mall] : SHOP_UPS[kind] || [];
-  if (ups.length) h += '<h3>升級</h3>' + ups.map(k => { const u = UPS[k], lv = S.up[k], max = lv >= u.max, need = u.need && !S.own[u.need]; return `<div class="card up"><div class="info"><b>${u.name}</b>${lvBar(lv, u.max)}<div class="small" style="color:var(--sub)">${need ? '需要先購買' + OWN[u.need].name : u.desc}${k === 'farm' && lv > 0 ? '　下次收集 ' + fmtSec(farmLeft()) : ''}</div></div><button class="btn sm" data-act="buyUp" data-k="${k}" ${max || need || S.money < upCost(k) ? 'disabled' : ''}>${max ? '已滿級' : fmt(upCost(k))}</button></div>`; }).join('');
-  if (kind === 'gear' || kind === 'eshop') h += '<h3>裝飾零件包</h3>' + Object.keys(PACKS).map(k => { const has = S.packs.includes(k), pk = PACKS[k], items = Object.values(DECO).filter(d => d.pack === k).map(d => dot(d.c) + d.n).join('　'); return `<div class="card up"><div class="info"><b>${pk.name}</b><div class="small" style="color:var(--sub)">${items}</div></div><button class="btn sm" data-act="buyPack" data-k="${k}" ${has || S.money < pk.cost ? 'disabled' : ''}>${has ? '已擁有' : fmt(pk.cost)}</button></div>`; }).join('');
-  // 每秒都會重繪：內容沒變就不動 DOM，否則按鈕按下到放開之間被替換，點擊會被吞掉
-  setHTML($('#upList'), h);
-}
+function renderShop(kind) { ui('shop'); } // 畫面改由 React 負責（components/stations/）
 /* ---------- 手作台 ---------- */
 const BN = { busy: false };
-function renderBench() {
-  if (!M.sp || !unlockedSpecies().some(s => s.id === M.sp)) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || unlockedSpecies()[0]).id;
-  $('#benchBody').innerHTML = `<div class="hint">手作台只能做出<b>粗製捏捏</b>：品質最低，固定售價 ¥10。想做出更酥脆、更值錢的捏捏，要用中央平地北邊的加工產線（機器可以在工作電腦網購）。</div>
-  <div class="row wrap">${unlockedSpecies().map(s => `<button class="zbtn ${M.sp === s.id ? 'on' : ''}" data-act="pickSp" data-id="${s.id}">${dot(s.color)}${short(s.id)}<br><small>凝膠 ${S.gel[s.id] || 0}</small></button>`).join('')}</div>
-  <div class="card"><div class="tbar" style="height:10px"><i id="benchBar"></i></div><button class="btn big" style="width:100%" data-act="benchMake" ${BN.busy || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>${BN.busy ? '捏製中…' : '手工捏製（消耗 2 份凝膠）'}</button><div class="small" style="color:var(--sub);margin-top:6px">庫存 ${S.stock.length}/${cap()}</div></div>`;
-}
+function renderBench() { if (!M.sp || !unlockedSpecies().some(s => s.id === M.sp)) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || unlockedSpecies()[0]).id; ui('bench'); } // 畫面改由 React 負責（components/stations/）
 function benchMake() {
   if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (S.stock.length >= cap()) return toast('庫存已滿');
   S.gel[sp] -= 2; BN.busy = true; renderBench(); sfx.squish(1); [360, 760, 1150].forEach((ms, i) => setTimeout(() => { sfx.crunch(.75 + i * .2, .95); sfx.squish(.5, 1 + i * .08); }, ms)); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
@@ -3904,19 +3844,9 @@ function mapImage() {
   g.strokeStyle = '#7c5a3a'; g.lineWidth = 8; g.strokeRect(4, 4, 442, 442);
   return MAPIMG = c.toDataURL('image/jpeg', .85);
 }
-function renderMapGame() {
-  const q = qState();
-  $('#mapBody').innerHTML = `<div class="hint">點擊地圖碎片可以旋轉 90°。把九塊碎片都轉回正確的方向（文字要是正的、河流與路徑要連起來），地圖就會重新拼合。</div>
-  <div class="mapgrid" style="--mapimg:url(${mapImage()})">${q.map.map((r, i) => `<button class="mtile" data-act="mapRot" data-i="${i}" style="background-position:${(i % 3) * 50}% ${Math.floor(i / 3) * 50}%;transform:rotate(${r * 90}deg)" aria-label="碎片 ${i + 1}"></button>`).join('')}</div>`;
-}
+function renderMapGame() { ui('mapg'); } // 畫面改由 React 負責（components/stations/）
 /* ---------- 石碑面板（熔岩柱謎題） ---------- */
-function renderRiddle() {
-  const q = qState(), cl = pillarClues(q.pil), n = cl.filter(c => c.ok).length;
-  $('#riddleBody').innerHTML = `<div class="riddle">${TABLET_TXT}</div>
-  <div class="hint" style="margin-top:10px">這四條線索已經整理成清單。回到柱子前，對準熔岩柱${ENTER()}，切換頂端晶石的史萊姆種類；柱子上方會顯示名稱，左上角的目標欄會即時告訴你哪些線索已經滿足。面向北方時，最左邊是第 1 根。</div>
-  <div class="slotrow">${q.pil.map((v, i) => `<div class="slot2" style="border-color:${pSp(v).color}"><small>第 ${i + 1} 根</small><b>${dot(pSp(v).color)}${short(PILLAR[v])}</b></div>`).join('')}</div>
-  <div class="card"><div class="small" style="margin-bottom:6px">已滿足 <b style="color:var(--good)">${n}/4</b> 條線索</div>${pillarExtra()}</div>${hintBlock('pillar')}`;
-}
+function renderRiddle() { ui('riddle'); } // 畫面改由 React 負責（components/stations/）
 function mapRotate(i) {
   const q = qState(); if (q.map.every(r => r === 0)) return; q.map[i] = (q.map[i] + 1) % 4; sfx.tick(); save(); renderMapGame();
   if (q.map.every(r => r === 0)) { sfx.pop(); toast('地圖拼好了！'); setTimeout(() => { closeGui(); discoverZone('coast'); }, 700); }
@@ -4158,6 +4088,19 @@ function offlineCatchUp() {
   let gain = 0, n = 0; for (let i = 0; i < Math.floor(el / 4); i++) { const before = S.earned; if (webTick()) { gain += S.earned - before; n++; } }
   if (n) setTimeout(() => toast(`離線期間網站賣出 ${n} 件，+${fmt(gain)}`), 800);
 }
+
+/* ---------- 給 React 介面用（components/stations/）----------
+   已改成 React 的分頁：這裡不再組 HTML，只發出 slime:ui 通知重繪；React 的按鈕一樣帶 data-act，點擊仍由上面的 click 處理。
+   React 透過 window.SlimeGame 讀遊戲狀態與計算函式，所以價格、需求、訂單等規則只有這裡一份。 */
+function ui(name) { window.dispatchEvent(new CustomEvent('slime:ui', { detail: name })); }
+window.SlimeGame = {
+  get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
+  get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
+  SP, SPECIES, ZONES, RAR, UPS, OWN, PACKS, DECO, CUTS, TIER, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
+  fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
+  unlockedSpecies, tierOf, defPrice, demand, speedTxt, xpLevel, decoBonus,
+  qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, pillarClues, pSp, pillarExtra, hintBlock, tideStepsHTML, cluesDone, mapImage, enter: ENTER,
+};
 
 /* ---------- 啟動 ---------- */
 offlineCatchUp(); trend.sp = pick(unlockedSpecies()).id; renderTop();

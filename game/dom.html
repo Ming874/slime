@@ -1,4 +1,4 @@
-<!-- 遊戲的畫面元件（HUD、工作站介面、主選單、對話框）。由 game.js 直接操作，React 不會重繪這一段（見 components/GameClient.tsx） -->
+<!-- 遊戲的畫面元件（HUD、工作站介面、主選單、對話框）。由 game.js 直接操作；data-rx 的分頁內容由 React 畫（components/stations/Panels.tsx） -->
 <div id="game">
   <canvas id="worldCv"></canvas>
 
@@ -91,41 +91,27 @@
           </details>
         </section>
 
-        <section class="panel" id="p-web">
-          <div id="webInfo" class="card"></div>
-          <div class="hint">被動收入：即使不直播也會有顧客上門（離線最多結算 30 分鐘）。單價較低，但顧客會留下評價。</div>
-          <h3>貨架（點擊下架）</h3>
-          <div id="webShelf" class="grid"></div>
-          <h3>庫存（點擊上架）</h3>
-          <div id="webStock" class="grid"></div>
-          <details class="fold"><summary>網站定價</summary><div id="webPrice"></div></details>
-          <h3>最新評價</h3>
-          <div id="reviews" class="card small"></div>
-        </section>
+        <section class="panel" id="p-web"><div class="rx" data-rx="web"></div></section>
 
-        <section class="panel" id="p-up"><div id="upList"></div></section>
+        <section class="panel" id="p-up"><div class="rx" data-rx="shop"></div></section>
 
         <section class="panel" id="p-branch">
           <div class="stagewrap mk" id="facWrap" hidden><canvas id="facCv"></canvas></div>
           <div id="branchBody"></div>
         </section>
 
-        <section class="panel" id="p-codex"><div id="codexBody"></div></section>
+        <section class="panel" id="p-codex"><div class="rx" data-rx="codex"></div></section>
 
-        <section class="panel" id="p-inv">
-          <div id="invGrid" class="invgrid"></div>
-          <div id="invInfo" class="card small"></div>
-          <div id="questBox" class="card quest"></div>
-        </section>
+        <section class="panel" id="p-inv"><div class="rx" data-rx="inv"></div></section>
 
-        <section class="panel" id="p-bench"><div id="benchBody"></div></section>
-        <section class="panel" id="p-museum"><div id="museumBody"></div></section>
-        <section class="panel" id="p-visit"><div id="visitBody"></div></section>
-        <section class="panel" id="p-weekly"><div id="weeklyBody"></div></section>
+        <section class="panel" id="p-bench"><div class="rx" data-rx="bench"></div></section>
+        <section class="panel" id="p-museum"><div class="rx" data-rx="museum"></div></section>
+        <section class="panel" id="p-visit"><div class="rx" data-rx="visit"></div></section>
+        <section class="panel" id="p-weekly"><div class="rx" data-rx="weekly"></div></section>
 
-        <section class="panel" id="p-mapg"><div id="mapBody"></div></section>
+        <section class="panel" id="p-mapg"><div class="rx" data-rx="mapg"></div></section>
 
-        <section class="panel" id="p-riddle"><div id="riddleBody"></div></section>
+        <section class="panel" id="p-riddle"><div class="rx" data-rx="riddle"></div></section>
 
         <section class="panel" id="p-pause">
           <div class="menu">
