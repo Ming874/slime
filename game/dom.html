@@ -1,16 +1,4 @@
-<!doctype html>
-<html lang="zh-Hant">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#0a0e14">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>史萊姆捏捏工坊</title>
-<link rel="stylesheet" href="style.css?v=dev">
-</head>
-<body>
+<!-- 遊戲的畫面元件（HUD、工作站介面、主選單、對話框）。由 game.js 直接操作，React 不會重繪這一段（見 components/GameClient.tsx） -->
 <div id="game">
   <canvas id="worldCv"></canvas>
 
@@ -176,28 +164,3 @@
 </div>
 <div id="fade" hidden></div>
 <div id="modal" hidden><div class="mbox" id="mbox"></div></div>
-<div id="login" hidden>
-  <div class="login-card">
-    <div class="lslime" aria-hidden="true"><i></i><i></i><em></em><em></em></div>
-    <div class="lshadow" aria-hidden="true"></div>
-    <div class="lkicker">SQUISH LAB</div>
-    <h1>史萊姆捏捏工坊</h1>
-    <p class="lsub">走進月光谷，採集、加工、直播你的酥脆捏捏</p>
-    <div id="loginGo">
-      <a class="btn big gbtn" id="loginBtn" href="/api/auth/google">
-        <svg class="glogo" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-        用 Google 登入
-      </a>
-      <p class="lnote">換電腦、換手機都能接著玩：進度會存在雲端。</p>
-    </div>
-    <div id="loginPick" hidden></div>
-    <div id="loginMsg" class="lmsg" role="alert"></div>
-    <a class="lpriv" href="privacy.html" target="_blank" rel="noopener">隱私權政策</a>
-  </div>
-</div>
-<div id="boot" hidden><div class="bootc"><div class="spin"></div><div id="bootTxt">正在生成月光谷…</div></div></div>
-<script src="vendor/three.min.js"></script>
-<script src="vendor/peerjs.min.js"></script>
-<script src="gate.js?v=dev"></script>
-</body>
-</html>

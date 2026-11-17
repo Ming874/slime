@@ -38,11 +38,15 @@ await new Promise((r) => google.listen(0, '127.0.0.1', r));
 
 // ---------- 啟動伺服器 ----------
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'slime-test-'));
+// 假的網站檔案（代替 next build 的 out/）
+const SITE = fs.mkdtempSync(path.join(os.tmpdir(), 'slime-site-'));
+fs.mkdirSync(path.join(SITE, '_next', 'static'), { recursive: true });
+for (const [f, t] of [['index.html', 'game'], ['admin.html', 'admin'], ['404.html', 'missing'], ['_next/static/app.js', 'js']]) fs.writeFileSync(path.join(SITE, f), t);
 const PORT = 20000 + Math.floor(Math.random() * 20000);
 const BASE = `http://127.0.0.1:${PORT}`;
 const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(HERE, 'server.js')], {
   env: {
-    ...process.env, PORT: String(PORT), HOST: '127.0.0.1', PUBLIC_URL: BASE, DATA_DIR: DATA, SERVE_STATIC: '1',
+    ...process.env, PORT: String(PORT), HOST: '127.0.0.1', PUBLIC_URL: BASE, DATA_DIR: DATA, SERVE_STATIC: '1', STATIC_DIR: SITE,
     GOOGLE_CLIENT_ID: CLIENT_ID, GOOGLE_CLIENT_SECRET: SECRET, ADMIN_EMAILS: 'admin@test.dev, Boss@Test.dev',
     GOOGLE_AUTH_URL: 'https://google.invalid/auth', GOOGLE_TOKEN_URL: `http://127.0.0.1:${google.address().port}/token`,
   },
@@ -55,7 +59,7 @@ for (let i = 0; i < 50; i++) {
   try { if ((await fetch(BASE + '/api/health')).ok) break; } catch { /* 還沒起來 */ }
   await new Promise((r) => setTimeout(r, 100));
 }
-test.after(() => { srv.kill(); google.close(); fs.rmSync(DATA, { recursive: true, force: true }); });
+test.after(() => { srv.kill(); google.close(); fs.rmSync(DATA, { recursive: true, force: true }); fs.rmSync(SITE, { recursive: true, force: true }); });
 
 // ---------- 小工具 ----------
 const cookieOf = (res, name) => (res.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).find((c) => c.startsWith(name + '='))?.slice(name.length + 1);
@@ -127,6 +131,7 @@ test('管理員加入網域與信箱；非管理員不能用管理功能', async
   const dom = list.body.list.find((x) => x.entry === '@school.test');
   assert.equal(dom.note, '三年二班');
   assert.equal(dom.users, 1);
+  assert.equal(list.body.players, 3, '玩家總數');
   // 網域不能設成管理員
   assert.equal((await admin('PATCH', '/api/admin/allow', { entry: '@school.test', admin: true })).status, 400);
 });
@@ -213,11 +218,14 @@ test('登出', async () => {
   assert.equal((await s('GET', '/api/me')).status, 401);
 });
 
-test('本機模式提供網站檔案，但不提供伺服器程式與設定', async () => {
-  assert.equal((await fetch(BASE + '/')).status, 200);
-  assert.equal((await fetch(BASE + '/admin')).status, 200);
-  assert.equal((await fetch(BASE + '/server/server.js')).status, 404);
-  assert.equal((await fetch(BASE + '/.env')).status, 404);
+test('本機模式提供 out/ 的網站檔案，跑不出資料夾', async () => {
+  const get = async (p) => { const r = await fetch(BASE + p); return [r.status, await r.text(), r.headers.get('cache-control')]; };
+  assert.deepEqual((await get('/')).slice(0, 2), [200, 'game']);
+  assert.deepEqual((await get('/admin')).slice(0, 2), [200, 'admin']);
+  assert.equal((await get('/_next/static/app.js'))[2], 'public, max-age=31536000, immutable');
+  assert.deepEqual((await get('/nope')).slice(0, 2), [404, 'missing']);
+  assert.equal((await get('/..%2f..%2fserver%2fserver.js'))[0], 404);
+  assert.equal((await get('/.env'))[0], 404);
 });
 
 test('每天的資料庫快照', () => {

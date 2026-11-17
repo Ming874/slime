@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # slime.iosoftware.ai: static game files served by Caddy + a small Node API (Google login, cloud saves, SQLite)
-  # in the same container; the Mac builds the Dockerfile at the repo root.
+  # slime.iosoftware.ai: Next.js (React) static export served by Caddy + a small Node API (Google login, cloud saves,
+  # SQLite) in the same container; the Mac builds the Dockerfile at the repo root.
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -22,8 +22,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: JavaScript syntax
-        run: node --check gate.js && node --check game.js && node --check admin.js && node --check server/server.js
+      - run: npm ci --no-audit --no-fund
+      - name: Type check (React / Next.js)
+        run: npm run typecheck
+      - name: Build (Next.js static export)
+        run: npm run build
+      - name: JavaScript syntax (game engine, server)
+        run: node --check public/game/game.js && node --check server/server.js
       - name: Server tests (fake Google login, allowlist, saves)
         run: npm test
       - name: Caddyfile
@@ -49,15 +54,16 @@ jobs:
         run: |
           docker run -d --name slime -p 8080:8080 slime:ci
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/health >/dev/null && break; sleep 1; done
-          # 建置時要把 ?v=dev 換成 12 碼內容雜湊（見 Dockerfile），玩家才會在部署後立刻拿到新版
+          # 遊戲頁預先載入的 script 網址要帶 12 碼內容雜湊（app/page.tsx），玩家才會在部署後立刻拿到新版
           curl -fsS http://127.0.0.1:8080/ > index.out
-          grep -Eq '<script src="gate\.js\?v=[0-9a-f]{12}"' index.out
-          grep -Eq 'href="style\.css\?v=[0-9a-f]{12}"' index.out
-          V=$(grep -Eo 'gate\.js\?v=[0-9a-f]{12}' index.out | cut -d= -f2); echo "site version: $V"
-          curl -fsS -o /dev/null "http://127.0.0.1:8080/game.js?v=$V"
-          curl -fsS -o /dev/null http://127.0.0.1:8080/vendor/three.min.js
+          grep -q 'id="worldCv"' index.out
+          G=$(grep -Eo '/game/game\.js\?v=[0-9a-f]{12}' index.out | head -1); echo "game: $G"; test -n "$G"
+          curl -fsS -o /dev/null "http://127.0.0.1:8080$G"
+          curl -fsS -o /dev/null "http://127.0.0.1:8080$(grep -Eo '/vendor/three\.min\.js\?v=[0-9a-f]{12}' index.out | head -1)"
           curl -fsS -o /dev/null http://127.0.0.1:8080/admin
-          curl -fsS -o /dev/null http://127.0.0.1:8080/privacy.html
+          curl -fsS -o /dev/null http://127.0.0.1:8080/privacy
+          JS=$(grep -Eo '/_next/static/[^"]+\.js' index.out | head -1); echo "next: $JS"
+          curl -fsSI "http://127.0.0.1:8080$JS" | grep -qi 'cache-control: public, max-age=31536000, immutable'
           # /api/ 由 Caddy 轉給容器裡的 Node；沒登入要回 401；伺服器程式不能被當成網站檔案拿到
           for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/api/health >/dev/null && break; sleep 1; done
           curl -fsS http://127.0.0.1:8080/api/health

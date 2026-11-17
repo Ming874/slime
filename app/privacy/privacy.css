@@ -1,0 +1,12 @@
+/* 隱私權政策頁（/privacy） */
+:root{--bg:#0a0e14;--card:#151d29;--line:#263243;--tx:#e6edf5;--sub:#8b9bb0;--acc:#22d3ee}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.8 "Inter","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+.kicker{font:800 12px/1 Inter,sans-serif;letter-spacing:4px;color:var(--acc)}
+h1{margin:8px 0 4px;font-size:24px}
+h2{margin:28px 0 6px;font-size:17px}
+p,li{color:#cfd8e3}
+.sub{color:var(--sub);font-size:13px}
+a{color:var(--acc)}
+ul{padding-left:22px}

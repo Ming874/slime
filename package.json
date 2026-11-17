@@ -2,9 +2,25 @@
   "name": "slime",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/server.js",
+    "dev": "node scripts/dev.mjs",
+    "build": "next build",
+    "start": "SERVE_STATIC=1 node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server/server.js",
+    "typecheck": "tsc --noEmit",
     "test": "node --disable-warning=ExperimentalWarning server/server.test.mjs"
+  },
+  "dependencies": {
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3"
   }
 }

@@ -3296,7 +3296,7 @@ function renderAcct() {
     <div class="row"><input id="acctName" maxlength="12" value="${esc(C.user.name)}" aria-label="暱稱" autocomplete="off"><button class="btn sm" data-act="acctName">改暱稱</button></div>
     <div class="sync" id="acctSync"></div>
     <div class="row"><button class="btn ghost sm grow" data-act="logout">登出</button><button class="btn ghost sm grow" data-act="delMe">刪除我的資料</button></div>
-    <div class="row">${C.user.admin ? '<a href="admin.html" target="_blank" rel="noopener">管理允許名單</a>' : ''}<span class="grow"></span><a href="privacy.html" target="_blank" rel="noopener" style="color:var(--sub)">隱私權政策</a></div></div>`);
+    <div class="row">${C.user.admin ? '<a href="/admin" target="_blank" rel="noopener">管理允許名單</a>' : ''}<span class="grow"></span><a href="/privacy" target="_blank" rel="noopener" style="color:var(--sub)">隱私權政策</a></div></div>`);
   $('#acctSync').textContent = '雲端存檔：' + C.status();
 }
 function renderPause() {
@@ -4123,7 +4123,7 @@ function offlineCatchUp() {
 /* ---------- 啟動 ---------- */
 offlineCatchUp(); trend.sp = pick(unlockedSpecies()).id; renderTop();
 if (initWorld()) { renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動'; }
-{ const bt = $('#boot'); if (bt && !bt.hidden) { bt.classList.add('out'); setTimeout(() => { bt.hidden = true; bt.classList.remove('out'); }, 520); } }
+window.dispatchEvent(new Event('slime:ready')); // 通知 React 收起載入畫面（components/LoginGate.tsx）
 addEventListener('beforeunload', save); addEventListener('pagehide', () => { save(); cloud('leave'); if (NET.on) netLeave(true); });
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {

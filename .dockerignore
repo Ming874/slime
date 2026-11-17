@@ -10,3 +10,5 @@ Dockerfile
 .env.*
 data
 node_modules
+.next
+out

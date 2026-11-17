@@ -1,5 +1,6 @@
 // 史萊姆捏捏工坊的伺服器：Google 登入（OAuth 2.0 授權碼＋PKCE）與玩家雲端存檔（SQLite）。
-// 正式站：Caddy 提供網站檔案，把 /api/ 轉過來（見 Caddyfile、start.sh）。本機測試：SERVE_STATIC=1 時也順便提供網站檔案。
+// 正式站：Caddy 提供網站檔案（Next.js 靜態匯出的 out/），把 /api/ 轉過來（見 Caddyfile、start.sh）。
+// 本機：npm run dev 時由 next dev 提供頁面；npm start（SERVE_STATIC=1）時這裡也順便提供 out/ 的檔案。
 // 沒有外部套件，只用 Node 內建模組（node:sqlite 需要 Node 22.13 以上）。
 import http from 'node:http';
 import fs from 'node:fs';
@@ -18,6 +19,7 @@ const SECURE = PUBLIC_URL.startsWith('https://');
 const REDIRECT_URI = `${PUBLIC_URL}/api/auth/google/callback`;
 const DATA = path.resolve(env.DATA_DIR || path.join(ROOT, 'data'));
 const SERVE_STATIC = env.SERVE_STATIC === '1';
+const STATIC_DIR = path.resolve(env.STATIC_DIR || path.join(ROOT, 'out'));
 const GOOGLE = {
   clientId: env.GOOGLE_CLIENT_ID || '',
   clientSecret: env.GOOGLE_CLIENT_SECRET || '', // 用戶端密碼：只放在伺服器的設定，不能出現在網頁或 git
@@ -409,7 +411,7 @@ async function api(req, res, url) {
     if (!user.admin) return out(403, { error: '只有管理員可以使用' });
     if (route === 'GET /api/admin/allow') {
       const rows = q.allowList.all().map((r) => ({ entry: r.entry, admin: r.admin === 1, note: r.note, addedBy: r.added_by, createdAt: r.created_at, users: r.users }));
-      return out(200, { list: rows, me: user.email });
+      return out(200, { list: rows, me: user.email, players: db.prepare('SELECT COUNT(*) AS n FROM users').get().n });
     }
     // 一次可以貼很多個（換行、逗號、空白分隔）；admin 只套用在完整信箱上
     if (route === 'POST /api/admin/allow') {
@@ -452,14 +454,27 @@ async function api(req, res, url) {
   return out(404, { error: '找不到這個功能' });
 }
 
-// ---------- 本機測試用：提供網站檔案（正式站由 Caddy 負責） ----------
-const STATIC_FILES = new Set(['/index.html', '/gate.js', '/game.js', '/style.css', '/privacy.html', '/admin.html', '/admin.js', '/vendor/three.min.js', '/vendor/peerjs.min.js']);
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
+// ---------- 本機測試用：提供 out/ 的網站檔案（正式站由 Caddy 負責） ----------
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 function serveStatic(req, res, url) {
-  const p = url.pathname === '/' ? '/index.html' : url.pathname === '/admin' ? '/admin.html' : url.pathname;
-  if (!STATIC_FILES.has(p) || !['GET', 'HEAD'].includes(req.method)) return send(res, 404, { error: 'not found' });
-  res.writeHead(200, { 'content-type': TYPES[path.extname(p)], 'cache-control': 'no-cache' });
-  res.end(req.method === 'HEAD' ? undefined : fs.readFileSync(path.join(ROOT, p)));
+  if (!['GET', 'HEAD'].includes(req.method)) return send(res, 405, { error: 'method not allowed' });
+  let rel;
+  try { rel = decodeURIComponent(url.pathname); } catch { return send(res, 400, { error: 'bad request' }); }
+  // 與 Caddy 的 try_files 相同：/admin → admin.html、/ → index.html
+  const tries = rel.endsWith('/') ? [rel + 'index.html'] : [rel, rel + '.html', rel + '/index.html'];
+  for (const t of tries) {
+    const file = path.join(STATIC_DIR, t);
+    if (rel.includes('\0') || !file.startsWith(STATIC_DIR + path.sep)) break; // 不能跑出 out/
+    let st;
+    try { st = fs.statSync(file); } catch { continue; }
+    if (!st.isFile()) continue;
+    const cache = t.startsWith('/_next/static/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+    res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': cache });
+    return res.end(req.method === 'HEAD' ? undefined : fs.readFileSync(file));
+  }
+  const nf = path.join(STATIC_DIR, '404.html');
+  if (fs.existsSync(nf)) { res.writeHead(404, { 'content-type': TYPES['.html'], 'cache-control': 'no-cache' }); return res.end(fs.readFileSync(nf)); }
+  send(res, 404, { error: 'not found' });
 }
 
 const server = http.createServer(async (req, res) => {
