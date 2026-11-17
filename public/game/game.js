@@ -2504,9 +2504,20 @@ function lineViewPose() {
   const p = new THREE.Vector3(focus ? lx + MX[M.step] : .4, y, lz + dist), pitch = Math.atan2(y - (ly + 1.3), dist) + vf * (focus ? .2 : .24);
   return { p, t: p.clone().add(new THREE.Vector3(0, -Math.sin(pitch), -Math.cos(pitch))) };
 }
-const camT = new THREE.Vector3();
+const camT = new THREE.Vector3(), camQ = new THREE.Quaternion(), camE = new THREE.Euler(0, 0, 0, 'YXZ'), UP = new THREE.Vector3(0, 1, 0);
+// 每個工作站鏡頭停的位置：d＝離工作站多遠、h＝比工作站高多少（桌面類往下看）
+const CAMF = { pc: { d: 1.15, h: .12 }, bench: { d: .85, h: .95 }, decor: { d: .85, h: .95 }, shop: { d: 1.7, h: .25 }, museum: { d: 2.3, h: .35 }, mapg: { d: 1.25, h: .7 }, riddle: { d: 1.6, h: .2 } };
+function focusPose(f, kind) {
+  const c = CAMF[kind]; if (!c) return null;
+  const ex = P.x, ez = P.z, dx = f.x - ex, dz = f.z - ez, dist = Math.hypot(dx, dz); if (dist < .05) return null;
+  const d = Math.min(c.d, dist), p = new THREE.Vector3(f.x - dx / dist * d, 0, f.z - dz / dist * d);
+  p.y = Math.max(f.y + c.h, G(p.x, p.z) + .7);
+  return { p, q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(p, f, UP)) };
+}
 function cameraStep(dt) {
   const cam = W.cam;
+  const fp = GUI.kind && GUI.kind !== 'line' && GUI.focus ? focusPose(GUI.focus, GUI.kind) : null;
+  if (fp) { const k = Math.min(1, dt * 3.2); cam.position.lerp(fp.p, k); cam.quaternion.slerp(fp.q, k); W.camAway = true; return; }
   if (GUI.kind === 'line') {
     const v = lineViewPose(), q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(v.p, v.t, new THREE.Vector3(0, 1, 0)));
     cam.position.lerp(v.p, Math.min(1, dt * 4)); cam.quaternion.slerp(q, Math.min(1, dt * 4)); W.camAway = true;
@@ -2516,8 +2527,14 @@ function cameraStep(dt) {
   // 頭部晃動：上下＋左右輕擺；側移時鏡頭微微傾斜；落地時鏡頭下沉回彈；奔跑時視野加寬
   const hsp = Math.hypot(P.vx, P.vz), mv = P.ground ? clamp(hsp / 4.3, 0, 1.4) : 0, bob = Math.abs(Math.sin(P.bob)) * .05 * mv - .025 * mv, side = Math.sin(P.bob) * .025 * mv;
   const cy = Math.cos(P.yaw), sy = Math.sin(P.yaw), target = camT.set(P.x + cy * side, P.camY + P.eye + bob + P.dip, P.z - sy * side);
-  if (W.camAway) { cam.position.lerp(target, Math.min(1, dt * 6)); if (cam.position.distanceTo(target) < .05) W.camAway = false; } else cam.position.copy(target);
   const lat = P.vx * cy - P.vz * sy; P.roll += ((-lat * .0045 + Math.sin(P.bob) * .004 * mv) - P.roll) * Math.min(1, dt * 8);
+  if (W.camAway) {
+    // 從工作站轉回來：位置與方向一起平順回到玩家視角
+    const k = Math.min(1, dt * 6); cam.position.lerp(target, k); camQ.setFromEuler(camE.set(P.pitch, P.yaw, P.roll, 'YXZ')); cam.quaternion.slerp(camQ, k);
+    if (cam.position.distanceTo(target) < .05 && cam.quaternion.angleTo(camQ) < .02) W.camAway = false;
+    return;
+  }
+  cam.position.copy(target);
   cam.rotation.set(P.pitch, P.yaw, P.roll, 'YXZ');
   const fov = (W.fov0 || 72) + (P.running && hsp > 5 ? 7 + 2.5 * S.up.boots : 0) - (P.sneak ? 4 : 0); if (Math.abs(cam.fov - fov) > .02) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
 }
@@ -2576,6 +2593,10 @@ function act() { if (GUI.kind || !W.ready) return; if (TARGET && TARGET.type ===
 function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
 function doAct(t) {
   if (!t) return;
+  FOCUS = (t.type === 'station' || t.type === 'puzzle') && t.it && t.it.wp ? t.it.wp.clone() : null;
+  try { doActAt(t); } finally { FOCUS = null; }
+}
+function doActAt(t) {
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
   else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
   else if (t.type === 'avatar') giftGel(t.id);
@@ -2716,6 +2737,24 @@ const GUIS = {
 };
 const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
+/* 沉浸式介面：每個工作站用一種「道具」呈現（components/StationLayer.tsx 加上外觀與動畫，app/stations.css 是樣式）。
+   打開時鏡頭推近工作站（cameraStep 的 GUI.focus），關閉時等收起動畫播完才藏起來。 */
+const PROP = { line: 'machine', bench: 'mat', decor: 'mat', inv: 'journal', pause: 'notebook', pc: 'monitor', live: 'phone', shop: 'catalog', mapg: 'parchment', riddle: 'tablet', museum: 'vitrine' };
+const GUI_OUT_MS = 380;
+let guiHideT = 0, FOCUS = null;
+function guiShow(kind) {
+  clearTimeout(guiHideT); const g = $('#gui'), was = !g.hidden && !g.classList.contains('closing');
+  g.dataset.prop = PROP[kind] || 'card'; g.dataset.kind = kind; g.classList.remove('closing'); g.hidden = false;
+  if (!was) { g.classList.remove('opening'); void g.offsetWidth; g.classList.add('opening'); }
+  window.dispatchEvent(new CustomEvent('slime:gui', { detail: { open: true, kind, prop: g.dataset.prop } }));
+}
+function guiHide(now) {
+  const g = $('#gui'), done = () => { g.hidden = true; g.classList.remove('closing', 'opening'); if (!GUI.kind) $$('.panel').forEach(p => p.classList.remove('on')); };
+  window.dispatchEvent(new CustomEvent('slime:gui', { detail: { open: false } }));
+  clearTimeout(guiHideT);
+  if (now || matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
+  g.classList.remove('opening'); g.classList.add('closing'); guiHideT = setTimeout(done, GUI_OUT_MS);
+}
 function openGui(kind, sec) {
   const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now();
   const it = held();
@@ -2723,17 +2762,17 @@ function openGui(kind, sec) {
   if (kind === 'line' && !M.sp) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || {}).id || null;
   if (kind === 'decor' && it && it.t === 'prod') D.id = it.p.id;
   if (kind === 'live' && it && it.t === 'prod' && !stockById(L.stageId)) L.stageId = it.p.id;
-  $('#gui').hidden = false; $('#gui').classList.toggle('sheet', kind === 'line'); $('#gtitle').textContent = g.t; $('#startHint').hidden = true;
+  GUI.focus = FOCUS; FOCUS = null; guiShow(kind); $('#gui').classList.toggle('sheet', kind === 'line'); $('#gtitle').textContent = g.t; $('#startHint').hidden = true;
   showSec(sec || g.tabs[0]);
 }
 function guiTabs() { const g = GUIS[GUI.kind]; return g.tabs.filter(t => (t !== 'branch' || S.branch || branchReady()) && (t !== 'arms' || armsOpen()) && (t !== 'visit' || NET.on)); }
 function renderGuiTabs() { const tabs = guiTabs(); $('#gtabs').innerHTML = tabs.length > 1 ? tabs.map(t => `<button class="${t === tab ? 'on' : ''}" data-act="sec" data-sec="${t}">${TABN[t]}${t === 'branch' && !S.branch ? ' ●' : ''}</button>`).join('') : ''; }
 const PANEL = { mach: 'up', gear: 'up', mall: 'up', arms: 'up', eshop: 'up' };
-function showSec(sec) { tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
+function showSec(sec) { window.dispatchEvent(new CustomEvent('slime:tab', { detail: { kind: GUI.kind, tab: sec, flip: !!tab && tab !== sec } })); tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
 function closeGui() {
   if (!GUI.kind) return; if (GUI.kind === 'line' && M.active) { toast('產線還在運轉，請先完成這一輪加工。'); return; }
   if (L.watch) stopWatch();
-  GUI.kind = null; tab = ''; $('#gui').hidden = true; $$('.panel').forEach(p => p.classList.remove('on')); save();
+  GUI.kind = null; GUI.focus = null; tab = ''; guiHide(); save();
   renderHotbar(true); lockMouse(); $('#startHint').hidden = locked() || TOUCH;
 }
 function refresh() { if (GUI.kind && tab) RENDER[tab](); renderTop(); renderHotbar(); }
@@ -3271,7 +3310,7 @@ function renderTitle() {
   $('#titleMain').hidden = false; $('#titleMp').hidden = true;
 }
 function showTitle() {
-  if (GUI.kind) { GUI.kind = null; tab = ''; $('#gui').hidden = true; $$('.panel').forEach(p => p.classList.remove('on')); }
+  if (GUI.kind) { GUI.kind = null; GUI.focus = null; tab = ''; guiHide(true); }
   if (L.watch) L.watch = null; L.on = false; M.active = false;
   unlockMouse(); TITLE.on = true; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
 }

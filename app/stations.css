@@ -1,0 +1,361 @@
+/* =====================================================================
+   沉浸式工作站：每個工作站的介面用一種道具呈現（game.js 的 PROP、components/StationLayer.tsx）
+   #gui[data-prop] 決定外觀；.opening／.closing 是 game.js 開關介面時加上的動畫狀態
+   ===================================================================== */
+#gui[data-prop]{background:radial-gradient(130% 100% at 50% 45%,#0000 35%,#000b 100%);perspective:1600px}
+#gui[data-prop].sheet{background:transparent}
+#gui.closing,#gui.closing .gwin{pointer-events:none}
+.gwin [class^="st-"],.gwin [class*=" st-"]{pointer-events:none}
+#gui[data-prop] .gwin{position:relative}
+#gui[data-prop] .ghead,#gui[data-prop] .gbody{position:relative;z-index:2}
+
+/* 預設（沒有指定道具） */
+#gui[data-prop="card"].opening .gwin{animation:st-pop .3s cubic-bezier(.2,.9,.3,1.15)}
+#gui[data-prop="card"].closing .gwin{animation:st-pop-out .3s forwards}
+@keyframes st-pop{from{opacity:0;transform:scale(.94) translateY(10px)}}
+@keyframes st-pop-out{to{opacity:0;transform:scale(.96) translateY(8px)}}
+
+/* ---------- 紙類道具共用：手帳、筆記本、型錄、羊皮紙、切割墊上的紙 ---------- */
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"]) .gwin,
+#gui[data-prop="mat"] .gbody{
+  --bg:#f3ead6;--bg2:#fbf5e6;--card:#fffdf6;--line:#dccdab;--tx:#33291d;--sub:#7b6a52;--acc:#0e7c74;--good:#15803d;--warn:#b45309;--red:#be123c;
+  color:var(--tx)
+}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) :is(.btn:not(.ghost),.btn.red){color:#fff}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot{background:#0000000f}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot.sel{border-color:var(--acc);background:#0e7c741a;box-shadow:none}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot .k{color:#0007}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .invgrid{background:#e6d6b0;border-color:#cbb68a}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .zbtn.on{background:#0e7c741a}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .item.sel{box-shadow:0 0 0 2px #0e7c7433}
+/* 手帳裡的探索日誌：像夾在頁間的紫色便條 */
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"]) .quest{background:#efe7fb;border-color:#c9b8ef;box-shadow:2px 3px 0 #0000000f}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"]) .quest b{color:#5b21b6}
+/* 紙上的分頁：墨水字＋底線 */
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) #gtabs button{background:transparent;border:0;border-radius:0;color:var(--sub);padding:6px 10px;border-bottom:2px solid transparent;font-weight:700}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) #gtabs button.on{color:var(--tx);border-bottom-color:var(--acc);background:transparent}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"]) .gclose{background:transparent;border-color:#0000;color:var(--sub)}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"]) .gclose:hover{color:var(--tx);background:#0000000d}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"]) #gtitle{font-family:"Noto Serif TC","Songti TC",serif;letter-spacing:1px}
+
+/* =====================================================================
+   手帳（背包＋圖鑑）：皮革書皮翻開，左頁扉頁、右頁內容；換分頁時翻頁
+   ===================================================================== */
+#gui[data-prop="journal"] .gwin{
+  width:min(1040px,100%);height:min(680px,calc(100% - 50px));
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);
+  overflow:visible;border:0;border-radius:4px 10px 10px 4px;transform-style:preserve-3d;
+  background:
+    linear-gradient(90deg,#0000 calc(50% - 34px),#5c3d1a14 calc(50% - 10px),#5c3d1a40 50%,#5c3d1a14 calc(50% + 10px),#0000 calc(50% + 34px)),
+    radial-gradient(120% 90% at 30% 15%,#fffcf2,#f5ead0 65%,#ead9b3);
+  box-shadow:0 0 0 9px #6b3f22,0 0 0 11px #4b2914,0 1px 0 12px #2e180b,0 34px 70px -18px #000,inset 0 0 50px #b8955a3a
+}
+#gui[data-prop="journal"] .ghead{grid-column:2;grid-row:1;background:transparent;border-bottom:1px dashed var(--line);padding:18px 22px 8px}
+#gui[data-prop="journal"] .gbody{grid-column:2;grid-row:2;padding:12px 22px 22px}
+#gui[data-prop="journal"] .st-left{grid-column:1;grid-row:1/3;position:relative;z-index:1;display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:40px 46px 30px 38px;color:var(--sub);font-family:"Noto Serif TC","Songti TC",serif}
+#gui[data-prop="journal"] .st-stamp{font:800 11px/1 Inter,sans-serif;letter-spacing:3px;color:#b91c1ccc;border:2px solid #b91c1c99;border-radius:4px;padding:6px 9px;transform:rotate(-6deg)}
+#gui[data-prop="journal"] .st-book-title{font-size:34px;font-weight:800;color:var(--tx);letter-spacing:4px;margin-top:10px}
+#gui[data-prop="journal"] .st-owner{font-size:15px}
+#gui[data-prop="journal"] .st-doodle{position:relative;width:110px;height:86px;margin:14px 0 4px;border:2.5px solid #33291dcc;border-radius:52% 52% 44% 44%/70% 70% 32% 32%;transform:rotate(-4deg)}
+#gui[data-prop="journal"] .st-doodle i{position:absolute;top:44%;width:9px;height:12px;border-radius:50%;background:#33291dcc}
+#gui[data-prop="journal"] .st-doodle i:first-child{left:30%}
+#gui[data-prop="journal"] .st-doodle i:nth-child(2){right:30%}
+#gui[data-prop="journal"] .st-doodle em{position:absolute;left:50%;top:62%;width:16px;height:8px;margin-left:-8px;border:2.5px solid #33291dcc;border-top:0;border-radius:0 0 14px 14px}
+#gui[data-prop="journal"] .st-doodle::after{content:"捏！";position:absolute;right:-46px;top:-6px;font-size:15px;color:#0e7c74;transform:rotate(10deg)}
+#gui[data-prop="journal"] .st-index{list-style:none;margin:18px 0 0;padding:0;width:100%;font-size:15px}
+#gui[data-prop="journal"] .st-index li{display:flex;gap:8px;padding:9px 0;border-bottom:1px dotted #a8916a}
+#gui[data-prop="journal"] .st-index li::after{content:"";flex:1}
+#gui[data-prop="journal"] .st-index li.on{color:var(--tx);font-weight:800}
+#gui[data-prop="journal"] .st-index li.on::before{content:"✎";color:#0e7c74}
+#gui[data-prop="journal"] .st-foot{margin-top:auto;font-size:12px;letter-spacing:2px;opacity:.7}
+#gui[data-prop="journal"] .st-spine{display:none}
+#gui[data-prop="journal"] .st-ribbon{position:absolute;left:calc(50% + 46px);top:calc(100% + 6px);width:14px;height:52px;background:linear-gradient(90deg,#991b1b,#dc2626 45%,#7f1d1d);clip-path:polygon(0 0,100% 0,100% 100%,50% 82%,0 100%);z-index:0}
+/* 書皮：蓋在右頁上，打開時往左翻 180 度 */
+#gui[data-prop="journal"] .st-cover{position:absolute;top:-11px;bottom:-11px;left:50%;right:-11px;z-index:6;display:grid;place-items:center;border-radius:2px 12px 12px 2px;transform-origin:0 50%;backface-visibility:hidden;opacity:0;
+  background:radial-gradient(90% 70% at 40% 30%,#8a5530,#5e361b 70%,#43240f);box-shadow:inset 0 0 0 6px #0000,inset 0 0 0 7px #d6a76455,inset 0 0 40px #0008}
+#gui[data-prop="journal"] .st-cover span{font:800 26px/1 "Noto Serif TC",serif;letter-spacing:8px;color:#e8c58a;text-shadow:0 1px 0 #0009,0 -1px 0 #fff2}
+#gui[data-prop="journal"].opening .st-cover{animation:st-cover-open .75s cubic-bezier(.45,.05,.25,1) both}
+#gui[data-prop="journal"].closing .st-cover{animation:st-cover-close .38s cubic-bezier(.5,0,.75,0) both}
+#gui[data-prop="journal"].opening .gwin{animation:st-lift .35s ease-out}
+#gui[data-prop="journal"].closing .gwin{animation:st-drop .38s ease-in forwards}
+@keyframes st-cover-open{0%{opacity:1;transform:rotateY(0)}75%{opacity:1}100%{opacity:1;transform:rotateY(-180deg)}}
+@keyframes st-cover-close{0%{opacity:1;transform:rotateY(-180deg)}100%{opacity:1;transform:rotateY(0)}}
+@keyframes st-lift{from{transform:translateY(24px) scale(.97);opacity:0}}
+@keyframes st-drop{to{transform:translateY(30px) scale(.97);opacity:0}}
+/* 翻頁：一張紙從右頁翻到左頁 */
+.st-flip{position:absolute;top:0;bottom:0;left:50%;right:0;z-index:5;transform-origin:0 50%;backface-visibility:hidden;border-radius:0 10px 10px 0;
+  background:linear-gradient(90deg,#d9c497 0,#f7eedb 12%,#fffcf3 60%,#efe1c0);box-shadow:-6px 0 18px #0003;animation:st-turn .55s cubic-bezier(.4,.1,.3,1) forwards}
+@keyframes st-turn{0%{transform:rotateY(0)}100%{transform:rotateY(-180deg)}}
+
+@media (max-width:760px){
+  #gui[data-prop="journal"] .gwin{grid-template-columns:minmax(0,1fr);height:min(680px,calc(100% - 30px));
+    background:radial-gradient(120% 90% at 30% 15%,#fffcf2,#f5ead0 65%,#ead9b3);box-shadow:0 0 0 7px #6b3f22,0 0 0 9px #4b2914,0 30px 60px -18px #000}
+  #gui[data-prop="journal"] :is(.ghead,.gbody){grid-column:1}
+  #gui[data-prop="journal"] .st-left{display:none}
+  #gui[data-prop="journal"] :is(.st-cover,.st-flip){left:-9px}
+  #gui[data-prop="journal"] .st-ribbon{left:auto;right:40px}
+}
+
+/* =====================================================================
+   筆記本（暫停選單）：上方線圈，往上翻開
+   ===================================================================== */
+#gui[data-prop="notebook"] .gwin{width:min(440px,100%);overflow:visible;border:0;border-radius:6px 6px 10px 10px;padding-top:20px;transform-origin:50% 0;
+  background:repeating-linear-gradient(180deg,#0000 0 29px,#7aa7d433 29px 30px) 0 66px,#fffdf5;
+  box-shadow:5px 6px 0 -1px #efe6d0,10px 12px 0 -2px #ddd1b4,0 34px 60px -18px #000}
+#gui[data-prop="notebook"] .ghead{background:transparent;border-bottom:2px solid #f43f5e33;padding:8px 14px 8px 58px}
+#gui[data-prop="notebook"] .gbody{padding:12px 16px 18px 58px}
+#gui[data-prop="notebook"] .st-rings{position:absolute;top:-13px;left:22px;right:22px;display:flex;justify-content:space-between;z-index:3}
+#gui[data-prop="notebook"] .st-rings i{width:9px;height:26px;border-radius:6px;border:3px solid #9aa3b2;border-bottom-color:#6b7280;background:linear-gradient(90deg,#0000 40%,#fff6 50%,#0000 60%)}
+#gui[data-prop="notebook"] .st-margin{position:absolute;left:44px;top:20px;bottom:0;width:2px;background:#f43f5e55;z-index:1}
+#gui[data-prop="notebook"] .st-band-v{position:absolute;right:-6px;top:30%;width:12px;height:38%;border-radius:4px;background:linear-gradient(90deg,#111827,#374151 50%,#111827);z-index:3;box-shadow:0 2px 4px #0006}
+#gui[data-prop="notebook"].opening .gwin{animation:st-flip-up .55s cubic-bezier(.2,.8,.25,1.08)}
+#gui[data-prop="notebook"].closing .gwin{animation:st-flip-down .38s ease-in forwards}
+@keyframes st-flip-up{0%{transform:rotateX(-92deg) translateY(40px);opacity:0}35%{opacity:1}}
+@keyframes st-flip-down{to{transform:rotateX(-88deg) translateY(30px);opacity:0}}
+
+/* =====================================================================
+   電腦螢幕（工作電腦）：開機，分頁是瀏覽器分頁
+   ===================================================================== */
+#gui[data-prop="monitor"]{padding-bottom:max(84px,env(safe-area-inset-bottom))}
+#gui[data-prop="monitor"] .gwin{width:min(980px,100%);height:min(640px,100%);overflow:visible;border:15px solid #181c24;border-bottom-width:30px;border-radius:16px;
+  background:#0d1422;box-shadow:0 0 0 1px #313847,inset 0 0 0 1px #000,0 46px 80px -30px #000;
+  --bg2:#0f1726;--card:#151f31;--bg:#0b1220;--line:#22304a}
+#gui[data-prop="monitor"] .ghead{order:0;background:#1b2231;border-bottom:0;padding:8px 8px 0 12px;align-items:flex-end;gap:2px;border-radius:2px 2px 0 0}
+#gui[data-prop="monitor"] #gtitle{font-size:12px;font-weight:700;color:#94a3b8;padding:0 12px 9px 46px;position:relative}
+#gui[data-prop="monitor"] #gtitle::before{content:"";position:absolute;left:0;top:4px;width:10px;height:10px;border-radius:50%;background:#f87171;box-shadow:15px 0 0 #fbbf24,30px 0 0 #34d399}
+#gui[data-prop="monitor"] #gtabs{align-self:flex-end;gap:2px}
+#gui[data-prop="monitor"] #gtabs button{border:0;border-radius:9px 9px 0 0;background:#141a26;color:#8b9bb0;padding:8px 16px;font-weight:600}
+#gui[data-prop="monitor"] #gtabs button.on{background:#0f1726;color:#e2e8f0}
+#gui[data-prop="monitor"] .gclose{width:30px;height:30px;margin-bottom:6px;border:0;background:transparent;color:#94a3b8}
+#gui[data-prop="monitor"] .gclose:hover{background:#ef4444;color:#fff}
+#gui[data-prop="monitor"] .st-url{order:1;position:relative;z-index:2;display:flex;align-items:center;gap:8px;padding:7px 12px;background:#0f1726;border-bottom:1px solid #1e293b}
+#gui[data-prop="monitor"] .st-url span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#1a2336;border-radius:999px;padding:5px 14px 5px 32px;font-size:12.5px;color:#94a3b8;position:relative}
+#gui[data-prop="monitor"] .st-url span::before{content:"";position:absolute;left:13px;top:50%;width:8px;height:6px;margin-top:-1px;border-radius:1px;background:#34d399}
+#gui[data-prop="monitor"] .st-url span::after{content:"";position:absolute;left:14px;top:50%;width:6px;height:6px;margin-top:-6px;border:1.5px solid #34d399;border-bottom:0;border-radius:4px 4px 0 0}
+#gui[data-prop="monitor"] .gbody{order:2;flex:1}
+#gui[data-prop="monitor"] .st-glass{position:absolute;inset:0;z-index:3;border-radius:2px;background:linear-gradient(118deg,#ffffff12 0%,#ffffff05 28%,#0000 42%)}
+#gui[data-prop="monitor"] .st-brand{position:absolute;left:50%;top:calc(100% + 9px);transform:translateX(-50%);font:800 9px/1 Inter,sans-serif;letter-spacing:4px;color:#5b6577}
+#gui[data-prop="monitor"] .st-brand i{position:absolute;right:-22px;top:0;width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399}
+#gui[data-prop="monitor"] .st-stand{position:absolute;left:50%;top:calc(100% + 30px);width:150px;height:50px;transform:translateX(-50%);z-index:-1;
+  background:linear-gradient(90deg,#141820,#2a303c 50%,#141820);clip-path:polygon(28% 0,72% 0,80% 78%,100% 82%,100% 100%,0 100%,0 82%,20% 78%)}
+/* 開機：先是一條亮線，再展開成畫面，最後浮現 SQUISH OS */
+#gui[data-prop="monitor"] .st-boot{position:absolute;inset:0;z-index:4;display:grid;place-items:center;background:#000;opacity:0;overflow:hidden}
+#gui[data-prop="monitor"] .st-boot::before{content:"";position:absolute;left:0;right:0;top:0;bottom:0;background:#dff3ff;transform:scaleX(0) scaleY(.004)}
+#gui[data-prop="monitor"] .st-boot b{position:relative;font:900 22px/1 Inter,sans-serif;letter-spacing:8px;color:#22d3ee;opacity:0;text-shadow:0 0 18px #22d3ee}
+#gui[data-prop="monitor"].opening .st-boot{animation:st-boot .95s ease-out both}
+#gui[data-prop="monitor"].opening .st-boot::before{animation:st-boot-line .95s ease-out both}
+#gui[data-prop="monitor"].opening .st-boot b{animation:st-boot-logo .95s ease-out both}
+#gui[data-prop="monitor"].opening .gwin{animation:st-zoom .45s ease-out}
+#gui[data-prop="monitor"].closing .st-boot{animation:st-off .38s ease-in both}
+#gui[data-prop="monitor"].closing .st-boot::before{animation:st-off-line .38s ease-in both}
+#gui[data-prop="monitor"].closing .gwin{animation:st-fade-out .38s ease-in forwards}
+@keyframes st-boot{0%,55%{opacity:1}100%{opacity:0}}
+@keyframes st-boot-line{0%{transform:scaleX(0) scaleY(.004)}18%{transform:scaleX(1) scaleY(.004);opacity:1}34%{transform:scaleX(1) scaleY(1);opacity:1}46%{opacity:0}100%{opacity:0;transform:scaleX(1) scaleY(1)}}
+@keyframes st-boot-logo{0%,40%{opacity:0;transform:scale(.9)}55%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0}}
+@keyframes st-off{0%{opacity:1}100%{opacity:1}}
+@keyframes st-off-line{0%{transform:scaleX(1) scaleY(1);opacity:.9}55%{transform:scaleX(1) scaleY(.004);opacity:1}100%{transform:scaleX(0) scaleY(.004);opacity:1}}
+@keyframes st-zoom{from{transform:scale(.94);opacity:0}}
+@keyframes st-fade-out{60%{opacity:1}to{opacity:0}}
+
+/* =====================================================================
+   手機（直播台）：從下方拿起手機
+   ===================================================================== */
+#gui[data-prop="phone"] .gwin{width:min(400px,100%);height:min(840px,100%);overflow:visible;border:11px solid #0a0c10;border-radius:48px;background:#0c1018;
+  box-shadow:0 0 0 2px #3b404c,0 0 0 4px #15181e,0 44px 90px -26px #000;--bg2:#0c1018}
+#gui[data-prop="phone"] .st-status{order:-1;position:relative;z-index:3;display:flex;align-items:center;gap:8px;height:42px;padding:6px 24px 0;font:700 13.5px/1 Inter,sans-serif;color:#f1f5f9;flex:none}
+#gui[data-prop="phone"] .st-status>span:first-child{flex:1}
+#gui[data-prop="phone"] .st-island{position:absolute;left:50%;top:8px;width:108px;height:30px;margin-left:-54px;border-radius:18px;background:#000}
+#gui[data-prop="phone"] .st-sig{display:flex;align-items:flex-end;gap:2px;height:11px}
+#gui[data-prop="phone"] .st-sig i{width:3px;border-radius:1px;background:#e2e8f0}
+#gui[data-prop="phone"] .st-sig i:nth-child(1){height:4px}#gui[data-prop="phone"] .st-sig i:nth-child(2){height:6px}#gui[data-prop="phone"] .st-sig i:nth-child(3){height:8px}#gui[data-prop="phone"] .st-sig i:nth-child(4){height:11px}
+#gui[data-prop="phone"] .st-bat{width:24px;height:11px;border:1.5px solid #e2e8f0;border-radius:3px;position:relative;background:linear-gradient(90deg,#e2e8f0 0 70%,#0000 70%);background-clip:content-box;padding:1px}
+#gui[data-prop="phone"] .st-bat::after{content:"";position:absolute;right:-4px;top:2px;width:2px;height:4px;background:#e2e8f0;border-radius:0 1px 1px 0}
+#gui[data-prop="phone"] .ghead{background:transparent;border-bottom:1px solid #ffffff12;padding:6px 14px 8px}
+#gui[data-prop="phone"] .gbody{border-radius:0 0 36px 36px;padding:10px 12px 30px}
+#gui[data-prop="phone"] .st-home{position:absolute;left:50%;bottom:8px;width:128px;height:5px;margin-left:-64px;border-radius:3px;background:#e2e8f0aa;z-index:3}
+#gui[data-prop="phone"] .st-btn{position:absolute;width:4px;border-radius:2px;background:#2d323c}
+#gui[data-prop="phone"] .st-btn.a{left:-15px;top:120px;height:34px}
+#gui[data-prop="phone"] .st-btn.b{left:-15px;top:170px;height:58px}
+#gui[data-prop="phone"] .st-btn.c{right:-15px;top:150px;height:80px}
+#gui[data-prop="phone"].opening .gwin{animation:st-phone-up .6s cubic-bezier(.2,.9,.25,1.04)}
+#gui[data-prop="phone"].closing .gwin{animation:st-phone-down .38s ease-in forwards}
+@keyframes st-phone-up{0%{transform:translateY(60%) rotate(-8deg) scale(.9);opacity:0}40%{opacity:1}}
+@keyframes st-phone-down{to{transform:translateY(65%) rotate(6deg) scale(.92);opacity:0}}
+@keyframes st-blink{50%{opacity:.55}}
+
+/* =====================================================================
+   機器控制面板（加工產線）：從機器上往上翻起
+   ===================================================================== */
+#gui[data-prop="machine"]{perspective:1100px}
+#gui[data-prop="machine"] .gwin,#gui.sheet[data-prop="machine"] .gwin{width:min(900px,100%);overflow:visible;border:0;border-radius:14px 14px 8px 8px;padding-top:12px;transform-origin:50% 100%;
+  background:linear-gradient(180deg,#3d4553f5,#272d37f5 16%,#1e232bf5);
+  box-shadow:inset 0 1px 0 #ffffff2e,inset 0 -2px 0 #0007,0 0 0 2px #0e1116,0 -12px 40px -12px #000c;
+  --bg2:#20262f;--card:#2a313c;--line:#3d4655;--bg:#161a21}
+#gui[data-prop="machine"] .st-hazard{position:absolute;left:0;right:0;top:0;height:12px;border-radius:14px 14px 0 0;background:repeating-linear-gradient(-45deg,#facc15 0 11px,#15171c 11px 22px);box-shadow:inset 0 -1px 0 #0008}
+#gui[data-prop="machine"] .ghead{background:transparent;border-bottom:1px solid #00000066;box-shadow:0 1px 0 #ffffff12;padding:10px 14px 10px 34px}
+#gui[data-prop="machine"] #gtitle{color:#e5e7eb;text-shadow:0 1px 0 #000,0 -1px 0 #ffffff14;letter-spacing:2px}
+#gui[data-prop="machine"] .gbody{padding-bottom:30px}
+#gui[data-prop="machine"] .st-rivet{position:absolute;width:10px;height:10px;border-radius:50%;z-index:3;background:radial-gradient(circle at 35% 30%,#e2e8f0,#64748b 55%,#1e293b);box-shadow:0 1px 1px #000a}
+#gui[data-prop="machine"] .st-rivet.tl{left:10px;top:22px}#gui[data-prop="machine"] .st-rivet.tr{right:10px;top:22px}
+#gui[data-prop="machine"] .st-rivet.bl{left:10px;bottom:10px}#gui[data-prop="machine"] .st-rivet.br{right:10px;bottom:10px}
+#gui[data-prop="machine"] .st-leds{position:absolute;right:30px;bottom:9px;display:flex;gap:7px;z-index:3}
+#gui[data-prop="machine"] .st-leds i{width:8px;height:8px;border-radius:50%;background:#14532d;box-shadow:inset 0 1px 1px #0008}
+#gui[data-prop="machine"] .st-leds i:first-child{background:#22c55e;box-shadow:0 0 8px #22c55e;animation:st-blink 1.2s infinite}
+#gui[data-prop="machine"] .st-leds i:nth-child(2){background:#f59e0b;box-shadow:0 0 6px #f59e0b88}
+#gui[data-prop="machine"] .st-leds i:nth-child(3){background:#7f1d1d}
+#gui[data-prop="machine"] .st-plate{position:absolute;left:50%;bottom:7px;transform:translateX(-50%);z-index:3;font:800 9px/1 Inter,sans-serif;letter-spacing:3px;color:#9ca3af;background:#0f1217;border:1px solid #4b5563;border-radius:3px;padding:3px 10px}
+#gui[data-prop="machine"].opening .gwin{animation:st-panel-up .6s cubic-bezier(.25,.9,.3,1.12)}
+#gui[data-prop="machine"].closing .gwin{animation:st-panel-down .38s ease-in forwards}
+@keyframes st-panel-up{0%{transform:rotateX(82deg);opacity:.2}60%{transform:rotateX(-5deg);opacity:1}}
+@keyframes st-panel-down{to{transform:rotateX(85deg);opacity:.15}}
+
+/* =====================================================================
+   切割墊（手作台、裝飾桌）：俯看桌面，紙張攤在切割墊上
+   ===================================================================== */
+#gui[data-prop="mat"] .gwin{width:min(980px,100%);overflow:visible;border:13px solid #7a4a28;border-radius:10px;
+  background:linear-gradient(#ffffff12 1px,#0000 1px) 0 0/24px 24px,linear-gradient(90deg,#ffffff12 1px,#0000 1px) 0 0/24px 24px,
+    linear-gradient(#ffffff2a 1px,#0000 1px) 0 0/120px 120px,linear-gradient(90deg,#ffffff2a 1px,#0000 1px) 0 0/120px 120px,#2e6a4e;
+  box-shadow:inset 0 0 0 1px #0004,0 0 0 1px #4a2a14,0 36px 70px -24px #000;--tx:#f0fdf4;--sub:#c7e9d6;--line:#ffffff2e;--card:#ffffff1f}
+#gui[data-prop="mat"] .ghead{background:transparent;border-bottom:0;padding:12px 16px 8px}
+#gui[data-prop="mat"] #gtitle{color:#f0fdf4;letter-spacing:2px}
+#gui[data-prop="mat"] #gtabs button{background:#fde68a;color:#3f2d0c;border:0;border-radius:3px;transform:rotate(-1.5deg);box-shadow:0 2px 4px #0004;font-weight:700}
+#gui[data-prop="mat"] #gtabs button:nth-child(2n){background:#fbcfe8;transform:rotate(1.2deg)}
+#gui[data-prop="mat"] #gtabs button.on{outline:2px solid #fff;color:#1f1505}
+#gui[data-prop="mat"] .gclose{background:#ffffff1f;border-color:#ffffff33;color:#f0fdf4}
+#gui[data-prop="mat"] .gbody{margin:0 14px 16px;border-radius:3px;background:#fffdf6;box-shadow:0 10px 24px -8px #000a,0 1px 0 #0002;transform:rotate(-.25deg)}
+#gui[data-prop="mat"] .st-ruler{position:absolute;left:-34px;top:24px;bottom:24px;width:20px;border-radius:3px;z-index:3;transform:rotate(-1.5deg);
+  background:repeating-linear-gradient(180deg,#0000 0 9px,#1f2937 9px 10px) right/6px 100% no-repeat,repeating-linear-gradient(180deg,#0000 0 49px,#1f2937 49px 50px) right/11px 100% no-repeat,#fcd34d;box-shadow:0 4px 8px #0006}
+#gui[data-prop="mat"] .st-tool{position:absolute;z-index:3;border-radius:3px;box-shadow:0 6px 10px #0007}
+#gui[data-prop="mat"] .st-tool.pen{right:-30px;top:16%;width:11px;height:150px;transform:rotate(9deg);background:linear-gradient(90deg,#d97706,#fbbf24 45%,#b45309)}
+#gui[data-prop="mat"] .st-tool.pen::before{content:"";position:absolute;left:0;right:0;top:-16px;height:16px;border-radius:4px 4px 0 0;background:linear-gradient(#f472b6,#db2777)}
+#gui[data-prop="mat"] .st-tool.pen::after{content:"";position:absolute;left:0;right:0;bottom:-18px;height:18px;background:linear-gradient(#f5deb3,#d6b48c 70%,#334155 70%);clip-path:polygon(0 0,100% 0,50% 100%)}
+#gui[data-prop="mat"] .st-tool.knife{right:-38px;top:58%;width:13px;height:120px;transform:rotate(-14deg);background:linear-gradient(90deg,#475569,#94a3b8 50%,#334155)}
+#gui[data-prop="mat"] .st-tool.knife::after{content:"";position:absolute;left:1px;right:1px;bottom:-22px;height:22px;background:linear-gradient(90deg,#cbd5e1,#f8fafc);clip-path:polygon(0 0,100% 0,100% 30%,0 100%)}
+#gui[data-prop="mat"] .st-label{position:absolute;right:18px;bottom:1px;z-index:1;font:800 9.5px/1 Inter,sans-serif;letter-spacing:3px;color:#ffffff73}
+#gui[data-prop="mat"].opening .gwin{animation:st-mat-in .55s cubic-bezier(.2,.85,.3,1)}
+#gui[data-prop="mat"].closing .gwin{animation:st-mat-out .38s ease-in forwards}
+@keyframes st-mat-in{0%{transform:translateY(90px) rotateX(38deg) scale(.94);opacity:0}45%{opacity:1}}
+@keyframes st-mat-out{to{transform:translateY(70px) rotateX(30deg) scale(.95);opacity:0}}
+
+/* =====================================================================
+   型錄（大城市商店）：封面翻開，每家店一種顏色，換店時翻頁
+   ===================================================================== */
+#gui[data-prop="catalog"] .gwin{width:min(880px,100%);height:min(700px,100%);overflow:visible;border:0;border-radius:3px 10px 10px 3px;transform-style:preserve-3d;
+  background:#fffefb;box-shadow:4px 4px 0 #ece6d8,8px 8px 0 #ddd5c3,12px 12px 0 #cfc6b1,0 34px 70px -20px #000;--acc:#0e7c74}
+#gui[data-prop="catalog"][data-tab="mach"] .gwin{--acc:#2563eb}
+#gui[data-prop="catalog"][data-tab="gear"] .gwin{--acc:#db2777}
+#gui[data-prop="catalog"][data-tab="mall"] .gwin{--acc:#15803d}
+#gui[data-prop="catalog"][data-tab="arms"] .gwin{--acc:#b91c1c}
+#gui[data-prop="catalog"] .st-band{order:-1;position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;flex:none;height:54px;padding:0 22px;border-radius:3px 10px 0 0;
+  background:linear-gradient(100deg,var(--acc),color-mix(in srgb,var(--acc) 65%,#000));color:#fff;transition:background .3s}
+#gui[data-prop="catalog"] .st-band b{font:900 italic 19px/1 Inter,sans-serif;letter-spacing:2px}
+#gui[data-prop="catalog"] .st-band span{font-size:12.5px;opacity:.85}
+#gui[data-prop="catalog"] .ghead{background:transparent;border-bottom:2px solid color-mix(in srgb,var(--acc) 25%,#fff);padding:10px 18px}
+#gui[data-prop="catalog"] #gtabs button{border:1px solid var(--line);background:#fff;color:var(--sub);font-weight:700}
+#gui[data-prop="catalog"] #gtabs button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+#gui[data-prop="catalog"] .gbody{padding:14px 18px 20px}
+#gui[data-prop="catalog"] .st-cover{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:40px;border-radius:3px 10px 10px 3px;transform-origin:0 50%;backface-visibility:hidden;opacity:0;color:#fff;
+  background:radial-gradient(70% 60% at 75% 25%,#ffffff33,#0000 60%),linear-gradient(135deg,var(--acc),color-mix(in srgb,var(--acc) 50%,#000))}
+#gui[data-prop="catalog"] .st-cover small{font-size:13px;letter-spacing:3px;opacity:.85}
+#gui[data-prop="catalog"] .st-cover b{font-size:min(96px,18vw);line-height:1;font-weight:900;letter-spacing:6px}
+#gui[data-prop="catalog"] .st-cover span{font:900 italic 20px/1 Inter,sans-serif;letter-spacing:4px}
+#gui[data-prop="catalog"].opening .st-cover{animation:st-cover-open .8s cubic-bezier(.45,.05,.25,1) both}
+#gui[data-prop="catalog"].closing .st-cover{animation:st-cover-close .38s cubic-bezier(.5,0,.75,0) both}
+#gui[data-prop="catalog"].opening .gwin{animation:st-lift .35s ease-out}
+#gui[data-prop="catalog"].closing .gwin{animation:st-drop .38s ease-in forwards}
+#gui[data-prop="catalog"] .st-flip{left:0;border-radius:3px 10px 10px 3px;background:linear-gradient(90deg,#e7e2d6,#fffefb 14%,#fffefb 70%,#f1ece0)}
+
+/* =====================================================================
+   羊皮紙（古地圖石台）：從上方的捲軸往下展開
+   ===================================================================== */
+#gui[data-prop="parchment"] .gwin{width:min(820px,100%);max-height:calc(100% - 40px);overflow:visible;border:0;border-radius:2px;
+  background:radial-gradient(circle at 18% 22%,#0000 0 35%,#9a6b3424 70%),radial-gradient(circle at 82% 78%,#8b5a2b26,#0000 45%),radial-gradient(circle at 60% 10%,#7c4a1d1a,#0000 30%),linear-gradient(#efdcab,#e2c88e);
+  box-shadow:inset 0 0 60px #8b5a2b73,inset 0 0 0 1px #8b5a2b40,0 34px 70px -20px #000;
+  --bg:#e8d39f;--bg2:#ecd9a8;--card:#f3e4bd;--line:#b99b63;--tx:#3d2b17;--sub:#6e5634;--acc:#9a3412;color:var(--tx)}
+#gui[data-prop="parchment"] .ghead{background:transparent;border-bottom:1px solid #8b5a2b40;padding:26px 20px 10px}
+#gui[data-prop="parchment"] .gbody{padding:12px 20px 26px}
+#gui[data-prop="parchment"] .st-rod{position:absolute;left:-22px;right:-22px;height:20px;z-index:4;border-radius:10px;background:linear-gradient(#a16207,#713f12 55%,#3b1d08);box-shadow:0 5px 12px #0007}
+#gui[data-prop="parchment"] .st-rod::before,#gui[data-prop="parchment"] .st-rod::after{content:"";position:absolute;top:-4px;width:16px;height:28px;border-radius:6px;background:radial-gradient(circle at 40% 30%,#fcd34d,#a16207 60%,#713f12)}
+#gui[data-prop="parchment"] .st-rod::before{left:-8px}#gui[data-prop="parchment"] .st-rod::after{right:-8px}
+#gui[data-prop="parchment"] .st-rod.top{top:-14px}
+#gui[data-prop="parchment"] .st-rod.bottom{top:calc(100% - 6px)}
+#gui[data-prop="parchment"] .st-compass{position:absolute;right:22px;bottom:16px;z-index:1;width:48px;height:48px;border-radius:50%;border:2px solid #6e563488;display:grid;place-items:center;font:700 15px/1 "Noto Serif TC",serif;color:#6e5634aa;
+  background:conic-gradient(from -8deg,#0000 0 4%,#6e563455 4% 6%,#0000 6% 29%,#6e563433 29% 31%,#0000 31% 54%,#6e563433 54% 56%,#0000 56% 79%,#6e563433 79% 81%,#0000 81%)}
+#gui[data-prop="parchment"].opening :is(.ghead,.gbody){animation:st-unroll .65s cubic-bezier(.3,.7,.25,1) both}
+#gui[data-prop="parchment"].opening .st-rod.bottom{animation:st-rod-down .65s cubic-bezier(.3,.7,.25,1) both}
+#gui[data-prop="parchment"].opening .gwin{animation:st-parch-bg .65s cubic-bezier(.3,.7,.25,1) both}
+#gui[data-prop="parchment"].closing :is(.ghead,.gbody){animation:st-unroll .38s ease-in reverse both}
+#gui[data-prop="parchment"].closing .st-rod.bottom{animation:st-rod-down .38s ease-in reverse both}
+#gui[data-prop="parchment"].closing .gwin{animation:st-parch-bg .38s ease-in reverse both}
+@keyframes st-unroll{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes st-rod-down{from{top:-6px}to{top:calc(100% - 6px)}}
+@keyframes st-parch-bg{from{clip-path:inset(-30px -40px 100% -40px)}to{clip-path:inset(-30px -40px -40px -40px)}}
+
+/* =====================================================================
+   石碑（古老的石碑）：石板升起，刻紋亮起紫光
+   ===================================================================== */
+#gui[data-prop="tablet"] .gwin{width:min(760px,100%);overflow:visible;border:0;border-radius:26px 26px 10px 10px;
+  background:radial-gradient(circle at 20% 15%,#ffffff12,#0000 30%),radial-gradient(circle at 75% 60%,#0000002e,#0000 40%),radial-gradient(circle at 35% 85%,#ffffff0a,#0000 25%),linear-gradient(160deg,#5d6372,#41464f 45%,#2e3138);
+  box-shadow:inset 0 2px 0 #ffffff26,inset 0 -8px 18px #000a,inset 0 0 0 12px #ffffff07,0 34px 70px -20px #000;
+  --bg:#2c3038;--bg2:#3b404a;--card:#464c58;--line:#5c6373;--tx:#eef2f7;--sub:#b8c0cd;--acc:#a78bfa}
+#gui[data-prop="tablet"] .ghead{background:transparent;border-bottom:1px solid #0006;box-shadow:0 1px 0 #ffffff14;padding:20px 22px 10px}
+#gui[data-prop="tablet"] #gtitle{letter-spacing:6px;color:#ede9fe;text-shadow:0 0 14px #a78bfa,0 1px 0 #000}
+#gui[data-prop="tablet"] .gbody{padding:14px 22px 40px}
+#gui[data-prop="tablet"] .gclose{background:#0003;border-color:#ffffff1f}
+#gui[data-prop="tablet"] .st-runes{position:absolute;inset:9px;z-index:1;border-radius:20px 20px 6px 6px;border:2px solid #a78bfa66;box-shadow:0 0 18px #a78bfa55,inset 0 0 18px #a78bfa33;animation:st-glow 3.2s ease-in-out infinite alternate}
+#gui[data-prop="tablet"] .st-glyphs{position:absolute;left:0;right:0;bottom:12px;z-index:1;text-align:center;font-size:15px;letter-spacing:12px;color:#c4b5fd;text-shadow:0 0 10px #a78bfa;opacity:.6}
+#gui[data-prop="tablet"] .st-dust{position:absolute;left:10%;right:10%;bottom:-10px;height:40px;z-index:0;background:radial-gradient(50% 50% at 50% 50%,#a8a29e55,#0000);opacity:0;filter:blur(6px)}
+#gui[data-prop="tablet"].opening .gwin{animation:st-rise .7s cubic-bezier(.2,.8,.25,1) both}
+#gui[data-prop="tablet"].opening .st-runes{animation:st-ignite 1.1s ease-out both,st-glow 3.2s 1.1s ease-in-out infinite alternate}
+#gui[data-prop="tablet"].opening .st-dust{animation:st-dust .9s ease-out both}
+#gui[data-prop="tablet"].closing .gwin{animation:st-sink .38s ease-in forwards}
+@keyframes st-rise{0%{transform:translateY(60px) scale(.96);filter:brightness(.35);opacity:0}50%{opacity:1}}
+@keyframes st-sink{to{transform:translateY(50px) scale(.97);filter:brightness(.4);opacity:0}}
+@keyframes st-ignite{0%,35%{border-color:#a78bfa00;box-shadow:none}60%{border-color:#ddd6fe;box-shadow:0 0 40px #a78bfa,inset 0 0 30px #a78bfa88}100%{border-color:#a78bfa66}}
+@keyframes st-glow{from{box-shadow:0 0 12px #a78bfa44,inset 0 0 12px #a78bfa22}to{box-shadow:0 0 26px #a78bfa77,inset 0 0 22px #a78bfa44}}
+@keyframes st-dust{0%{opacity:0}30%{opacity:1}100%{opacity:0;transform:scaleX(1.4) translateY(10px)}}
+
+/* =====================================================================
+   展示櫃（展示場）：聚光燈亮起，玻璃門往兩旁滑開
+   ===================================================================== */
+#gui[data-prop="vitrine"]{padding-bottom:max(48px,env(safe-area-inset-bottom))}
+#gui[data-prop="vitrine"] .gwin{width:min(980px,100%);overflow:visible;border:9px solid #2b313b;border-bottom:0;border-radius:10px 10px 0 0;
+  background:linear-gradient(#0d1424f2,#111a2bf2);box-shadow:inset 0 0 0 1px #cbd5e126,inset 0 40px 60px -40px #fde68a2e,0 34px 70px -20px #000}
+#gui[data-prop="vitrine"] .ghead{background:transparent}
+#gui[data-prop="vitrine"] .st-light{position:absolute;left:8%;right:8%;top:0;height:70%;z-index:3;background:radial-gradient(55% 100% at 50% 0,#fde68a26,#0000 70%);mix-blend-mode:screen}
+#gui[data-prop="vitrine"] .st-door{position:absolute;top:0;bottom:0;width:50%;z-index:5;opacity:0;border:1px solid #cbd5e140;
+  background:linear-gradient(112deg,#ffffff24,#ffffff08 35%,#ffffff1a 52%,#ffffff05 70%),#94a3b812;backdrop-filter:blur(1.5px);-webkit-backdrop-filter:blur(1.5px)}
+#gui[data-prop="vitrine"] .st-door.l{left:0}#gui[data-prop="vitrine"] .st-door.r{right:0}
+#gui[data-prop="vitrine"] .st-door::after{content:"";position:absolute;top:44%;width:4px;height:60px;border-radius:2px;background:linear-gradient(#e5e7eb,#9ca3af)}
+#gui[data-prop="vitrine"] .st-door.l::after{right:10px}#gui[data-prop="vitrine"] .st-door.r::after{left:10px}
+#gui[data-prop="vitrine"] .st-base{position:absolute;left:-9px;right:-9px;top:100%;height:38px;z-index:1;display:grid;place-items:center;border-radius:0 0 8px 8px;
+  background:linear-gradient(#5b3b22,#3a2414);box-shadow:inset 0 2px 0 #ffffff1a,0 20px 40px -14px #000;font:800 10px/1 Inter,sans-serif;letter-spacing:5px;color:#fde68ab3}
+#gui[data-prop="vitrine"].opening .gwin{animation:st-zoom .45s ease-out}
+#gui[data-prop="vitrine"].opening .st-door.l{animation:st-door-l .8s .15s cubic-bezier(.5,0,.2,1) both}
+#gui[data-prop="vitrine"].opening .st-door.r{animation:st-door-r .8s .15s cubic-bezier(.5,0,.2,1) both}
+#gui[data-prop="vitrine"].opening .st-light{animation:st-light-on .9s ease-out both}
+#gui[data-prop="vitrine"].closing .st-door.l{animation:st-door-l .38s ease-in reverse both}
+#gui[data-prop="vitrine"].closing .st-door.r{animation:st-door-r .38s ease-in reverse both}
+#gui[data-prop="vitrine"].closing .gwin{animation:st-fade-out .38s ease-in forwards}
+@keyframes st-door-l{0%{opacity:1;transform:translateX(0)}80%{opacity:1}100%{opacity:0;transform:translateX(-96%)}}
+@keyframes st-door-r{0%{opacity:1;transform:translateX(0)}80%{opacity:1}100%{opacity:0;transform:translateX(96%)}}
+@keyframes st-light-on{0%,20%{opacity:0}30%{opacity:1}36%{opacity:.4}45%,100%{opacity:1}}
+
+/* ---------- 窄螢幕：道具外框縮小，伸出去的裝飾收起來 ---------- */
+@media (max-width:600px){
+  #gui[data-prop="monitor"]{padding-bottom:max(20px,env(safe-area-inset-bottom))}
+  #gui[data-prop="monitor"] .gwin{border-width:8px 8px 16px;border-radius:12px}
+  #gui[data-prop="monitor"] :is(.st-stand,.st-brand){display:none}
+  #gui[data-prop="monitor"] #gtitle{display:none}
+  #gui[data-prop="mat"] :is(.st-ruler,.st-tool){display:none}
+  #gui[data-prop="mat"] .gwin{border-width:8px}
+  #gui[data-prop="mat"] .gbody{margin:0 8px 10px}
+  #gui[data-prop="phone"] .gwin{border-width:8px;border-radius:36px}
+  #gui[data-prop="phone"] .st-btn{display:none}
+  #gui[data-prop="parchment"] .st-rod{left:-8px;right:-8px}
+  #gui[data-prop="vitrine"] .gwin{border-width:6px}
+}
+@media (prefers-reduced-motion:reduce){
+  #gui[data-prop] .gwin,#gui[data-prop] .gwin *,#gui[data-prop] .gwin *::before,#gui[data-prop] .gwin *::after{animation:none!important}
+  .st-flip,.st-boot,.st-cover,.st-door{display:none}
+}
