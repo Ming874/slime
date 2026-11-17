@@ -1,4 +1,5 @@
 # 與 railpack 靜態站自動產生的設定相同，只把網站根目錄改成 /srv（設定檔不再被當成網站檔案公開）。
+# /api/（Google 登入、雲端存檔）轉給同一個容器裡的 Node 伺服器（server/server.js，見 start.sh）。
 {
 	admin off
 	persist_config off
@@ -22,7 +23,7 @@
 
 	# 頁面與遊戲程式每次都向伺服器確認是否有新版（有 ETag，沒變只回 304），部署後玩家立刻拿到新版；
 	# 否則 Cloudflare 會把 .js／.css 快取 4 小時
-	@fresh path / /index.html /gate.js /game.js /style.css
+	@fresh path / /index.html /gate.js /game.js /style.css /privacy.html /admin.html /admin /admin.js
 	header @fresh Cache-Control "no-cache"
 
 	header {
@@ -33,21 +34,26 @@
 		-Server
 	}
 
-	root * /srv
-
-	file_server {
-		hide .git
-		hide .env*
-	}
-
 	encode {
 		gzip
 		zstd
 	}
 
-	try_files {path} {path}.html {path}/index.html
+	handle /api/* {
+		reverse_proxy 127.0.0.1:{$API_PORT:8081}
+	}
+
+	handle {
+		root * /srv
+		try_files {path} {path}.html {path}/index.html
+		file_server {
+			hide .git
+			hide .env*
+		}
+	}
 
 	handle_errors {
+		root * /srv
 		rewrite * /{err.status_code}.html
 		file_server
 	}

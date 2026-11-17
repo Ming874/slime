@@ -11,7 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Static site (slime.iosoftware.ai): no build step; the Mac builds the Dockerfile (Caddy) at the repo root.
+  # slime.iosoftware.ai: static game files served by Caddy + a small Node API (Google login, cloud saves, SQLite)
+  # in the same container; the Mac builds the Dockerfile at the repo root.
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -20,9 +21,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - name: JavaScript syntax
-        run: node --check gate.js && node --check game.js
+        run: node --check gate.js && node --check game.js && node --check admin.js && node --check server/server.js
+      - name: Server tests (fake Google login, allowlist, saves)
+        run: npm test
       - name: Caddyfile
         run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -e PORT=8080 caddy:2.11-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
@@ -53,6 +56,13 @@ jobs:
           V=$(grep -Eo 'gate\.js\?v=[0-9a-f]{12}' index.out | cut -d= -f2); echo "site version: $V"
           curl -fsS -o /dev/null "http://127.0.0.1:8080/game.js?v=$V"
           curl -fsS -o /dev/null http://127.0.0.1:8080/vendor/three.min.js
+          curl -fsS -o /dev/null http://127.0.0.1:8080/admin
+          curl -fsS -o /dev/null http://127.0.0.1:8080/privacy.html
+          # /api/ 由 Caddy 轉給容器裡的 Node；沒登入要回 401；伺服器程式不能被當成網站檔案拿到
+          for i in $(seq 1 20); do curl -fsS http://127.0.0.1:8080/api/health >/dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/api/health
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/me)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/server/server.js)" = 404
           docker logs slime | tail -n 20
 
   secrets:

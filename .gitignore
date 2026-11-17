@@ -1,0 +1,5 @@
+# 伺服器設定（含 Google 用戶端密碼）與本機資料庫不進 git
+.env
+data/
+node_modules/
+.DS_Store

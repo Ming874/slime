@@ -160,9 +160,14 @@ function load() {
   return null;
 }
 let S = load() || fresh(), resetting = false; if (!S.own) S.own = {};
+// 暱稱跟著 Google 帳號（預設是 Google 名字，可以在暫停選單改）
+if (window.SlimeCloud && SlimeCloud.user) S.name = SlimeCloud.user.name;
 let NOSAVE = false, saveWarned = false;
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-function save() { if (NOSAVE || resetting) return; S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } }
+// 雲端存檔（gate.js 的 SlimeCloud）：每次存檔都通知；'now'＝馬上上傳（買東西、做完加工），'leave'＝頁面要關了
+const cloud = how => { try { if (window.SlimeCloud) SlimeCloud.sync(how); } catch (e) { } };
+function saveCloud() { save(); cloud('now'); }
+function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } }
 
 /* ---------- 經濟公式 ---------- */
 const trend = { sp: null };
@@ -2799,7 +2804,7 @@ function finishStep() {
     M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
     if (M.coopDone) { p.crisp = Math.min(1, p.crisp + .05); setTimeout(() => toast(`和 ${M.coopDone} 合作的產線：酥脆度 +5%`), 300); M.coopDone = null; }
     if (M.scores[0] != null && M.cut) { p.cut = M.cut; p.cq = Math.round(M.scores[0] * 100) / 100; if (M.scores[0] < .35) { p.wonky = true; setTimeout(() => toast('切歪了，做出一個「歪歪捏捏」：比較便宜，但有收藏家特別喜歡。凝膠沒有浪費。'), 600); } }
-    S.stock.push(p); M.last = p; if (!S.lineMade) { S.lineMade = true; objSig = ''; } gainXP(5 + p.crisp * 10); save(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
+    S.stock.push(p); M.last = p; if (!S.lineMade) { S.lineMade = true; objSig = ''; } gainXP(5 + p.crisp * 10); saveCloud(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
   } else { M.step = M.steps[M.si]; beginStep(); }
   renderMake();
 }
@@ -3167,7 +3172,7 @@ function renderCodex() {
   h += SPECIES.map(s => { const c = S.codex[s.id]; return `<div class="card item" style="cursor:default"><div class="sw" style="background:${c ? swatch(s) : '#1e293b'}"></div><div><div class="nm">${c ? s.name : '？？？'}</div><div class="meta">${ZONES.find(z => z.id === s.zone).name} · <span style="color:${RAR[s.rar].c}">${RAR[s.rar].n}</span></div><div class="meta">${c ? `已製作 ${c.made} 個` : (S.zones.includes(s.zone) ? '尚未發現' : '區域未開放')}</div></div></div>`; }).join('') + '</div>';
   $('#codexBody').innerHTML = h;
 }
-function finish() { S.done = true; save(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
+function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
 let invSel = null;
 function renderInv() {
   const items = invItems(), n = Math.max(27, Math.ceil(items.length / 9) * 9);
@@ -3208,8 +3213,11 @@ document.addEventListener('click', e => {
     case 'lchatSend': sendLiveChat(); break;
     case 'donate': donate(); break;
     case 'chat': openChat(); break;
-    case 'saveNow': save(); S.savedAt = Date.now(); toast('遊戲已儲存'); renderPause(); break;
-    case 'toTitle': if (M.active) { S.gel[M.sp] = (S.gel[M.sp] || 0) + 2; M.active = false; M.g = null; toast('產線中斷，已退回 2 份凝膠'); } save(); netLeave(true); showTitle(); break;
+    case 'acctName': { const C = window.SlimeCloud, inp = $('#acctName'); if (!C || !inp) break; const n = inp.value.trim(); if (!n) { toast('暱稱不能是空的'); break; } C.rename(n).then(name => { S.name = name; save(); toast(`暱稱已改成「${name}」`); renderPause(); }).catch(e => toast(e.message)); break; }
+    case 'logout': { const C = window.SlimeCloud; if (!C) break; save(); netLeave(true); C.logout(false).then(ok => { if (!ok) modal('<h2>進度還沒傳到雲端</h2><p>目前連不上伺服器。現在登出的話，新的進度會留在這台電腦，下次用同一個帳號在這台電腦登入時再上傳。</p>', [{ t: '取消', ghost: true }, { t: '仍要登出', red: true, f: () => C.logout(true) }]); }); break; }
+    case 'delMe': modal('<h2>刪除我的資料？</h2><p>會刪除你在伺服器上的帳號、遊戲進度與保留中的存檔，所有裝置都會登出，這台電腦上的進度也會清除。<b>刪除後無法復原。</b></p>', [{ t: '取消', ghost: true }, { t: '永久刪除', red: true, f: () => { netLeave(true); window.SlimeCloud.deleteMe().catch(e => toast(e.message)); } }]); break;
+    case 'saveNow': saveCloud(); S.savedAt = Date.now(); toast('遊戲已儲存'); renderPause(); break;
+    case 'toTitle': if (M.active) { S.gel[M.sp] = (S.gel[M.sp] || 0) + 2; M.active = false; M.g = null; toast('產線中斷，已退回 2 份凝膠'); } saveCloud(); netLeave(true); showTitle(); break;
     case 'netLeave': netLeave(); renderPause(); break;
     case 'tContinue': startPlay(); break;
     case 'tNew': if (lsGet(SAVE_KEY)) modal('<h2>開始新遊戲？</h2><p>目前的存檔會被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定', f: newGame }]); else newGame(); break;
@@ -3224,11 +3232,11 @@ document.addEventListener('click', e => {
     case 'taxiGo': taxiRide(); break;
     case 'mapRot': mapRotate(+el.dataset.i); break;
     case 'hint': giveHint(k); break;
-    case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max || (UPS[k].need && !S.own[UPS[k].need])) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); save(); break; }
-    case 'buyPack': { const pk = PACKS[k]; if (!pk || S.packs.includes(k) || S.money < pk.cost) return; S.money -= pk.cost; S.packs.push(k); sfx.level(); toast(`已解鎖${pk.name}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); save(); break; }
+    case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max || (UPS[k].need && !S.own[UPS[k].need])) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); saveCloud(); break; }
+    case 'buyPack': { const pk = PACKS[k]; if (!pk || S.packs.includes(k) || S.money < pk.cost) return; S.money -= pk.cost; S.packs.push(k); sfx.level(); toast(`已解鎖${pk.name}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); saveCloud(); break; }
     case 'chooseBranch': chooseBranch(k); break;
-    case 'hire': { const c = Math.round(400 * Math.pow(1.5, S.workers)); if (S.money >= c) { S.money -= c; S.workers++; renderBranch(); renderTop(); save(); } break; }
-    case 'auto': { const c = Math.round(600 * Math.pow(1.8, S.auto)); if (S.money >= c) { S.money -= c; S.auto++; renderBranch(); renderTop(); save(); } break; }
+    case 'hire': { const c = Math.round(400 * Math.pow(1.5, S.workers)); if (S.money >= c) { S.money -= c; S.workers++; renderBranch(); renderTop(); saveCloud(); } break; }
+    case 'auto': { const c = Math.round(600 * Math.pow(1.8, S.auto)); if (S.money >= c) { S.money -= c; S.auto++; renderBranch(); renderTop(); saveCloud(); } break; }
     case 'deliver': { const c = S.contracts.find(x => x.id === +id); if (!c) return; const it = contractItems(c); if (it.length < c.n) return; S.stock = S.stock.filter(p => !it.includes(p)); S.contracts = S.contracts.filter(x => x !== c); addMoney(c.reward); S.rep++; gainXP(8); S.fans += 2; sfx.pop(); toast(`交貨完成 +${fmt(c.reward)}`); refresh(); save(); break; }
     case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; gainXP(4); addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
     case 'finish': finish(); break;
@@ -3259,7 +3267,7 @@ function renderTitle() {
     (has ? `<button class="btn big ghost" data-act="tNew">新遊戲</button>` : '') +
     `<button class="btn big ghost" data-act="tMulti">多人遊戲</button>
      <div class="row"><button class="btn ghost grow" data-act="help">操作說明</button><button class="btn ghost grow" data-act="sound" id="tSound">音效：${S.sound ? '開' : '關'}</button></div>`;
-  $('#titleFoot').innerHTML = has ? `存檔：${fmtTime(S.last)} · ${fmt(S.money)} · 粉絲 ${Math.floor(S.fans)} · 已發現區域 ${S.zones.length}/4 · 設備 ${Object.keys(S.own || {}).length}/5` : '月光谷正在等待新的工坊主人';
+  $('#titleFoot').innerHTML = (S.name ? esc(S.name) + ' · ' : '') + (has ? `存檔：${fmtTime(S.last)} · ${fmt(S.money)} · 粉絲 ${Math.floor(S.fans)} · 已發現區域 ${S.zones.length}/4 · 設備 ${Object.keys(S.own || {}).length}/5` : '月光谷正在等待新的工坊主人');
   $('#titleMain').hidden = false; $('#titleMp').hidden = true;
 }
 function showTitle() {
@@ -3274,14 +3282,25 @@ function startPlay() {
   $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast(S.tutDone ? '歡迎回到月光谷。左上角是目前目標。' : '歡迎來到月光谷！跟著畫面中央的提示一步一步來。');
   if (!S.seen) { S.seen = true; save(); }
 }
-function newGame() { NOSAVE = true; netLeave(true); try { localStorage.removeItem(SAVE_KEY); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { } location.reload(); }
+function newGame() { NOSAVE = true; netLeave(true); try { localStorage.removeItem(SAVE_KEY); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { } if (window.SlimeCloud) SlimeCloud.resetLocal(); location.reload(); }
 function titleStep(dt) {
   W.t += dt; W.wind.value = W.t; if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(W.cam.position); slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt);
   const a = W.t * .04; W.cam.position.set(Math.sin(a) * 30, 13 + Math.sin(W.t * .1) * 2, Math.cos(a) * 30); W.cam.lookAt(0, 2.5, 0);
   W.r.render(W.scene, W.cam);
 }
+// 帳號（Google 登入）：改暱稱、登出、刪除我的資料；畫面上不顯示 email
+function renderAcct() {
+  const C = window.SlimeCloud, box = $('#pauseAcct'); if (!box) return;
+  if (!C || !C.user) return setHTML(box, '');
+  setHTML(box, `<div class="card small acct"><b>帳號</b>
+    <div class="row"><input id="acctName" maxlength="12" value="${esc(C.user.name)}" aria-label="暱稱" autocomplete="off"><button class="btn sm" data-act="acctName">改暱稱</button></div>
+    <div class="sync" id="acctSync"></div>
+    <div class="row"><button class="btn ghost sm grow" data-act="logout">登出</button><button class="btn ghost sm grow" data-act="delMe">刪除我的資料</button></div>
+    <div class="row">${C.user.admin ? '<a href="admin.html" target="_blank" rel="noopener">管理允許名單</a>' : ''}<span class="grow"></span><a href="privacy.html" target="_blank" rel="noopener" style="color:var(--sub)">隱私權政策</a></div></div>`);
+  $('#acctSync').textContent = '雲端存檔：' + C.status();
+}
 function renderPause() {
-  renderTop();
+  renderTop(); renderAcct();
   $('#saveInfo').textContent = '上次儲存：' + fmtTime(S.last) + '　（按 Esc、切換畫面、開關介面時都會自動儲存）';
   $('#pauseNet').innerHTML = NET.on ? `<div class="card small"><b>多人房間 ${esc(NET.room)}</b>${NET.host ? '（你是房主）' : ''}<br>把房間代碼分享給朋友，就能一起玩。<div style="margin:6px 0;color:var(--sub)">${[...NET.players.values()].map(p => `${dot(p.color || '#22d3ee')}${esc(p.name || '玩家')}${p.live && p.live.on ? ' · 直播中' : ''}`).join('<br>')}</div><button class="btn sm red" data-act="netLeave">離開房間</button></div>` : '';
 }
@@ -3344,7 +3363,9 @@ const RELAY = {
 const netClean = m => RELAY[m.t] ? RELAY[m.t](m) : null;
 function prepName() {
   const n = ($('#mpName').value || S.name || '').trim().slice(0, 12) || ('玩家' + Math.floor(100 + Math.random() * 900));
-  S.name = n; NET.name = n; NET.color = PCOL[[...n].reduce((a, c) => a + c.charCodeAt(0), 0) % PCOL.length]; save(); return n;
+  S.name = n; NET.name = n; NET.color = PCOL[[...n].reduce((a, c) => a + c.charCodeAt(0), 0) % PCOL.length]; save();
+  if (window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.name !== n) SlimeCloud.rename(n).catch(() => { }); // 多人遊戲改的名字也同步成帳號暱稱
+  return n;
 }
 function peerErr(e) {
   const m = { 'unavailable-id': '房間代碼重複，請再試一次', 'peer-unavailable': '找不到這個房間，請確認代碼（房主可能已離開）', network: '網路連線失敗，請檢查網路後再試', 'server-error': '連線伺服器暫時無法使用，請稍後再試', 'socket-error': '連線伺服器中斷，請稍後再試', 'socket-closed': '連線伺服器中斷，請稍後再試', 'browser-incompatible': '這個瀏覽器不支援多人連線', 'webrtc': '點對點連線失敗（網路可能阻擋 WebRTC）' }[e && e.type] || ('連線錯誤：' + (e && e.type || '未知'));
@@ -3797,7 +3818,7 @@ function taxiRide() {
 /* ---------- 商店 ---------- */
 function buyOwn(k) {
   const o = OWN[k]; if (!o || S.own[k]) return; if (S.money < o.cost) return toast('資金不足');
-  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); refreshCold(); objSig = ''; renderShop(tab); renderTop(); save(); toast(k === 'coat' ? '已購買保暖衣！現在可以前往雪原了' : k === 'sword' ? '已購買長劍（目前只供收藏）' : `已購買${o.name}，已經送到月光谷的中央平地`);
+  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); refreshCold(); objSig = ''; renderShop(tab); renderTop(); saveCloud(); toast(k === 'coat' ? '已購買保暖衣！現在可以前往雪原了' : k === 'sword' ? '已購買長劍（目前只供收藏）' : `已購買${o.name}，已經送到月光谷的中央平地`);
 }
 function renderShop(kind) {
   const intro = { mach: '加工機器與機器升級。買了才會出現在基地的產線上，每台機器對應一道加工流程。', gear: '直播設備、裝飾桌與裝飾零件。', mall: '倉儲、網站伺服器與生活用品。', arms: '武器與防具。保暖衣是進入雪原的必備品；長劍目前只供收藏，之後會派上用場。', eshop: '網路購物：加工機器、裝飾桌、直播設備與各種升級，下單後直接宅配到中央平地。（武器店的商品要到大城市購買）' }[kind];
@@ -3821,7 +3842,7 @@ function renderBench() {
 function benchMake() {
   if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (S.stock.length >= cap()) return toast('庫存已滿');
   S.gel[sp] -= 2; BN.busy = true; renderBench(); sfx.squish(1); [360, 760, 1150].forEach((ms, i) => setTimeout(() => { sfx.crunch(.75 + i * .2, .95); sfx.squish(.5, 1 + i * .08); }, ms)); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
-  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); toast(`做好了一個粗製${short(sp)}捏捏（售價 ¥10）`); save(); if (!S.tutDone) setTimeout(finishTutorial, 450); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
+  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); toast(`做好了一個粗製${short(sp)}捏捏（售價 ¥10）`); saveCloud(); if (!S.tutDone) setTimeout(finishTutorial, 450); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
 }
 /* ---------- 古地圖拼圖 ---------- */
 function openAltar() {
@@ -4066,7 +4087,7 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
+  if (secAcc >= 1) { secAcc = 0; if (GUI.kind === 'pause' && window.SlimeCloud) { const el = $('#acctSync'); if (el) el.textContent = '雲端存檔：' + SlimeCloud.status(); } checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
@@ -4103,10 +4124,10 @@ function offlineCatchUp() {
 offlineCatchUp(); trend.sp = pick(unlockedSpecies()).id; renderTop();
 if (initWorld()) { renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動'; }
 { const bt = $('#boot'); if (bt && !bt.hidden) { bt.classList.add('out'); setTimeout(() => { bt.hidden = true; bt.classList.remove('out'); }, 520); } }
-addEventListener('beforeunload', save); addEventListener('pagehide', () => { save(); if (NET.on) netLeave(true); });
+addEventListener('beforeunload', save); addEventListener('pagehide', () => { save(); cloud('leave'); if (NET.on) netLeave(true); });
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = Date.now(); save(); return; }
+  if (document.hidden) { hiddenAt = Date.now(); save(); cloud('leave'); return; }
   if (!hiddenAt) return; const el = Math.min((Date.now() - hiddenAt) / 1000, 1800); hiddenAt = 0; lastT = performance.now(); DRS.skip = 2; DRS.acc = DRS.n = 0; if (el < 8 || !S.web.length) return;
   let gain = 0, n = 0; for (let i = 0; i < Math.floor(el / 4) && S.web.length; i++) { const r = webTick(); if (r) { gain += r.price; n++; } }
   if (n) { toast(`離開期間網站賣出 ${n} 件，+${fmt(gain)}`); sfx.coin(); renderTop(); renderHotbar(); }

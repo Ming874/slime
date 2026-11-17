@@ -6,3 +6,7 @@
 *.md
 Dockerfile
 .dockerignore
+.env
+.env.*
+data
+node_modules
