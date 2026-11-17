@@ -12,9 +12,10 @@ import Bench from './Bench';
 import { Riddle, MapGame } from './Ancient';
 import Title from './Title';
 import Pause from './Pause';
+import Make from './Make';
 
 const PANELS: Record<string, ComponentType> = {
-  title: Title, pause: Pause, inv: Inventory, codex: Codex, shop: Shop, web: WebStore, weekly: Weekly, museum: Museum, visit: Visit, bench: Bench, riddle: Riddle, mapg: MapGame,
+  title: Title, pause: Pause, make: Make, inv: Inventory, codex: Codex, shop: Shop, web: WebStore, weekly: Weekly, museum: Museum, visit: Visit, bench: Bench, riddle: Riddle, mapg: MapGame,
 };
 
 // v 每次重繪都會變，讓 memo 只在這個分頁收到通知時才重畫

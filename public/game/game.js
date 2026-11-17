@@ -1459,7 +1459,7 @@ function lineStep(dt) {
   const tx = slicing ? MX[0] - LT / 2 + LT * (M.phase === 'run' ? slicePos(M.g) : 0) : M.active ? MX[M.step] : (M.last ? 8.2 : -6.4); if (slicing && M.phase === 'run') MK.bx = tx; else MK.bx += (tx - MK.bx) * Math.min(1, dt * 3); const onTurn = !M.active && M.last && MK.bx > 7.6;
   J.group.position.set(MK.bx + (M.active && !slicing && act(M.step) ? Math.sin(t * 40) * .01 : 0), onTurn ? 1.15 + Math.sin(t * 2) * .05 : 1.14, 0);
   J.group.rotation.y = onTurn ? t * .8 : 0; MK.turn.rotation.y = t * .8; MK.sx = (MK.sx || 1) + ((slicing ? 2.4 : 1) - (MK.sx || 1)) * Math.min(1, dt * 5); J.group.scale.set(.42 * MK.sx, .42 * (slicing ? .86 : M.active && M.step >= 1 ? .92 : 1), .42);
-  jellyCut(J, !M.active && M.last ? M.last : null); cutLinesStep(slicing); if (!MK.pieces) MK.pieces = []; piecesStep(dt);
+  jellyCut(J, !M.active && M.last ? M.last : null); cutLinesStep(slicing); if (!MK.pieces) MK.pieces = []; piecesStep(dt); cutFxStep(dt);
   if (W.sample) W.sample.rotation.y = t * .6; if (W.liveSample) { W.liveSample.rotation.y = -t * .4; W.liveSample.position.y = 1.4 + Math.sin(t * 2) * .04; }
   if (W.neon) W.neon.forEach((n, i) => n.scale.y = .7 + .3 * Math.abs(Math.sin(t * 1.5 + i))); if (W.recLed) W.recLed.visible = L.on ? Math.sin(t * 6) > 0 : false;
 }
@@ -2514,6 +2514,7 @@ function cameraStep(dt) {
   if (GUI.kind === 'line') {
     const v = lineViewPose(), q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(v.p, v.t, new THREE.Vector3(0, 1, 0)));
     cam.position.lerp(v.p, Math.min(1, dt * 4)); cam.quaternion.slerp(q, Math.min(1, dt * 4)); W.camAway = true;
+    if (W.fovKick > 0) { W.fovKick = Math.max(0, W.fovKick - dt * 16); cam.fov = (W.fov0 || 72) - W.fovKick; cam.updateProjectionMatrix(); }
     if (W.shake > 0) { W.shake = Math.max(0, W.shake - dt * .5); cam.position.x += rnd(-1, 1) * W.shake; cam.position.y += rnd(-1, 1) * W.shake; }
     return;
   }
@@ -2810,7 +2811,7 @@ function makeAction(kind, val) {
   if (M.phase !== 'run') return; const g = M.g;
   if (M.step === 0 && kind === 'tap') {
     const pos = slicePos(g); let best = -1, bd = 1; g.marks.forEach((m, i) => { if (g.hit[i] == null) { const d = Math.abs(pos - m); if (d < bd) { bd = d; best = i; } } });
-    if (best >= 0 && bd < g.tol * 2.2) { const q = clamp(1 - Math.max(0, bd - g.tol * .4) / (g.tol * 1.8), 0, 1); g.hit[best] = q; sliceFx(q); } else sliceFx(-1);
+    if (best >= 0 && bd < g.tol * 2.2) { const q = clamp(1 - Math.max(0, bd - g.tol * .4) / (g.tol * 1.8), 0, 1); g.hit[best] = q; g.combo = q > .6 ? (g.combo || 0) + 1 : 0; g.lastQ = q; g.cuts = (g.cuts || 0) + 1; sliceFx(q); } else { g.combo = 0; g.lastQ = -1; g.cuts = (g.cuts || 0) + 1; sliceFx(-1); }
     updMakeUI();
   }
   if (M.step === 2 && kind === 'knob') g.knob = clamp(val, 0, 1);
@@ -2819,8 +2820,9 @@ function makeTick(dt) {
   if (!M.active) return; const g = M.g;
   if (M.phase === 'ready') { M.pt -= dt; if (M.pt <= 0) { M.phase = 'run'; renderMake(); } return; }
   if (M.stop > 0) { M.stop -= dt; return; } // 下刀瞬間的停頓
+  if (M.slow > 0) { M.slow -= dt; dt *= .35; } // 完美切面後短暫慢動作
   g.t += dt;
-  if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) { g.hit[i] = 0; updMakeUI(); } }); }
+  if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) { g.hit[i] = 0; g.combo = 0; ui('make'); updMakeUI(); } }); }
   if (M.step === 1 && M.coop && (M.coopT = (M.coopT || 0) + dt) > .1) { M.coopT = 0; netEmit({ t: 'coopV', to: M.coop.id, v: g.v }); }
   if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
   if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
@@ -2860,20 +2862,62 @@ function sliceFx(q) {
   sfx.crunch(.7 + q * .6, .45 + q * .55); if (q > .9) setTimeout(() => sfx.perfect(), 60);
   if (W.goo) W.goo.emit(wp, 5 + Math.round(q * 9), sp.color, { gy: W.lineG.position.y + .72, speed: 1.3, up: 2.6, size: .045 });
   if (W.goo && q > .9) W.goo.emit(wp, 5, '#ffffff', { gy: W.lineG.position.y + .72, speed: .8, up: 3.2, size: .03 });
-  spawnSlice(q);
+  spawnSlice(q); slashFx(q);
+  if (q > .9) { M.stop = .12; M.slow = .3; W.fovKick = 5; screenFlash('#fff4d0'); } else if (q > .6) W.fovKick = 2.5;
   fx3(wp.clone().setY(wp.y + 1.3), q > .9 ? '完美切面！' : q > .6 ? '很好' : q > .3 ? '有點歪' : '切歪了', q > .9 ? '#f0abfc' : q > .6 ? '#34d399' : '#fbbf24', q > .9 ? 'big' : '');
+  const combo = (M.g && M.g.combo) || 0;
+  if (combo >= 2) setTimeout(() => fx3(wp.clone().setY(wp.y + 1.8), `${combo} 連斬！`, combo >= 4 ? '#fde047' : '#67e8f9', combo >= 3 ? 'big' : ''), 140);
+  ui('make');
+}
+/* ---------- 切片特效：刀光、衝擊環、火花、畫面閃光（cutFxStep 每格畫面更新，下刀停頓時也照樣播放） ---------- */
+const CFX = [];
+function addFx(obj, dur, upd) { obj.renderOrder = 12; W.lineG.add(obj); CFX.push({ obj, t: 0, dur, upd }); upd(0); }
+const glowMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+function slashFx(q) {
+  const perfect = q > .9, col = perfect ? '#fde68a' : q > .6 ? '#67e8f9' : '#fda4af', x = MX[0], LOWQ = LOW ? .6 : 1;
+  // 刀光：白色刀芯＋彩色光暈，從刀口往下劃過後散開
+  [[.05, '#ffffff', 1], [.36, col, .55]].forEach(([w, c, o]) => {
+    const geo = new THREE.PlaneGeometry(w, 1.55); geo.translate(0, -.775, 0);
+    const m = new THREE.Mesh(geo, glowMat(c, o)); m.position.set(x, 1.95, .02);
+    addFx(m, .34, k => { m.scale.set(1 + k * 2.4, Math.min(1, k / .22) || .01, 1); m.material.opacity = o * (k < .3 ? 1 : 1 - (k - .3) / .7); });
+  });
+  // 衝擊環（完美時多一圈白色）
+  (perfect ? [0, .08] : [0]).forEach((delay, j) => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(.15, .21, 48), glowMat(j ? '#ffffff' : col, .9)); m.position.set(x, 1.14, .05);
+    const dur = .45 + delay;
+    addFx(m, dur, k => { const u = Math.max(0, (k * dur - delay) / .45); m.visible = u > 0; m.scale.setScalar(1 + u * (perfect ? 9 : 6)); m.material.opacity = .9 * (1 - u); });
+  });
+  // 火花：往上噴出、受重力落下（低效能裝置數量減少）
+  const n = Math.round((perfect ? 48 : q > .6 ? 28 : 14) * LOWQ), pos = new Float32Array(n * 3), vel = [];
+  for (let i = 0; i < n; i++) { pos.set([x, 1.14 + rnd(-.25, .25), rnd(-.2, .2)], i * 3); const a = rnd(0, PI2), sp = rnd(1.5, perfect ? 5.2 : 3.6); vel.push([Math.cos(a) * sp, Math.abs(Math.sin(a)) * sp + 1, rnd(-1, 1)]); }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: perfect ? '#fff7d6' : col, size: perfect ? .09 : .065, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  let last = 0;
+  addFx(pts, .65, k => { const dt = (k - last) * .65; last = k; for (let i = 0; i < n; i++) { vel[i][1] -= 9 * dt; pos[i * 3] += vel[i][0] * dt; pos[i * 3 + 1] += vel[i][1] * dt; pos[i * 3 + 2] += vel[i][2] * dt; } geo.attributes.position.needsUpdate = true; pts.material.opacity = 1 - k * k; });
+}
+function cutFxStep(dt) {
+  for (let i = CFX.length - 1; i >= 0; i--) {
+    const f = CFX[i]; f.t += dt; const k = Math.min(1, f.t / f.dur); f.upd(k);
+    if (k >= 1) { W.lineG.remove(f.obj); f.obj.geometry.dispose(); f.obj.material.dispose(); CFX.splice(i, 1); }
+  }
+}
+// 完美切面：畫面中央一下柔和的白光（app/station-content.css 的 #cutFlash）
+function screenFlash(color) {
+  let el = $('#cutFlash'); if (!el) { el = document.createElement('div'); el.id = 'cutFlash'; $('#game').appendChild(el); }
+  el.style.setProperty('--fc', color); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
 }
 function spawnSlice(q) {
   const C = CUTS[M.cut] || CUTS.thick, sp = SP[M.sp], th = C.th, side = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .15, clearcoat: 1, transparent: true }), face = faceMat(sp, q);
   let geo; if (C.shape) { geo = new THREE.ExtrudeGeometry(cutShape(C.shape, .34), { depth: th, bevelEnabled: false }); geo.translate(0, 0, -th / 2); geo.rotateY(Math.PI / 2); } else geo = new THREE.BoxGeometry(th, .66, .74);
   const m = new THREE.Mesh(geo, C.shape ? [face, side] : [face, face, side, side, side, side]); m.position.set(MX[0] + th / 2 + .03, 1.14, 0); m.castShadow = !LOW; W.lineG.add(m);
-  MK.pieces.push({ m, vx: 1 + rnd(0, .4), vy: 1.5, vz: rnd(-.35, .35), spin: -(3 + rnd(0, 2)), rz: 0, life: 2.4, th });
+  MK.pieces.push({ m, vx: 1 + rnd(0, .4), vy: 1.5, vz: rnd(-.35, .35), spin: -(3 + rnd(0, 2)), rz: 0, life: 2.4, th, face, base: face.emissiveIntensity, glint: q > .9 ? 1.6 : q * .8 });
   while (MK.pieces.length > 8) dropPiece(MK.pieces.shift());
 }
 function dropPiece(p) { W.lineG.remove(p.m); p.m.geometry.dispose(); [].concat(p.m.material).forEach(x => x.dispose()); }
 function piecesStep(dt) {
   for (let i = MK.pieces.length - 1; i >= 0; i--) {
     const p = MK.pieces[i], m = p.m; p.rz = Math.max(-Math.PI / 2, p.rz + p.spin * dt); m.rotation.z = p.rz;
+    if (p.glint > 0) { p.glint = Math.max(0, p.glint - dt * 1.8); p.face.emissiveIntensity = p.base + p.glint; }
     p.vy -= 9.8 * dt; m.position.x += p.vx * dt; m.position.y += p.vy * dt; m.position.z += p.vz * dt;
     const rest = .73 + (.33 + (p.th / 2 - .33) * Math.abs(p.rz) / (Math.PI / 2)); if (m.position.y <= rest && p.vy < 0) { m.position.y = rest; p.vy = 0; p.vx = .8; p.vz *= .85; }
     p.life -= dt; if (p.life < .6) [].concat(m.material).forEach(x => x.opacity = Math.max(0, p.life / .6));
@@ -2910,28 +2954,10 @@ function updMakeUI() {
   if (M.step === 2) { const t = $('#mgTgt'), k = $('#mgKnob'), x = dryTarget(g); if (t) { t.style.left = (x - g.tw) * 100 + '%'; t.style.width = g.tw * 200 + '%'; } if (k) k.style.left = g.knob * 100 + '%'; }
 }
 function swatch(sp) { return sp.color2 ? `linear-gradient(135deg,${sp.color},${sp.color2})` : `radial-gradient(circle at 30% 30%,${rgba(sp.color, 1, .6)},${sp.color})`; }
-function renderMake() {
-  $('#machLegend').hidden = M.active; $('#gelPick').hidden = M.active;
-  setHTML($('#machLegend'), MKEY.map((k, i) => `<span class="mlg">${STEPS[i]} · ${UPS[k].name}<span class="lv">${[0, 1, 2, 3, 4].map(j => `<i class="${j < S.up[k] ? 'on' : ''}"></i>`).join('')}</span></span>`).join(''));
-  setHTML($('#gelPick'), unlockedSpecies().map(s => `<button class="zbtn ${M.sp === s.id ? 'on' : ''}" data-act="pickSp" data-id="${s.id}" ${M.active ? 'disabled' : ''}>${dot(s.color)}${short(s.id)}<br><small>凝膠 ${S.gel[s.id] || 0}</small></button>`).join(''));
-  const mini = $('#mini');
-  if (M.active) {
-    const g = M.g, st = `<div class="steps">${STEPS.map((x, i) => { const own = S.own[MKEY[i]], done = M.scores[i] != null && i !== M.step; return `<span class="${!own ? 'off' : i === M.step ? 'on' : done ? 'done' : ''}">${i + 1}. ${x}${!own ? '（未購買）' : done ? ' ' + Math.round(M.scores[i] * 100) + '%' : ''}</span>`; }).join('')}</div>`;
-    const how = `<div class="mghow"><b>${UPS[MKEY[M.step]].name}</b>：${MG[M.step].how}${TOUCH ? '' : `<span style="color:var(--sub)">（${MG[M.step].key}）</span>`}${M.phase === 'ready' ? '<span class="ready">準備…</span>' : ''}</div>`;
-    let body = '';
-    if (M.step === 0) { const C = CUTS[M.cut] || CUTS.thick; body = `<div class="cutdots" id="cutDots">${g.marks.map(() => '<i></i>').join('')}</div><div class="hint" style="margin:0"><b style="color:${C.col}">${C.n}切</b>　${C.marks} 刀。發光的切割線碰到<b style="color:#ff6b81">紅色雷射</b>時${TOUCH ? '在畫面上<b>由上往下滑一刀</b>' : '按<b>空白鍵</b>或<b>點擊畫面</b>'}</div>`; }
-    else if (M.step === 1 && M.coop) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0"><b>${esc(M.coop.name)}</b> 正在幫你裹糖，看著滾筒轉吧！</div>`;
-    else if (M.step === 1) body = `<div class="gauge"><div class="gz" style="left:${g.lo * 100}%;width:${(g.hi - g.lo) * 100}%"></div><i class="needle" id="mgNeedle" style="left:0"></i></div><div class="tbar"><i id="mgTime"></i></div><button class="btn big hold" style="width:100%" id="mgHold" data-mg="hold">按住加速</button>`;
-    else body = `<div class="track dry" id="mgDry"><div class="tgt" id="mgTgt"></div><div class="knob" id="mgKnob" style="left:50%"></div></div><div class="tbar"><i id="mgTime"></i></div><div class="hint" style="margin:0">左右拖曳火力旋鈕${TOUCH ? '' : '，或按 ← →'}</div>`;
-    setHTML(mini, st + how + body); updMakeUI();
-  } else setHTML(mini, (S.own.slicer ? `<div class="small" style="color:var(--sub);margin-bottom:4px">切法（成品會保留切面，訂單可能指定切法）</div><div class="row wrap cutpick">${Object.keys(CUTS).map(k => `<button class="zbtn ${S.cut === k ? 'on' : ''}" data-act="pickCut" data-k="${k}"><b style="color:${CUTS[k].col}">${CUTS[k].n}</b><br><small>${CUTS[k].desc}<br>售價 ×${CUTS[k].pm}</small></button>`).join('')}</div>` : '') + `<div class="row"><div class="grow small">${M.sp ? `已選：<b>${SP[M.sp].name}</b>　消耗 2 凝膠` : '請先選擇要加工的凝膠'}<br><span style="color:var(--sub)">${ownAny() ? '已擁有：' + MKEY.filter(k => S.own[k]).map(k => UPS[k].name).join('、') + '。缺少的機器步驟以 0 分計算。' : '尚未購買任何機器。'}庫存 ${S.stock.length}/${cap()}</span></div><button class="btn" data-act="startMake" ${!M.sp || (S.gel[M.sp] || 0) < 2 ? 'disabled' : ''}>啟動產線</button></div>`);
-  const r = $('#makeResult');
-  if (M.last && !M.active) { const p = M.last, pct = Math.round(p.crisp * 100); setHTML(r, `<div class="card item" style="cursor:default"><div class="sw" style="background:${swatch(SP[p.sp])};width:52px;height:52px"></div><div class="grow"><b>${p.wonky ? '歪歪' : ''}${SP[p.sp].name} · ${p.cut ? CUTS[p.cut].n + '切' : '酥脆'}捏捏</b><br>${p.cut ? '切面 ' + (p.cq > .85 ? '平整發亮' : p.cq > .5 ? '還算平整' : '有點歪') + '　' : ''}酥脆度 <b style="color:var(--warn)">${pct}%</b>　${pct >= 90 ? '極品' : pct >= 70 ? '優良' : '再接再厲'}<br><small style="color:var(--sub)">已放入背包。可拿到裝飾桌加工，或到直播台販售。</small></div></div>`); }
-  else setHTML(r, '');
-}
-// 加工小遊戲的指標操作
+function renderMake() { ui('make'); if (M.active) updMakeUI(); } // 面板由 React 負責（components/stations/Make.tsx）
+// 加工小遊戲的指標操作：掛在一直都在的 #p-make 上（裡面的小遊戲元素由 React 畫，會換掉）
 (() => {
-  const mini = document.getElementById('mini');
+  const mini = document.getElementById('p-make');
   const knobAt = e => { const t = $('#mgDry'); if (!t) return; const b = t.getBoundingClientRect(); makeAction('knob', (e.clientX - b.left) / b.width); };
   mini.addEventListener('pointerdown', e => {
     const el = e.target.closest('[data-mg]'), dry = e.target.closest('#mgDry');
@@ -4081,6 +4107,7 @@ window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
   get title() { return TITLE; }, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
+  MG, STEPS, MKEY, ownAny, TOUCH,
   SP, SPECIES, ZONES, RAR, UPS, OWN, PACKS, DECO, CUTS, TIER, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, tierOf, defPrice, demand, speedTxt, xpLevel, decoBonus,
