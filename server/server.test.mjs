@@ -187,6 +187,25 @@ test('存檔數字不合理：照存但標記帳號', async () => {
   assert.match(flag(), /分鐘內收入增加/);
 });
 
+test('管理員：玩家列表、清除可疑標記、只改備註', async () => {
+  const r = await admin('GET', '/api/admin/users');
+  assert.equal(r.status, 200);
+  const kid = r.body.users.find((u) => u.email === 'kid@school.test');
+  assert.ok(kid, '列表有玩家');
+  assert.equal(kid.allowed, true);
+  assert.match(kid.flag, /分鐘內收入增加/);
+  assert.equal(kid.save.earned, 900000);
+  assert.equal((await student('GET', '/api/admin/users')).status, 403);
+  assert.equal((await admin('POST', '/api/admin/users/clear-flag', { id: kid.id })).status, 200);
+  assert.equal((await admin('GET', '/api/admin/users')).body.users.find((u) => u.id === kid.id).flag, '');
+  assert.equal((await admin('POST', '/api/admin/users/clear-flag', { id: 'nope' })).status, 404);
+  // 只改備註，權限不變
+  assert.equal((await admin('PATCH', '/api/admin/allow', { entry: 'boss@test.dev', note: '  助教<b>  ' })).status, 200);
+  const boss = (await admin('GET', '/api/admin/allow')).body.list.find((x) => x.entry === 'boss@test.dev');
+  assert.equal(boss.note, '助教b');
+  assert.equal(boss.admin, true);
+});
+
 test('管理員移除名單項目：已登入的人下一個請求就被擋；不能移除自己、不能少於一位管理員', async () => {
   assert.equal((await admin('DELETE', '/api/admin/allow?entry=admin%40test.dev')).status, 400);
   assert.equal((await admin('PATCH', '/api/admin/allow', { entry: 'admin@test.dev', admin: false })).status, 400);

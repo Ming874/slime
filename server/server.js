@@ -434,10 +434,35 @@ async function api(req, res, url) {
       const b = await readBody(req, 4096);
       const e = normEntry(b.entry), cur = e && q.allowGet.get(e);
       if (!cur) return out(404, { error: '名單裡沒有這一筆' });
-      const admin = b.admin === true;
+      // 只帶 note 就只改備註；只帶 admin 就只改權限
+      const admin = typeof b.admin === 'boolean' ? b.admin : cur.admin === 1;
+      const note = typeof b.note === 'string' ? b.note.replace(/[\p{C}<>]/gu, '').trim().slice(0, 40) : cur.note;
       if (admin && !EMAIL_RE.test(e)) return out(400, { error: '網域和 * 不能設成管理員' });
       if (!admin && cur.admin && e === user.email) return out(400, { error: '不能拿掉自己的管理員權限' });
-      q.allowAdd.run(e, admin ? 1 : 0, cur.note, cur.added_by, cur.created_at);
+      q.allowAdd.run(e, admin ? 1 : 0, note, cur.added_by, cur.created_at);
+      return out(200, {});
+    }
+    // 玩家列表：帳號、最後登入、存檔摘要（只取幾個數字）、可疑標記、目前還能不能登入
+    if (route === 'GET /api/admin/users') {
+      const rows = db.prepare('SELECT u.id, u.name, u.email, u.created_at, u.last_login, u.flag, s.ver, s.updated_at, s.data FROM users u LEFT JOIN saves s ON s.user_id = u.id ORDER BY u.last_login DESC').all();
+      const users = rows.map((r) => {
+        let save = null;
+        if (r.data) {
+          try {
+            const d = JSON.parse(r.data), n = (v) => (Number.isFinite(+v) ? +v : 0);
+            save = { ver: r.ver, updatedAt: r.updated_at, money: n(d.money), earned: n(d.earned), fans: n(d.fans), xp: n(d.xp), zones: Array.isArray(d.zones) ? d.zones.length : 0, stock: Array.isArray(d.stock) ? d.stock.length : 0 };
+          } catch { save = { ver: r.ver, updatedAt: r.updated_at, broken: true }; }
+        }
+        const acc = access(r.email);
+        return { id: r.id, name: r.name, email: r.email, createdAt: r.created_at, lastLogin: r.last_login, flag: r.flag || '', allowed: !!acc, admin: !!acc?.admin, save };
+      });
+      return out(200, { users, me: user.id });
+    }
+    if (route === 'POST /api/admin/users/clear-flag') {
+      const b = await readBody(req, 1024);
+      const r = db.prepare('UPDATE users SET flag = NULL WHERE id = ?').run(String(b.id || ''));
+      if (!r.changes) return out(404, { error: '找不到這位玩家' });
+      console.log(new Date().toISOString(), `清除可疑標記（${user.id}）：${b.id}`);
       return out(200, {});
     }
     if (route === 'DELETE /api/admin/allow') {

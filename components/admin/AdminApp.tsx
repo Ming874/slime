@@ -1,5 +1,5 @@
 'use client';
-/* 允許名單管理（管理員專用）：新增／移除可以登入的信箱與網域、設定管理員。
+/* 管理後台（管理員專用）：總覽、允許名單（新增／移除信箱與網域、設定管理員、改備註）、玩家（最後登入、存檔摘要、可疑標記）。
    權限由伺服器檢查（/api/admin/*），這裡只負責顯示與送出。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, type User } from '@/lib/cloud';
@@ -26,13 +26,32 @@ const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 
 const fmtDate = (t: number) => { const d = new Date(t); return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`; };
 const KIND_ICON = { email: 'mail', domain: 'school', all: 'globe', bad: 'alert' } as const;
 
+type Player = {
+  id: string; name: string; email: string; createdAt: number; lastLogin: number; flag: string; allowed: boolean; admin: boolean;
+  save: { ver: number; updatedAt: number; money?: number; earned?: number; fans?: number; xp?: number; zones?: number; stock?: number; broken?: boolean } | null;
+};
+type View = 'overview' | 'allow' | 'players';
+const VIEWS: { k: View; label: string; icon: string; desc: string }[] = [
+  { k: 'overview', label: '總覽', icon: 'sparkle', desc: '名單與玩家的整體狀況' },
+  { k: 'allow', label: '允許名單', icon: 'list', desc: '誰可以登入遊戲、誰是管理員' },
+  { k: 'players', label: '玩家', icon: 'users', desc: '登入過的玩家與存檔進度' },
+];
+const ago = (t?: number) => {
+  if (!t) return '—';
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? '剛剛' : m < 60 ? `${m} 分鐘前` : m < 1440 ? `${Math.floor(m / 60)} 小時前` : m < 43200 ? `${Math.floor(m / 1440)} 天前` : fmtDate(t);
+};
+const yen = (n?: number) => '¥' + Math.round(n || 0).toLocaleString('en-US');
+const viewOf = (): View => { const h = typeof location !== 'undefined' ? location.hash.slice(1) : ''; return (VIEWS.find((v) => v.k === h)?.k) || 'overview'; };
+
 export default function AdminApp() {
   const [state, setState] = useState<'loading' | 'ok' | 'login' | 'forbidden' | 'error'>('loading');
   const [errMsg, setErrMsg] = useState('');
   const [me, setMe] = useState<User | null>(null);
   const [myEmail, setMyEmail] = useState('');
   const [list, setList] = useState<Entry[]>([]);
-  const [players, setPlayers] = useState(0);
+  const [users, setUsers] = useState<Player[]>([]);
+  const [view, setView] = useState<View>('overview');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
 
@@ -46,63 +65,79 @@ export default function AdminApp() {
 
   const load = useCallback(async () => {
     try {
-      const [m, r] = await Promise.all([api<{ user: User }>('GET', '/api/me'), api<{ list: Entry[]; me: string; players: number }>('GET', '/api/admin/allow')]);
+      const [m, r, u] = await Promise.all([
+        api<{ user: User }>('GET', '/api/me'),
+        api<{ list: Entry[]; me: string; players: number }>('GET', '/api/admin/allow'),
+        api<{ users: Player[] }>('GET', '/api/admin/users'),
+      ]);
       if (m.status === 401 || r.status === 401) return setState('login');
       if (r.status === 403) return setState('forbidden');
       if (!r.ok) { setErrMsg(r.body.error || '伺服器暫時無法使用'); return setState('error'); }
-      setMe(m.body.user); setList(r.body.list || []); setMyEmail(r.body.me || ''); setPlayers(r.body.players || 0);
+      setMe(m.body.user); setList(r.body.list || []); setMyEmail(r.body.me || ''); setUsers(u.ok ? u.body.users || [] : []);
       setState('ok');
     } catch { setErrMsg('連不上伺服器，請確認網路後重新整理頁面。'); setState('error'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const stats = useMemo(() => ({
-    total: list.length,
-    admins: list.filter((x) => x.admin).length,
-    domains: list.filter((x) => kindOf(x.entry) !== 'email').length,
-  }), [list]);
+  // 分頁記在網址的 # 後面，重新整理也會停在同一頁
+  useEffect(() => {
+    setView(viewOf());
+    const on = () => setView(viewOf());
+    addEventListener('hashchange', on);
+    return () => removeEventListener('hashchange', on);
+  }, []);
+  const go = (v: View) => { history.replaceState(null, '', '#' + v); setView(v); window.scrollTo({ top: 0 }); };
+
+  const flagged = users.filter((u) => u.flag).length;
+  const cur = VIEWS.find((v) => v.k === view)!;
+  const common = { ask, toast, onDone: load };
 
   return (
-    <>
-      <header className="top">
-        <div className="wrap">
-          <div className="brand">
-            <span className="blob" aria-hidden="true" />
-            <div style={{ minWidth: 0 }}><div className="kicker">SQUISH LAB</div><div className="ttl">允許名單管理</div></div>
-          </div>
+    <div className="adm">
+      <aside className="side">
+        <div className="brand">
+          <span className="blob" aria-hidden="true" />
+          <div style={{ minWidth: 0 }}><div className="kicker">SQUISH LAB</div><div className="ttl">管理後台</div></div>
+        </div>
+        <nav className="nav" aria-label="後台分頁">
+          {VIEWS.map((v) => (
+            <button key={v.k} type="button" className={view === v.k ? 'on' : ''} aria-current={view === v.k ? 'page' : undefined} onClick={() => go(v.k)}>
+              <Icon name={v.icon} /><span>{v.label}</span>
+              {v.k === 'allow' && state === 'ok' && <em>{list.length}</em>}
+              {v.k === 'players' && state === 'ok' && <em className={flagged ? 'warn' : ''}>{flagged ? `${flagged} 可疑` : users.length}</em>}
+            </button>
+          ))}
+        </nav>
+        <div className="side-foot">
           {me && (
             <div className="me" title={me.name}>
               <span className="av" style={{ '--h': hue(me.name) } as React.CSSProperties}>{[...me.name][0]}</span>
               <div><b>{me.name}</b><small>管理員</small></div>
             </div>
           )}
-          <a className="btn ghost" href="/"><Icon name="back" /><span className="back-txt">回到遊戲</span></a>
+          <a className="btn ghost" href="/"><Icon name="back" /><span>回到遊戲</span></a>
         </div>
-      </header>
+      </aside>
 
-      <main className="wrap">
+      <main className="main">
         {state === 'loading' && <Skeleton />}
-        {state === 'login' && <Gate icon="login" title="請先登入" text="回到遊戲用 Google 登入後，再從暫停選單的「管理允許名單」進來。" action={<a className="btn primary" href="/">回到遊戲登入</a>} />}
+        {state === 'login' && <Gate icon="login" title="請先登入" text="回到遊戲用 Google 登入後，再從暫停選單的「管理後台」進來。" action={<a className="btn primary" href="/">回到遊戲登入</a>} />}
         {state === 'forbidden' && <Gate icon="lock" title="只有管理員可以使用" text="如果你需要管理名單，請其他管理員把你設為管理員。" action={<a className="btn ghost" href="/">回到遊戲</a>} />}
         {state === 'error' && <Gate icon="alert" title="讀取失敗" text={errMsg} action={<button className="btn primary" onClick={() => location.reload()}>重新整理</button>} />}
         {state === 'ok' && (
           <>
             <div className="hello">
-              <div>
-                <h1>誰可以進月光谷</h1>
-                <p>名單上的 Google 帳號才能登入遊戲；移出名單的人下一次操作就會被登出，存檔會保留。</p>
+              <div><h1>{cur.label}</h1><p>{cur.desc}</p></div>
+              <button type="button" className="btn ghost sm" onClick={() => void load().then(() => toast('已重新整理'))}><Icon name="clock" />重新整理</button>
+            </div>
+            {view === 'overview' && <Overview list={list} users={users} go={go} {...common} />}
+            {view === 'allow' && (
+              <div className="layout">
+                <AddPanel list={list} {...common} />
+                <ListPanel list={list} myEmail={myEmail} {...common} />
               </div>
-            </div>
-            <section className="stats" aria-label="名單統計">
-              <Stat icon="list" label="名單項目" n={stats.total} c="var(--acc)" />
-              <Stat icon="shield" label="管理員" n={stats.admins} c="var(--warn)" />
-              <Stat icon="school" label="開放的網域" n={stats.domains} c="var(--acc2)" />
-              <Stat icon="users" label="登入過的玩家" n={players} c="var(--good)" />
-            </section>
-            <div className="layout">
-              <AddPanel list={list} ask={ask} toast={toast} onDone={load} />
-              <ListPanel list={list} myEmail={myEmail} ask={ask} toast={toast} onDone={load} />
-            </div>
+            )}
+            {view === 'players' && <Players users={users} {...common} />}
           </>
         )}
       </main>
@@ -113,7 +148,7 @@ export default function AdminApp() {
           <div key={t.id} className={`toast${t.err ? ' err' : ''}${t.out ? ' out' : ''}`}><Icon name={t.err ? 'alert' : 'check'} />{t.text}</div>
         ))}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -328,7 +363,7 @@ function ListPanel({ list, myEmail, ask, toast, onDone }: { list: Entry[]; myEma
                   {self && <span className="pill you">你</span>}
                 </div>
                 <div className="meta">
-                  {x.note && <span className="note"><Icon name="tag" />{x.note}</span>}
+                  <NoteEdit x={x} toast={toast} onDone={onDone} />
                   <span><Icon name="users" />登入過 {x.users} 人</span>
                   <span><Icon name="clock" />{fmtDate(x.createdAt)}・{x.addedBy === 'ADMIN_EMAILS' ? '伺服器設定' : x.addedBy || '—'}</span>
                 </div>
@@ -374,5 +409,164 @@ function ConfirmDialog({ d, close }: { d: Dialog; close: (ok: boolean) => void }
         </div>
       </div>
     </div>
+  );
+}
+
+/* ---------- 名單備註：點一下直接改，Enter 或離開輸入框就存 ---------- */
+function NoteEdit({ x, toast, onDone }: { x: Entry } & Pick<Common, 'toast' | 'onDone'>) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const save = async (v: string) => {
+    setEditing(false);
+    if (v.trim() === (x.note || '')) return;
+    setBusy(true);
+    try {
+      const r = await api('PATCH', '/api/admin/allow', { entry: x.entry, note: v });
+      if (!r.ok) toast(r.body.error || '更改備註失敗', true); else toast('備註已更新');
+      await onDone();
+    } catch { toast('連不上伺服器，請稍後再試', true); }
+    finally { setBusy(false); }
+  };
+  if (editing) {
+    return (
+      <input className="note-in" autoFocus defaultValue={x.note} maxLength={40} placeholder="備註（例如：三年二班）" aria-label={`${x.entry} 的備註`}
+        onBlur={(e) => void save(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditing(false); }} />
+    );
+  }
+  return (
+    <button type="button" className={`note-btn${x.note ? '' : ' empty'}`} onClick={() => setEditing(true)} disabled={busy} title="點一下修改備註">
+      <Icon name="tag" />{x.note || '加備註'}
+    </button>
+  );
+}
+
+/* ---------- 總覽 ---------- */
+function Overview({ list, users, go, ask, toast, onDone }: { list: Entry[]; users: Player[]; go: (v: View) => void } & Common) {
+  const week = Date.now() - 7 * 864e5, active = users.filter((u) => u.lastLogin > week).length, flagged = users.filter((u) => u.flag);
+  const recent = users.slice(0, 6), blocked = users.filter((u) => !u.allowed).length;
+  return (
+    <>
+      <section className="stats" aria-label="整體統計">
+        <Stat icon="list" label="名單項目" n={list.length} c="var(--acc)" />
+        <Stat icon="users" label="登入過的玩家" n={users.length} c="var(--good)" />
+        <Stat icon="clock" label="7 天內有玩" n={active} c="var(--acc2)" />
+        <Stat icon="alert" label="存檔數字可疑" n={flagged.length} c={flagged.length ? 'var(--red)' : 'var(--sub)'} />
+      </section>
+      <div className="ov-grid">
+        <section className="panel">
+          <div className="list-hd"><h2><Icon name="clock" />最近登入</h2><button type="button" className="btn ghost sm" onClick={() => go('players')}>全部玩家<Icon name="chevron" /></button></div>
+          <div className="rows">
+            {recent.length ? recent.map((u) => (
+              <div className="row" key={u.id}>
+                <div className="av" style={{ '--h': hue(u.name) } as React.CSSProperties}>{[...u.name][0]}</div>
+                <div className="who"><div className="entry">{u.name}{u.admin && <span className="pill admin"><Icon name="shield" />管理員</span>}</div><div className="meta"><span>{u.email}</span></div></div>
+                <div className="ov-right"><b>{ago(u.lastLogin)}</b><small>{u.save ? `${yen(u.save.money)}・粉絲 ${Math.floor(u.save.fans || 0)}` : '還沒有存檔'}</small></div>
+              </div>
+            )) : <div className="empty"><Icon name="users" /><div>還沒有玩家登入過</div></div>}
+          </div>
+        </section>
+        <section className="panel">
+          <div className="list-hd"><h2><Icon name="alert" />需要注意</h2></div>
+          <div className="rows">
+            {flagged.map((u) => <FlagRow key={u.id} u={u} ask={ask} toast={toast} onDone={onDone} />)}
+            {blocked > 0 && (
+              <div className="row"><div className="av all"><Icon name="lock" /></div><div className="who"><div className="entry">{blocked} 位玩家已不在名單</div><div className="meta"><span>他們登不進來，存檔仍保留</span></div></div>
+                <button type="button" className="btn ghost sm" onClick={() => go('players')}>查看</button></div>
+            )}
+            {!flagged.length && !blocked && <div className="empty"><Icon name="check" /><div>一切正常，沒有需要處理的帳號</div></div>}
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}
+
+function FlagRow({ u, ask, toast, onDone }: { u: Player } & Common) {
+  const [busy, setBusy] = useState(false);
+  const clear = async () => {
+    if (!(await ask({ title: `清除 ${u.name} 的可疑標記？`, text: `原因：${u.flag}。確認是正常遊玩後再清除，之後排行榜會採用這位玩家的數字。`, ok: '清除標記', tone: 'warn' }))) return;
+    setBusy(true);
+    try {
+      const r = await api('POST', '/api/admin/users/clear-flag', { id: u.id });
+      if (!r.ok) toast(r.body.error || '清除失敗', true); else toast(`已清除 ${u.name} 的標記`);
+      await onDone();
+    } catch { toast('連不上伺服器，請稍後再試', true); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="row">
+      <div className="av" style={{ '--h': hue(u.name) } as React.CSSProperties}>{[...u.name][0]}</div>
+      <div className="who"><div className="entry">{u.name}<span className="pill flag"><Icon name="alert" />可疑</span></div><div className="meta"><span>{u.flag.replace(/^\S+\s/, '')}</span></div></div>
+      <button type="button" className="btn ghost sm" disabled={busy} onClick={() => void clear()}>清除標記</button>
+    </div>
+  );
+}
+
+/* ---------- 玩家 ---------- */
+type PTab = 'all' | 'flag' | 'blocked' | 'admin';
+type PSort = 'login' | 'money' | 'earned' | 'fans';
+function Players({ users, ask, toast, onDone }: { users: Player[] } & Common) {
+  const [q, setQ] = useState('');
+  const [tab, setTab] = useState<PTab>('all');
+  const [sort, setSort] = useState<PSort>('login');
+  const counts = { all: users.length, flag: users.filter((u) => u.flag).length, blocked: users.filter((u) => !u.allowed).length, admin: users.filter((u) => u.admin).length };
+  const f = q.trim().toLowerCase();
+  const val = (u: Player) => (sort === 'login' ? u.lastLogin : sort === 'money' ? u.save?.money || 0 : sort === 'earned' ? u.save?.earned || 0 : u.save?.fans || 0);
+  const rows = users
+    .filter((u) => (tab === 'all' || (tab === 'flag' ? !!u.flag : tab === 'blocked' ? !u.allowed : u.admin)) && (!f || u.name.toLowerCase().includes(f) || u.email.includes(f)))
+    .sort((a, b) => val(b) - val(a));
+  const TABS: [PTab, string][] = [['all', '全部'], ['flag', '可疑'], ['blocked', '已移出名單'], ['admin', '管理員']];
+  const SORTS: [PSort, string][] = [['login', '最後登入'], ['earned', '累計營收'], ['money', '資金'], ['fans', '粉絲']];
+  return (
+    <section className="panel">
+      <div className="list-hd">
+        <h2><Icon name="users" />玩家 <span className="sub">{users.length} 位</span></h2>
+        <label className="search"><Icon name="search" /><input type="search" placeholder="搜尋暱稱或信箱" aria-label="搜尋玩家" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+      </div>
+      <div className="tabs" role="tablist">
+        {TABS.map(([k, n]) => <button key={k} type="button" role="tab" className="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{n}<em>{counts[k]}</em></button>)}
+        <span className="sort">排序
+          <select value={sort} onChange={(e) => setSort(e.target.value as PSort)} aria-label="排序">{SORTS.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
+        </span>
+      </div>
+      <div className="tbl-wrap">
+        <table className="tbl">
+          <thead><tr><th>玩家</th><th>最後登入</th><th className="num">資金</th><th className="num">累計營收</th><th className="num">粉絲</th><th className="col-z">區域</th><th>狀態</th><th aria-label="操作" /></tr></thead>
+          <tbody>
+            {rows.map((u) => (
+              <tr key={u.id} className={u.allowed ? '' : 'off'}>
+                <td><div className="pl"><span className="av sm" style={{ '--h': hue(u.name) } as React.CSSProperties}>{[...u.name][0]}</span><div><b>{u.name}</b><small>{u.email}</small></div></div></td>
+                <td><span title={new Date(u.lastLogin).toLocaleString('zh-TW')}>{ago(u.lastLogin)}</span><small>加入 {fmtDate(u.createdAt)}</small></td>
+                <td className="num">{u.save ? yen(u.save.money) : '—'}</td>
+                <td className="num">{u.save ? yen(u.save.earned) : '—'}</td>
+                <td className="num">{u.save ? Math.floor(u.save.fans || 0).toLocaleString() : '—'}</td>
+                <td className="col-z">{u.save ? <span className="zones">{[0, 1, 2, 3].map((i) => <i key={i} className={i < (u.save!.zones || 0) ? 'on' : ''} />)}</span> : '—'}</td>
+                <td className="st">
+                  {u.admin && <span className="pill admin"><Icon name="shield" />管理員</span>}
+                  {!u.allowed && <span className="pill off">已移出名單</span>}
+                  {u.flag && <span className="pill flag" title={u.flag}><Icon name="alert" />可疑</span>}
+                  {u.allowed && !u.flag && !u.admin && <span className="pill ok">正常</span>}
+                </td>
+                <td>{u.flag && <FlagClear u={u} ask={ask} toast={toast} onDone={onDone} />}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length && <div className="empty"><Icon name="search" /><div>{users.length ? '沒有符合的玩家' : '還沒有玩家登入過'}</div></div>}
+      </div>
+    </section>
+  );
+}
+
+function FlagClear({ u, ask, toast, onDone }: { u: Player } & Common) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button type="button" className="btn ghost sm" disabled={busy} onClick={async () => {
+      if (!(await ask({ title: `清除 ${u.name} 的可疑標記？`, text: `原因：${u.flag}。確認是正常遊玩後再清除。`, ok: '清除標記', tone: 'warn' }))) return;
+      setBusy(true);
+      try { const r = await api('POST', '/api/admin/users/clear-flag', { id: u.id }); if (!r.ok) toast(r.body.error || '清除失敗', true); else toast(`已清除 ${u.name} 的標記`); await onDone(); }
+      catch { toast('連不上伺服器，請稍後再試', true); } finally { setBusy(false); }
+    }}>清除標記</button>
   );
 }
