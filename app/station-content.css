@@ -360,3 +360,82 @@
 #cutFlash.on{animation:rx-flash .34s ease-out}
 @keyframes rx-flash{0%{opacity:.6}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){#cutFlash{display:none}.rx-gradepop,.rx-cutdots i{animation:none}}
+
+/* =====================================================================
+   直播台（手機，components/stations/Live.tsx＋game/dom.html 的舞台與聊天）
+   ===================================================================== */
+.rx-strip{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x mandatory;padding:2px 2px 8px;scrollbar-width:thin}
+.rx-strip>.rx-tile{flex:0 0 200px;scroll-snap-align:start}
+.rx-liveothers{display:grid;gap:8px;margin-bottom:10px;padding:10px 12px;border-radius:14px;background:#ffffff0a;border:1px solid #ffffff14;font-size:12.5px;color:var(--sub)}
+.rx-live-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:#ef4444;box-shadow:0 0 8px #ef4444;animation:st-blink 1.2s infinite}
+.rx-liveothers-row{display:flex;gap:8px;overflow-x:auto}
+.rx-streamer{display:flex;flex-direction:column;align-items:center;gap:3px;flex:none;width:76px;padding:8px 4px;border-radius:12px;border:1px solid #ffffff14;background:transparent;color:var(--tx)}
+.rx-streamer b{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+.rx-streamer small{font-size:10.5px;color:var(--sub)}
+.rx-streamer .rx-avatar{width:40px;height:40px;border-radius:50%;box-shadow:0 0 0 2px #ef4444,0 0 0 4px #0c1018}
+.rx-streamer.on{border-color:#ef4444;background:#ef44441a}
+.rx-livestock-hd{display:flex;align-items:baseline;gap:8px;margin:10px 0 6px}
+.rx-livestock-hd b{font-size:14px}
+.rx-livestock-hd small{font-size:12px;color:var(--sub)}
+/* 手機裡的直播畫面：舞台圓角、LIVE 標誌、聊天像直播 App 的留言 */
+#gui[data-prop="phone"] .stagewrap.live{height:min(46vh,380px);border-radius:18px;border:0;box-shadow:inset 0 0 0 1px #ffffff12}
+#gui[data-prop="phone"] .badge{border-radius:6px;padding:3px 8px;font-size:11.5px}
+#gui[data-prop="phone"] .badge.on{background:#ef4444;color:#fff;box-shadow:0 0 12px #ef4444aa}
+#gui[data-prop="phone"] .ov.tl{padding:4px 8px 4px 4px;border-radius:999px;background:#0008;backdrop-filter:blur(6px)}
+#gui[data-prop="phone"] .meter{height:7px;border:0;background:#ffffff26}
+#gui[data-prop="phone"] .meter i{background:linear-gradient(90deg,#f472b6,#fbbf24)}
+#gui[data-prop="phone"] .chat{height:120px;padding:8px 10px;border:0;border-radius:14px;background:#ffffff0a}
+#gui[data-prop="phone"] .chat>div{width:fit-content;max-width:100%;margin:3px 0;padding:3px 10px;border-radius:12px;background:#ffffff10}
+#gui[data-prop="phone"] .chat b{color:#f9a8d4}
+#gui[data-prop="phone"] #btnLive{border-radius:999px;background:linear-gradient(90deg,#ef4444,#ec4899);color:#fff;box-shadow:0 8px 20px -10px #ef4444}
+#gui[data-prop="phone"] #btnLive.red{background:#334155;color:#fecaca;box-shadow:none}
+#gui[data-prop="phone"] #stageInfo{font-size:12.5px;line-height:1.55}
+
+/* =====================================================================
+   裝飾桌（components/stations/Decor.tsx）
+   ===================================================================== */
+.rx-decotools{display:grid;gap:10px;padding:12px;border-radius:6px;border:1px solid var(--line);background:var(--card)}
+.rx-deco-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rx-deco-hd b{font-size:14px}
+.rx-deco-hd em{margin-left:auto;font-style:normal;font-weight:800;font-size:13px;color:var(--warn)}
+.rx-deco-meter{display:flex;gap:3px}
+.rx-deco-meter i{width:12px;height:12px;border-radius:3px;background:color-mix(in srgb,var(--line) 70%,transparent)}
+.rx-deco-meter i.on{background:var(--acc)}
+.rx-palette{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px}
+.rx-part{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:10px;border:1px solid var(--line);background:color-mix(in srgb,var(--card) 70%,var(--bg));color:var(--tx);font-size:13px;transition:transform .12s,border-color .15s}
+.rx-part i{width:14px;height:14px;flex:none;border-radius:4px;transform:rotate(45deg);background:linear-gradient(135deg,#fff8,var(--pc) 45%,color-mix(in srgb,var(--pc) 60%,#000));box-shadow:0 0 6px color-mix(in srgb,var(--pc) 60%,transparent)}
+.rx-part:hover:not(:disabled){transform:translateY(-2px);border-color:var(--pc)}
+.rx-part.locked{opacity:.45}
+.rx-part.locked i{filter:grayscale(1)}
+.rx-part:disabled{cursor:not-allowed}
+.rx-deco-edit{display:grid;gap:8px;padding:10px;border-radius:10px;background:color-mix(in srgb,var(--acc) 8%,transparent);border:1px dashed color-mix(in srgb,var(--acc) 40%,transparent)}
+.rx-deco-edit-hd{display:flex;align-items:center;justify-content:space-between}
+.rx-range{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:8px;font-size:12.5px;color:var(--sub)}
+.rx-range input{width:100%;accent-color:var(--acc)}
+.rx-decotools>.btn{justify-self:start}
+
+/* =====================================================================
+   事業（components/stations/Branch.tsx）
+   ===================================================================== */
+.rx-branch{display:grid;gap:10px}
+.rx-branch-hd b{display:block;font-size:17px;margin-bottom:2px}
+.rx-branch-hd small{color:var(--sub);font-size:12.5px;line-height:1.6}
+.rx-paths{display:grid;gap:10px}
+@container (min-width:620px){.rx-paths{grid-template-columns:repeat(3,1fr)}}
+.rx-path{display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+.rx-path-ic{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;font-size:24px;background:color-mix(in srgb,var(--acc) 14%,transparent)}
+.rx-path b{font-size:16px}
+.rx-path p{flex:1;margin:0;font-size:12.5px;line-height:1.6;color:var(--sub)}
+.rx-path .btn{align-self:flex-start}
+.rx-branch-acts{display:flex;gap:8px;flex-wrap:wrap}
+.rx-warn-line{margin:0;padding:8px 12px;border-radius:10px;background:color-mix(in srgb,var(--warn) 14%,transparent);color:var(--warn);font-size:13px}
+.rx-customer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card)}
+.rx-customer-body{display:grid;gap:4px;min-width:0}
+.rx-customer-hd{display:flex;align-items:center;gap:6px}
+.rx-hearts{display:inline-flex;gap:2px;margin-left:4px}
+.rx-hearts i{width:10px;height:9px;background:color-mix(in srgb,var(--sub) 35%,transparent);clip-path:path("M5 9 L0.6 4.6 A2.5 2.5 0 0 1 5 1.6 A2.5 2.5 0 0 1 9.4 4.6 Z")}
+.rx-hearts i.on{background:#f472b6}
+.rx-want{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--sub)}
+.rx-want b{color:var(--tx)}
+.rx-patience{height:6px;margin:2px 0 0}
+@container (max-width:420px){.rx-customer{grid-template-columns:auto 1fr}.rx-customer>.btn{grid-column:1/-1}}

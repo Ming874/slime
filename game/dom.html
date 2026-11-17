@@ -53,12 +53,12 @@
 
         <section class="panel" id="p-decor">
           <div class="stagewrap sq"><canvas id="decorCv"></canvas></div>
-          <div id="decorStock" class="strip"></div>
-          <div id="decoTools" class="card"></div>
+          <div class="rx" data-rx="decorStock"></div>
+          <div class="rx" data-rx="decoTools"></div>
         </section>
 
         <section class="panel" id="p-live">
-          <div id="liveOthers"></div>
+          <div class="rx" data-rx="liveOthers"></div>
           <div class="stagewrap live" id="liveWrap">
             <canvas id="liveCv"></canvas>
             <div class="ov tl"><span class="badge" id="liveBadge">OFF AIR</span> <span id="liveViewers">0 觀眾</span></div>
@@ -78,13 +78,13 @@
               <button class="btn big" data-act="toggleLive" id="btnLive">開始直播</button>
               <div id="stageInfo" class="grow small"></div>
             </div>
-            <div id="liveStock" class="strip"></div>
+            <div class="rx" data-rx="liveStock"></div>
           </div>
           <div id="chat" class="chat"></div>
           <details class="fold" id="livePriceFold">
             <summary>直播定價</summary>
             <div class="hint">直播為主動銷售：單價較高（×1.4），但需要你親自捏出人氣。價格過高需求下降，過低則利潤不足。</div>
-            <div id="livePrice"></div>
+            <div class="rx" data-rx="livePrice"></div>
           </details>
         </section>
 
@@ -94,7 +94,7 @@
 
         <section class="panel" id="p-branch">
           <div class="stagewrap mk" id="facWrap" hidden><canvas id="facCv"></canvas></div>
-          <div id="branchBody"></div>
+          <div class="rx" data-rx="branch"></div>
         </section>
 
         <section class="panel" id="p-codex"><div class="rx" data-rx="codex"></div></section>

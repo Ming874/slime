@@ -2990,18 +2990,9 @@ decorSt.onSel = () => renderDecorTools();
 function renderDecor() {
   if (!stockById(D.id)) D.id = S.stock.length ? S.stock[0].id : null;
   const p = stockById(D.id) || null; decorSt.set(p); setTimeout(decorSt.resize, 0);
-  $('#decorStock').innerHTML = S.stock.length ? S.stock.map(q => itemHTML(q, 'decoSel', D.id)).join('') : '<div class="empty">背包裡沒有捏捏，先到加工產線做一個吧。</div>';
-  renderDecorTools();
+  ui('decor'); // 庫存與工具由 React 畫（components/stations/Decor.tsx）
 }
-function renderDecorTools() {
-  const p = decorSt.p, b = $('#decoTools');
-  if (!p) { b.innerHTML = '<div class="empty">選擇捏捏後即可擺放裝飾零件（拖曳零件移動、拖曳空白處旋轉）。</div>'; return; }
-  const pal = Object.keys(DECO).map(k => `<button data-act="addDeco" data-k="${k}" ${S.packs.includes(DECO[k].pack) ? '' : 'disabled title="到工作電腦的升級頁解鎖"'}>${dot(DECO[k].c)}${DECO[k].n}</button>`).join('');
-  const d = p.deco[decorSt.sel];
-  b.innerHTML = `<div class="small">裝飾 ${p.deco.length}/6　加成 <b style="color:var(--warn)">+${Math.round(decoBonus(p) * 100)}%</b> 售價與人氣</div><div class="pal">${pal}</div>` +
-    (d ? `<div class="small">縮放</div><input type="range" min="0.5" max="2" step="0.05" value="${d.s}" data-r="s"><div class="small">旋轉</div><input type="range" min="-3.14" max="3.14" step="0.05" value="${d.r}" data-r="r"><div class="row" style="margin-top:6px"><button class="btn sm red" data-act="delDeco">移除此零件</button></div>` : '<div class="hint">點選捏捏上的零件可調整大小、旋轉或移除。</div>') +
-    `<div class="row" style="margin-top:6px"><button class="btn sm ghost" data-act="photo">拍照（下載圖片）</button></div>`;
-}
+function renderDecorTools() { ui('decor'); } // 裝飾工具由 React 畫（components/stations/Decor.tsx）
 document.addEventListener('input', e => { const r = e.target.dataset && e.target.dataset.r; if (!r) return; const p = decorSt.p; if (!p) return; const d = p.deco[decorSt.sel]; if (d) d[r] = +e.target.value; });
 
 /* ---------- 直播 ---------- */
@@ -3022,13 +3013,10 @@ liveSt.onCrunch = (st, eff, info) => {
 const bestStock = () => S.stock.slice().sort((a, b) => ((b.dur > 0) - (a.dur > 0)) || (effCrisp(b) - effCrisp(a)))[0];
 liveSt.onFlat = () => { const now = performance.now(); if (now - (L.flatWarn || 0) > 4000) { L.flatWarn = now; toast('這個捏捏已經被捏扁了，換一個上台吧'); } };
 function renderLive() {
-  const others = NET.on ? [...NET.players.entries()].filter(([id, p]) => id !== NET.me && p.live && p.live.on) : [];
-  $('#liveOthers').innerHTML = others.length ? `<div class="card small row wrap"><span>其他玩家正在直播：</span>${others.map(([id, p]) => `<button class="btn sm ${L.watch && L.watch.id === id ? '' : 'ghost'}" data-act="watch" data-id="${esc(id)}">${esc(p.name)}（${p.live.viewers} 觀眾）</button>`).join('')}</div>` : '';
+  ui('live'); // 其他玩家的直播、庫存、定價由 React 畫（components/stations/Live.tsx）
   const w = !!L.watch; liveSt.watch = w; $('#watchBar').hidden = !w; $('#liveOwn').hidden = w; $('#livePriceFold').hidden = w;
   if (w) { liveSt.set(L.watch.p); setTimeout(liveSt.resize, 0); updateLiveHUD(); return; }
   if (!stockById(L.stageId)) { const b = bestStock(); L.stageId = b ? b.id : null; } liveSt.set(stockById(L.stageId) || null); setTimeout(liveSt.resize, 0);
-  $('#liveStock').innerHTML = S.stock.length ? S.stock.map(q => itemHTML(q, 'stageSel', L.stageId)).join('') : '<div class="empty">背包裡沒有捏捏，先到加工產線做一個。</div>';
-  if (!$('#livePrice').contains(document.activeElement)) setHTML($('#livePrice'), priceTable('live'));
   $('#btnLive').textContent = L.on ? '結束直播' : '開始直播'; $('#btnLive').classList.toggle('red', L.on); updateLiveHUD();
 }
 function updateLiveHUD() {
@@ -3134,21 +3122,9 @@ function tickTimers() {
 }
 function renderBranch() { renderBranch0(); tickTimers(); }
 function renderBranch0() {
-  const bx = { set innerHTML(h) { setHTML($('#branchBody'), h); } }, fw = $('#facWrap'), showFac = S.branch === 'factory';
+  const fw = $('#facWrap'), showFac = S.branch === 'factory';
   if (fw.hidden === showFac) { fw.hidden = !showFac; if (showFac) setTimeout(() => { initFac(); FAC.v && FAC.v.resize(); }, 0); }
-  if (!S.branch) { bx.innerHTML = `<h2>選擇你的事業道路</h2><div class="bgroup">${Object.keys(BRANCHES).map(k => `<div class="card"><b>${BRANCHES[k].name}</b><div class="small" style="color:var(--sub);margin:6px 0">${BRANCHES[k].desc}</div><button class="btn" data-act="chooseBranch" data-k="${k}" ${branchReady() ? '' : 'disabled'}>選擇此道路</button></div>`).join('')}</div>${branchReady() ? '' : '<div class="hint">需要累積營收 ¥2,500 且粉絲 60 才能做出選擇。</div>'}`; return; }
-  if (S.branch === 'factory') {
-    const hc = Math.round(400 * Math.pow(1.5, S.workers)), ac = Math.round(600 * Math.pow(1.8, S.auto));
-    bx.innerHTML = `<h2>自家工廠</h2><div class="hint">每位員工操作一台機械手臂，每 12 秒自動消耗 2 凝膠製作 1 個捏捏（品質取決於自動化等級），並持續領薪（每人 ¥3/分鐘）。凝膠不足或庫存滿時停工。</div>
-    <div class="card"><div>員工／機械手臂 <b>${S.workers}</b>　薪資 ${fmt(S.workers * 3)}/分<br>自動化 Lv${S.auto}（品質 ${Math.round((0.55 + 0.05 * S.auto) * 100)}%）</div><div class="row wrap" style="margin-top:8px"><button class="btn sm" data-act="hire" ${S.money < hc || S.workers >= 12 ? 'disabled' : ''}>增設手臂並雇用 ${fmt(hc)}</button><button class="btn sm ghost" data-act="auto" ${S.money < ac || S.auto >= 8 ? 'disabled' : ''}>升級自動化 ${fmt(ac)}</button></div></div>
-    <div class="card small">庫存 ${S.stock.length}/${cap()}　凝膠合計 ${Object.values(S.gel).reduce((a, b) => a + b, 0)}</div>`;
-  } else if (S.branch === 'corp') {
-    bx.innerHTML = `<h2>企業合作</h2><div class="hint">大公司定期釋出訂單，報酬約為合理價 ×1.5，但需在期限內交付足夠品質的商品。逾期會損失信譽。</div><div class="card small">企業信譽 <b>${S.rep}</b>　承接中 ${S.contracts.length}/3</div>` +
-      (S.contracts.length ? S.contracts.map(c => { const ok = contractItems(c); return `<div class="card"><b>${c.sp === 'any' ? '任意種類' : SP[c.sp].name}</b>${c.cut ? `（${CUTS[c.cut].n}切）` : ''} × ${c.n}　酥脆 ≥ ${Math.round(c.min * 100)}%<br>報酬 <b style="color:var(--warn)">${fmt(c.reward)}</b>　剩餘 <b data-dl="${c.dl}"></b><div class="row" style="margin-top:6px"><span class="small grow">符合庫存 ${ok.length}/${c.n}</span><button class="btn sm" data-act="deliver" data-id="${c.id}" ${ok.length < c.n ? 'disabled' : ''}>交貨</button></div></div>`; }).join('') : '<div class="empty">目前沒有訂單，請稍候…</div>');
-  } else {
-    bx.innerHTML = `<h2>溫馨小店</h2><div class="hint">顧客會上門指定想要的種類。滿足熟客可累積好感度，熟客會給更高價與小費。顧客等太久會失望離開。</div><div class="card small">熟客 ${Object.values(S.regulars).filter(v => v >= 5).length} 位（好感 ≥ 5）</div>` +
-      (S.customers.length ? S.customers.map(c => { const ok = shopItem(c), aff = S.regulars[c.name] || 0; return `<div class="card"><b>${esc(c.name)}</b> ${aff >= 5 ? '<span class="tag">熟客</span>' : ''} <small style="color:var(--sub)">好感 ${aff}</small><br>想要：<b>${SP[c.sp].name}</b>　酥脆 ≥ ${Math.round(c.min * 100)}%<div class="meter2" style="margin:6px 0"><i data-dlbar="${c.dl}"></i></div><button class="btn sm" data-act="serve" data-id="${c.id}" ${ok ? '' : 'disabled'}>${ok ? `出貨 ${fmt(shopPrice(c, ok))}` : '背包沒有符合商品'}</button></div>`; }).join('') : '<div class="empty">店裡暫時沒有客人…</div>');
-  }
+  ui('branch'); return; // 內容由 React 畫（components/stations/Branch.tsx）
 }
 function contractItems(c) { return S.stock.filter(p => (c.sp === 'any' || p.sp === c.sp) && (!c.cut || p.cut === c.cut) && effCrisp(p) >= c.min).sort((a, b) => effCrisp(a) - effCrisp(b)).slice(0, c.n); }
 function shopItem(c) { return S.stock.filter(p => p.sp === c.sp && effCrisp(p) >= c.min).sort((a, b) => effCrisp(a) - effCrisp(b))[0]; }
@@ -3704,7 +3680,7 @@ function donate() {
 }
 function renderLiveOthersOnly() {
   const others = [...NET.players.entries()].filter(([id, p]) => id !== NET.me && p.live && p.live.on);
-  $('#liveOthers').innerHTML = others.length ? `<div class="card small row wrap"><span>其他玩家正在直播：</span>${others.map(([id, p]) => `<button class="btn sm ${L.watch && L.watch.id === id ? '' : 'ghost'}" data-act="watch" data-id="${esc(id)}">${esc(p.name)}（${p.live.viewers} 觀眾）</button>`).join('')}</div>` : '';
+  ui('live');
   if (L.watch && !others.some(([id]) => id === L.watch.id)) { stopWatch(true); toast('主播已結束直播'); renderLive(); }
 }
 
@@ -4108,6 +4084,8 @@ window.SlimeGame = {
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
   get title() { return TITLE; }, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
   MG, STEPS, MKEY, ownAny, TOUCH,
+  get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
+  branchReady, contractItems, shopItem, shopPrice,
   SP, SPECIES, ZONES, RAR, UPS, OWN, PACKS, DECO, CUTS, TIER, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, tierOf, defPrice, demand, speedTxt, xpLevel, decoBonus,

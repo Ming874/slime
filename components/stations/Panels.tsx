@@ -13,10 +13,16 @@ import { Riddle, MapGame } from './Ancient';
 import Title from './Title';
 import Pause from './Pause';
 import Make from './Make';
+import { LiveOthers, LiveStock, LivePrice } from './Live';
+import { DecorStock, DecoTools } from './Decor';
+import Branch from './Branch';
 
 const PANELS: Record<string, ComponentType> = {
-  title: Title, pause: Pause, make: Make, inv: Inventory, codex: Codex, shop: Shop, web: WebStore, weekly: Weekly, museum: Museum, visit: Visit, bench: Bench, riddle: Riddle, mapg: MapGame,
+  title: Title, pause: Pause, make: Make, liveOthers: LiveOthers, liveStock: LiveStock, livePrice: LivePrice, decorStock: DecorStock, decoTools: DecoTools, branch: Branch, inv: Inventory, codex: Codex, shop: Shop, web: WebStore, weekly: Weekly, museum: Museum, visit: Visit, bench: Bench, riddle: Riddle, mapg: MapGame,
 };
+
+// 一個分頁分成好幾塊畫的（中間夾著 game.js 自己更新的畫布）：game.js 通知一次，整組一起重繪
+const GROUPS: Record<string, string[]> = { live: ['liveOthers', 'liveStock', 'livePrice'], decor: ['decorStock', 'decoTools'] };
 
 // v 每次重繪都會變，讓 memo 只在這個分頁收到通知時才重畫
 const Panel = memo(function Panel({ C }: { C: ComponentType; v: number }) {
@@ -35,7 +41,8 @@ export default function Panels() {
       const k = (e as CustomEvent<string>).detail;
       if (!window.SlimeGame) return;
       // 同步畫完：game.js 有些地方重繪後馬上就讀畫面上的元素（例如手作台進度條、多人頁的輸入框）
-      flushSync(() => setVer((v) => ({ ...v, [k]: (v[k] || 0) + 1 })));
+      const keys = GROUPS[k] || [k];
+      flushSync(() => setVer((v) => { const n = { ...v }; for (const key of keys) n[key] = (n[key] || 0) + 1; return n; }));
     };
     addEventListener('slime:ui', on);
     return () => removeEventListener('slime:ui', on);
