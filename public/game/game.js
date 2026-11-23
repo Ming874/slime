@@ -2799,7 +2799,7 @@ function beginStep() {
     M.g = { t: 0, dur: 2.6 + k * .45, marks, hit: marks.map(() => null), tol: (.045 + .012 * lv) * C.tol * skill, vary };
     if (vary && !S.tipVary) { S.tipVary = true; toast('你的切片越來越熟練了：輸送帶現在會忽快忽慢，看準了再下刀！'); }
   }
-  else if (M.step === 1) { const w = .2 + .035 * lv, c = rnd(.45, .7); M.g = { t: 0, dur: 5, thr: 0, v: 0, inz: 0, lo: c - w / 2, hi: c + w / 2 }; M.coop = null; const f = NET.on && P ? nearFriend(8) : null; if (f) { M.coop = f; M.pt = 2.4; netEmit({ t: 'coop', to: f.id, on: true, lo: M.g.lo, hi: M.g.hi }); toast(`${f.name} 在旁邊：裹糖交給朋友來做！`); } }
+  else if (M.step === 1) { const w = .2 + .035 * lv, c = rnd(.45, .7); M.g = { t: 0, dur: 5, thr: 0, v: 0, inz: 0, lo: c - w / 2, hi: c + w / 2, w, c0: c, ph: rnd(0, 6.28), amp: Math.min(.16, c - w / 2 - .05, .95 - c - w / 2) }; M.coop = null; const f = NET.on && P ? nearFriend(8) : null; if (f) { M.coop = f; M.pt = 2.4; netEmit({ t: 'coop', to: f.id, on: true, lo: M.g.lo, hi: M.g.hi }); toast(`${f.name} 在旁邊：裹糖交給朋友來做！`); } }
   else M.g = { t: 0, dur: 5.5, knob: .5, err: 0, n: 0, tw: .07 + .015 * lv, seed: rnd(0, 10) };
 }
 // 史萊姆在切片機下的位置（0→1）；變速時仍保持單調前進
@@ -2823,7 +2823,8 @@ function makeTick(dt) {
   if (M.slow > 0) { M.slow -= dt; dt *= .35; } // 完美切面後短暫慢動作
   g.t += dt;
   if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) { g.hit[i] = 0; g.combo = 0; ui('make'); updMakeUI(); } }); }
-  if (M.step === 1 && M.coop && (M.coopT = (M.coopT || 0) + dt) > .1) { M.coopT = 0; netEmit({ t: 'coopV', to: M.coop.id, v: g.v }); }
+  if (M.step === 1 && M.coop && (M.coopT = (M.coopT || 0) + dt) > .1) { M.coopT = 0; netEmit({ t: 'coopV', to: M.coop.id, v: g.v, lo: g.lo, hi: g.hi }); }
+  if (M.step === 1) { const cc = g.c0 + g.amp * Math.sin(g.t * .8 + g.ph); g.lo = cc - g.w / 2; g.hi = cc + g.w / 2; }
   if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
   if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
   if (g.t >= g.dur) finishStep(); else updMakeUI();
@@ -2955,7 +2956,7 @@ function jellyCut(J, p) {
 function updMakeUI() {
   const g = M.g; if (!g) return; const tb = $('#mgTime'); if (tb) tb.style.width = clamp(g.t / g.dur, 0, 1) * 100 + '%';
   if (M.step === 0) $$('#cutDots i').forEach((d, i) => d.className = g.hit[i] == null ? '' : g.hit[i] > .85 ? 'pf' : g.hit[i] > .3 ? 'ok' : 'bad');
-  if (M.step === 1) { const n = $('#mgNeedle'); if (n) n.style.left = g.v * 100 + '%'; }
+  if (M.step === 1) { const n = $('#mgNeedle'); if (n) n.style.left = g.v * 100 + '%'; const z = document.querySelector('.rx-gauge .gz'); if (z) { z.style.left = g.lo * 100 + '%'; z.style.width = (g.hi - g.lo) * 100 + '%'; } }
   if (M.step === 2) { const t = $('#mgTgt'), k = $('#mgKnob'), x = dryTarget(g); if (t) { t.style.left = (x - g.tw) * 100 + '%'; t.style.width = g.tw * 200 + '%'; } if (k) k.style.left = g.knob * 100 + '%'; }
 }
 function swatch(sp) { return sp.color2 ? `linear-gradient(135deg,${sp.color},${sp.color2})` : `radial-gradient(circle at 30% 30%,${rgba(sp.color, 1, .6)},${sp.color})`; }
@@ -3373,7 +3374,7 @@ const RELAY = {
   gift: m => ({ t: 'gift', to: nStr(m.to, 64), sp: SP[m.sp] ? m.sp : null, n: Math.round(nNum(m.n, 1, 5, 1)) }),
   coop: m => ({ t: 'coop', to: nStr(m.to, 64), on: !!m.on, lo: nNum(m.lo, 0, 1), hi: nNum(m.hi, 0, 1, 1), sc: m.sc == null ? null : nNum(m.sc, 0, 1) }),
   coopH: m => ({ t: 'coopH', to: nStr(m.to, 64), h: !!m.h }),
-  coopV: m => ({ t: 'coopV', to: nStr(m.to, 64), v: nNum(m.v, 0, 1) }),
+  coopV: m => ({ t: 'coopV', to: nStr(m.to, 64), v: nNum(m.v, 0, 1), lo: nNum(m.lo, 0, 1, -1), hi: nNum(m.hi, 0, 1, -1) }),
 };
 const netClean = m => RELAY[m.t] ? RELAY[m.t](m) : null;
 function prepName() {
@@ -3600,7 +3601,7 @@ function onNet(m) {
     case 'gift': if (m.to === NET.me && m.sp) { S.gel[m.sp] = (S.gel[m.sp] || 0) + m.n; discover(m.sp); sfx.pop(); toast(`${m.name} 送你 ${m.n} 份${SP[m.sp].name}凝膠！`); renderHotbar(true); save(); } break;
     case 'coop': if (m.to === NET.me) m.on ? coopShow(m) : coopHide(m); break;
     case 'coopH': if (m.to === NET.me && M.coop && M.coop.id === m.from) M.hold = m.h; break;
-    case 'coopV': if (m.to === NET.me && COOP.on && COOP.from === m.from) { COOP.v = m.v; COOP.last = Date.now(); const n = $('#coopN'); if (n) n.style.left = m.v * 100 + '%'; } break;
+    case 'coopV': if (m.to === NET.me && COOP.on && COOP.from === m.from) { COOP.v = m.v; COOP.last = Date.now(); const n = $('#coopN'); if (n) n.style.left = m.v * 100 + '%'; if (m.lo >= 0 && m.hi > m.lo) { const z = $('#coopZ'); if (z) { z.style.left = m.lo * 100 + '%'; z.style.width = (m.hi - m.lo) * 100 + '%'; } } } break;
     case 'like': if (m.to === NET.me) { S.fans += 2; sfx.pop(); toast(`${m.name} 參觀了你的展示場並按讚！粉絲 +2`); } break;
   }
 }
