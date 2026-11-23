@@ -114,7 +114,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, tier: { live: {}, web: {} }, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null, own: {}, photos: [], vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] },
+    pos: null, hb: 0, sens: 1, q: null, own: {}, photos: [], cafe: { d: 0, done: false }, mkt: { w: 0, got: [] }, liveBest: 0, vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] },
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -153,6 +153,7 @@ function sanitize(o) {
   // 已經解鎖雪原的舊存檔：補發保暖衣，避免被突然擋在雪原外面
   if (s.zones.includes('snow') && !s.own.coat) { s.own.coat = true; s.coatMigrated = true; }
   if (s.own.coat && !s.zones.includes('snow')) s.zones.push('snow'); // 雪原改成「有保暖衣就能去」，不再需要解謎
+  s.cafe = { d: Math.floor(+obj(s.cafe).d) || 0, done: !!obj(s.cafe).done }; s.mkt = { w: Math.floor(+obj(s.mkt).w) || 0, got: arr(obj(s.mkt).got).filter(x => typeof x === 'string').slice(0, 6) }; s.liveBest = Math.max(0, Math.floor(+s.liveBest) || 0);
   s.photos = arr(s.photos).filter(p => p && typeof p.k === 'string' && typeof p.txt === 'string').slice(0, 12).map(p => ({ k: p.k.slice(0, 20), txt: p.txt.slice(0, 24), sp: SP[p.sp] ? p.sp : null, t: +p.t || 0 }));
   const vo = obj(o.vol); s.vol = { music: clamp(isFinite(+vo.music) ? +vo.music : .6, 0, 1), sfx: clamp(isFinite(+vo.sfx) ? +vo.sfx : .9, 0, 1) }; if (!['auto', 'high', 'low'].includes(s.quality)) s.quality = 'auto';
   s.warm = clamp(isFinite(+s.warm) ? +s.warm : WARM_MAX, 0, WARM_MAX); s.frozen = !!s.frozen;
@@ -1311,6 +1312,7 @@ function buildLandmarks3() {
 // 遠近切換：120 公尺外只畫剪影（顏色跟著霧與天色走，夜裡更暗）
 function landmarkStep() {
   const c = W.cam.position, city = inCity(), fogC = W.scene.fog.color;
+  if (W.city) W.city.visible = city; if (W.mktOpen) { const o = mktOpenNow(); W.mktOpen.visible = o; W.mktShut.visible = !o; }
   for (const L of LMS) {
     const far = !city && Math.hypot(L.x - c.x, L.z - c.z) > 120; L.near.forEach(o => { o.visible = !city && !far; }); L.far.visible = far;
     if (far) { const m = L.far.children[0].material; m.color.copy(fogC).lerp(L.col, .42 - DN.night * .12); }
@@ -2720,7 +2722,7 @@ function tryMove(dx, dz) {
     if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
   }
-  if (inCity(nx)) { if (Math.abs(nx - CITY.x) > 58 || Math.abs(nz - CITY.z) > 30) return false; }
+  if (inCity(nx)) { const cx = nx - CITY.x, cz = nz - CITY.z; if (Math.abs(cx) > 70 || cz < -30 || cz > 44) return false; }
   else if (Math.max(Math.abs(nx), Math.abs(nz)) > 178 * K) return false;
   P.x = nx; P.z = nz; return true;
 }
@@ -2858,7 +2860,7 @@ function doAct(t) {
 }
 function doActAt(t) {
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
-  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
+  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id === 'cafe') cafeAct(); else if (id === 'market') marketAct(); else if (id === 'board') openGui('board', 'weekly'); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
   else if (t.type === 'avatar') giftGel(t.id);
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
@@ -2902,7 +2904,7 @@ function objective() {
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
     if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee', n: '機械行', here: '對準機械行的店門' + (TOUCH ? '點擊' : '按 E') + '，購買切片機。' };
-    return { t: '逛逛大城市', d: '機械行、生活百貨、器材行都在路的北側。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
+    return { t: '逛逛大城市', d: '商店在路的北側；廣場旁有咖啡館（老闆每天有小訂單）、週末市集與公告欄。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
   }
   if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。', track: 'slime', c: '#6ee7a8' };
   if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24', n: '手作台', here: '對準手作台' + (TOUCH ? '點擊' : '按 E') + '，用 2 份凝膠做出粗製捏捏。' };
@@ -3005,7 +3007,7 @@ function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
+  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] },
 };
 const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
@@ -3324,6 +3326,7 @@ function updateLive(dt) {
   const p = stockById(L.stageId);
   if (L.on) {
     L.hype = Math.max(0, L.hype - 3 * dt); if (performance.now() - L.lastC > 1500) L.combo = 0;
+    if (L.viewers > (S.liveBest || 0)) S.liveBest = Math.round(L.viewers);
     const tgt = (12 + S.fans * 0.8) * (1 + .15 * S.up.gear) * (.4 + L.hype / 60) * (p ? 1 : .5) + L.rv.size * 15; L.viewers += (tgt - L.viewers) * dt * .8; L.saleT += dt;
     if (L.saleT >= 1.5) { L.saleT = 0; if (p) { const f = fair(p, 'live'), d0 = demand(priceOf(p, 'live'), f), d = d0 * (reqMatch(p) ? 1.6 : 1); if (d0 < .2 && Math.random() < .3) chat(pick(NAMES), pick(CHAT_EXPENSIVE)); if (Math.random() < clamp(L.viewers / 60, 0, 1) * d * .45 * (.4 + L.hype / 80)) liveSale(p); } }
     L.chatT -= dt; if (L.chatT <= 0) { L.chatT = rnd(1.5, 4) / clamp(L.viewers / 20, .5, 4); const t = liveLine('idle'); if (t) chat(pick(NAMES), t); }
@@ -4102,8 +4105,16 @@ function buildCity() {
   const rd = seeded(31), cols = ['#64748b', '#475569', '#94a3b8', '#7c8aa0', '#5b6b80', '#a1a1aa'];
   [-46, 46].forEach(x => bld(x, -21, 11, 14, 12 + rd() * 14, pick(cols)));
   for (let x = -60; x <= 60; x += 13) bld(x + rd() * 3, -42 - rd() * 8, 11, 14, 18 + rd() * 30, pick(cols));
-  for (let x = -60; x <= 60; x += 13) { if (Math.abs(x) < 10) continue; bld(x + rd() * 2, 24, 11, 12, 10 + rd() * 20, pick(cols)); }
-  for (let i = 0; i < 26; i++) { const a = i / 26 * PI2, r = 110 + rd() * 30; bld(Math.cos(a) * r, Math.sin(a) * r, 14, 14, 30 + rd() * 50, pick(cols), false); }
+  for (let x = -60; x <= 60; x += 13) bld(x + rd() * 2, 62, 11, 12, 10 + rd() * 20, pick(cols));
+  { const n = LOW ? 13 : 26, pos = [], nor = [], uv = [], col = [], idx = []; let base = 0; const cc = new THREE.Color();
+    for (let i = 0; i < n; i++) { const a = i / n * PI2, r = 110 + rd() * 30, h = 30 + rd() * 50, bg = new THREE.BoxGeometry(14, h, 14); bg.translate(Math.cos(a) * r, h / 2, Math.sin(a) * r); cc.set(pick(cols));
+      const P0 = bg.attributes.position, N0 = bg.attributes.normal, U0 = bg.attributes.uv;
+      for (let v = 0; v < P0.count; v++) { pos.push(P0.getX(v), P0.getY(v), P0.getZ(v)); nor.push(N0.getX(v), N0.getY(v), N0.getZ(v)); const side = Math.abs(N0.getY(v)) < .5; uv.push(U0.getX(v) * (side ? 3.5 : .1), U0.getY(v) * (side ? h / 7 : .1)); col.push(cc.r, cc.g, cc.b); }
+      for (let k = 0; k < bg.index.count; k++) idx.push(bg.index.getX(k) + base); base += P0.count; bg.dispose(); }
+    const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); mg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); mg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); mg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); mg.setIndex(idx);
+    const t = winTex.clone(); t.needsUpdate = true; t.repeat.set(1, 1); const mm = new THREE.MeshStandardMaterial({ vertexColors: true, map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: .22, roughness: .7 }); (W.cityWin = W.cityWin || []).push(mm);
+    const ring = mesh(mg, mm, 0, 0, 0, g); ring.receiveShadow = true; }
+  buildPlaza(g);
   // 商店（路北側）
   const shop = (id, x, w, col, name, sub, accent) => {
     const b = bld(x, -20, w, 12, 8, col); b.material.emissiveIntensity = .12;
@@ -4131,6 +4142,112 @@ function buildCity() {
   addInter(hitBox(4.2, 2.2, 2, 7, 1, 12, g), 'station', 'taxi', '計程車');
   const tl = textSprite('計程車招呼站', '#facc15', '回到月光谷'); tl.position.set(7, 3.4, 12); g.add(tl);
 }
+/* 大城市的中央廣場（第 3 堂 07）：噴泉、鐘塔（城市的地標）、咖啡館、週末市集、公告欄，以及沿固定路線散步的行人 */
+const PLAZA = { z: 26 };
+function buildPlaza(g) {
+  const stone = std('#bdb3a3', { roughness: .9, flatShading: true }), dark = std('#5b5047', { roughness: .8 }), wood = woodMat('#8b6544');
+  const flat = (geo, mat, x, y, z) => { const m = mesh(geo, mat, x, y, z, g); m.rotation.x = -Math.PI / 2; m.receiveShadow = true; return m; };
+  flat(new THREE.CircleGeometry(15, 48), std('#d8cfc0', { roughness: .95 }), 0, .03, PLAZA.z); flat(new THREE.RingGeometry(14.6, 15.2, 48), std('#a8a091'), 0, .04, PLAZA.z);
+  flat(new THREE.PlaneGeometry(6, 13), std('#d8cfc0', { roughness: .95 }), 0, .025, 13);
+  // 噴泉
+  { const fz = PLAZA.z + 2; cyl(3.4, 3.6, .7, 28, stone, 0, .35, fz, g); const water = cyl(3.1, 3.1, .08, 28, new THREE.MeshPhysicalMaterial({ color: '#5ec2e8', roughness: .05, transparent: true, opacity: .8 }), 0, .62, fz, g);
+    cyl(.4, .55, 2, 12, stone, 0, 1.6, fz, g); cyl(1.2, .5, .35, 18, stone, 0, 2.7, fz, g); addCol({ x: CITY.x, z: CITY.z + fz, r: 3.6 });
+    const N = LOW ? 14 : 28, drops = new THREE.InstancedMesh(new THREE.SphereGeometry(.09, 6, 4), new THREE.MeshBasicMaterial({ color: '#dbf4ff' }), N); drops.frustumCulled = false; g.add(drops);
+    W.anim.push((dt, t) => { if (!inCity()) return; for (let i = 0; i < N; i++) { const k = (t * .7 + i / N) % 1, a = i / N * PI2 * 3; drops.setMatrixAt(i, tmpM.makeTranslation(Math.cos(a) * k * 2.1, 2.9 + k * 1.6 - k * k * 2.6, fz + Math.sin(a) * k * 2.1)); } drops.instanceMatrix.needsUpdate = true; water.position.y = .62 + Math.sin(t * 2) * .01; }); }
+  // 鐘塔：大城市的地標，指針顯示真實時間
+  { const cx = 7, cz = PLAZA.z + 12, T = new THREE.Group(); T.position.set(cx, 0, cz); g.add(T);
+    box(3.4, 16, 3.4, std('#c9b896', { roughness: .85, flatShading: true }), 0, 8, 0, T); box(3.8, .4, 3.8, dark, 0, 16.2, 0, T); box(3.6, 3.6, 3.6, std('#e8dcc4', { roughness: .8 }), 0, 18.2, 0, T);
+    mesh(new THREE.ConeGeometry(3, 3.6, 4), std('#5b6b7f', { flatShading: true }), 0, 21.8, 0, T).rotation.y = Math.PI / 4;
+    const fc = document.createElement('canvas'); fc.width = fc.height = 128; const x = fc.getContext('2d'); x.fillStyle = '#fefce8'; x.beginPath(); x.arc(64, 64, 60, 0, 6.3); x.fill(); x.strokeStyle = '#334155'; x.lineWidth = 6; x.stroke(); x.fillStyle = '#334155'; for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; x.fillRect(64 + Math.sin(a) * 48 - 3, 64 - Math.cos(a) * 48 - 3, 6, 6); }
+    const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace; const faceM = new THREE.MeshStandardMaterial({ map: ft, emissive: '#fff7d6', emissiveMap: ft, emissiveIntensity: .1 }); (W.cityWin = W.cityWin || []).push(faceM);
+    const hands = []; [0, 1, 2, 3].forEach(i => { const f = new THREE.Group(); f.rotation.y = i * Math.PI / 2; f.position.y = 18.2; T.add(f); mesh(new THREE.CircleGeometry(1.45, 32), faceM, 0, 0, 1.82, f);
+      const hh = new THREE.Group(); hh.position.z = 1.86; f.add(hh); const mh = new THREE.Group(); mh.position.z = 1.88; f.add(mh); box(.12, .75, .03, dark, 0, .32, 0, hh); box(.08, 1.15, .03, dark, 0, .5, 0, mh); hands.push([hh, mh]); });
+    W.anim.push(() => { if (!inCity()) return; const d = new Date(), m = d.getMinutes() + d.getSeconds() / 60, h = (d.getHours() % 12) + m / 60; hands.forEach(([hh, mh]) => { hh.rotation.z = -h / 12 * PI2; mh.rotation.z = -m / 60 * PI2; }); });
+    addCol({ box: [CITY.x + cx - 1.8, CITY.z + cz - 1.8, CITY.x + cx + 1.8, CITY.z + cz + 1.8] });
+    const lb = textSprite('鐘塔', '#f2c14e', '大城市的中央廣場'); lb.position.set(cx, 24.5, cz); lb.userData.keep = true; g.add(lb); }
+  // 店面只做門面與一面櫥窗：咖啡館（西）與週末市集（東）、公告欄（南緣）
+  const facade = (x, z, w, h, col, name, sub, accent, id) => {
+    const b = box(w, h, 8, std(col, { roughness: .8 }), x, h / 2, z + 4, g); b.castShadow = !LOW;
+    mesh(new THREE.PlaneGeometry(w - 2.4, 2.6), new THREE.MeshStandardMaterial({ color: '#fde7b0', emissive: '#fde7b0', emissiveIntensity: .25, roughness: .1 }), x, 1.7, z - .02, g).rotation.y = Math.PI;
+    const aw = box(w - .6, .16, 2, std(accent, { roughness: .6 }), x, 3.5, z - .9, g); aw.rotation.x = -.2;
+    addCol({ box: [CITY.x + x - w / 2, CITY.z + z, CITY.x + x + w / 2, CITY.z + z + 8] });
+    addInter(hitBox(w - 1, 3.4, 2.4, x, 1.7, z - 1, g), 'station', id, name);
+    const lb = textSprite(name, accent, sub); lb.position.set(x, h + 2.4, z); g.add(lb);
+  };
+  facade(-28, PLAZA.z - 2, 13, 6.5, '#d9b38c', '咖啡館', '坐下休息・老闆的小訂單', '#b45309', 'cafe');
+  // 咖啡館外的桌椅與電視（本週直播排行）
+  [[-31, PLAZA.z - 6], [-25, PLAZA.z - 6]].forEach(([x, z]) => { cyl(.6, .6, .06, 16, wood, x, .78, z, g); cyl(.06, .06, .78, 8, dark, x, .39, z, g); [-1, 1].forEach(s => { box(.5, .06, .5, wood, x + s * .9, .45, z, g); box(.5, .5, .06, wood, x + s * .9, .7, z + .22, g); }); addCol({ x: CITY.x + x, z: CITY.z + z, r: .7 }); });
+  { const c = document.createElement('canvas'); c.width = 256; c.height = 160; W.tvCv = c; const tt = new THREE.CanvasTexture(c); tt.colorSpace = THREE.SRGBColorSpace; W.tvTx = tt;
+    const tv = mesh(new THREE.PlaneGeometry(3, 1.9), new THREE.MeshBasicMaterial({ map: tt }), -28, 4.6, PLAZA.z - 2.06, g); tv.rotation.y = Math.PI; drawTV(); }
+  // 週末市集：三個攤位；平日蓋著布
+  { const mx = 28, mz = PLAZA.z - 4, stripe = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 8; const x = c.getContext('2d'); for (let i = 0; i < 8; i++) { x.fillStyle = i % 2 ? '#fef3c7' : '#ef4444'; x.fillRect(i * 8, 0, 8, 8); } const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+    W.mktOpen = new THREE.Group(); W.mktShut = new THREE.Group(); g.add(W.mktOpen, W.mktShut);
+    [-6, 0, 6].forEach((dx, i) => { const x = mx + dx; box(4, .9, 2, wood, x, .45, mz, g); [-1.8, 1.8].forEach(s => cyl(.06, .06, 3, 6, dark, x + s, 1.5, mz - .9, g));
+      const can = mesh(new THREE.PlaneGeometry(4.4, 2.4), new THREE.MeshStandardMaterial({ map: stripe, side: THREE.DoubleSide, roughness: .8 }), x, 3, mz - .2, W.mktOpen); can.rotation.x = -Math.PI / 2 + .35;
+      [0, 1, 2].forEach(j => mesh(new THREE.SphereGeometry(.3, 10, 8), std(['#c4b5fd', '#ff7a59', '#a3f7b5', '#fde047'][(i + j) % 4], { roughness: .2 }), x - 1.2 + j * 1.2, 1.15, mz, W.mktOpen));
+      box(4.2, .5, 2.2, std('#7a8a6a', { roughness: .95, flatShading: true }), x, 1.1, mz, W.mktShut); addCol({ box: [CITY.x + x - 2, CITY.z + mz - 1, CITY.x + x + 2, CITY.z + mz + 1] }); });
+    addInter(hitBox(17, 3, 3, mx, 1.5, mz - .5, g), 'station', 'market', '週末市集');
+    const lb = textSprite('週末市集', '#f2c14e', '每週六日擺攤，攤位輪替'); lb.position.set(mx, 5, mz); g.add(lb); }
+  // 公告欄：和工作電腦「本週限定」是同一份訂單
+  { const bx = 0, bz = PLAZA.z + 16; box(.2, 2.6, .2, wood, bx - 2, 1.3, bz, g); box(.2, 2.6, .2, wood, bx + 2, 1.3, bz, g); box(4.4, 2, .15, wood, bx, 1.9, bz, g);
+    const pm = std('#fefce8', { roughness: .9 }); [[-1.4, 2.2], [0, 2.3], [1.3, 2.1], [-.7, 1.4], [.8, 1.5]].forEach(([x, y], i) => { const p = mesh(new THREE.PlaneGeometry(.8, .6), pm, bx + x, y, bz - .09, g); p.rotation.set(0, Math.PI, (i - 2) * .05); });
+    addCol({ box: [CITY.x + bx - 2.3, CITY.z + bz - .3, CITY.x + bx + 2.3, CITY.z + bz + .3] }); addInter(hitBox(4.4, 2.6, 1.2, bx, 1.6, bz - .4, g), 'station', 'board', '公告欄');
+    const lb = textSprite('公告欄', '#e2e8f0', '本週限定訂單'); lb.position.set(bx, 4, bz); g.add(lb); }
+  buildWalkers(g);
+}
+// 本週直播排行（咖啡館的電視）：其他主播是城市裡的名人，玩家的最高觀眾數也會上榜
+function drawTV() {
+  const c = W.tvCv; if (!c) return; const x = c.getContext('2d'), wk = weekNo(), r = seeded(wk * 7 + 3);
+  const list = ['軟糖控', '捏捏狂人', 'Mochi', '雲朵', '史萊姆粉', '夜貓子'].map(n => ({ n, v: Math.round(60 + r() * 380) }));
+  list.push({ n: (S.name || '你') + '（你）', v: S.liveBest || 0, me: 1 }); list.sort((a, b) => b.v - a.v);
+  x.fillStyle = '#0b1220'; x.fillRect(0, 0, 256, 160); x.fillStyle = '#f2c14e'; x.font = 'bold 18px "Noto Sans TC","Microsoft JhengHei",sans-serif'; x.fillText('本週直播排行', 12, 24);
+  list.slice(0, 5).forEach((e, i) => { x.fillStyle = e.me ? '#34d399' : '#e2e8f0'; x.font = '15px "Noto Sans TC","Microsoft JhengHei",sans-serif'; x.fillText((i + 1) + '. ' + e.n, 14, 52 + i * 22); x.textAlign = 'right'; x.fillText(e.v + ' 人', 242, 52 + i * 22); x.textAlign = 'left'; });
+  if (W.tvTx) W.tvTx.needsUpdate = true;
+}
+// 行人：一個 InstancedMesh 一次畫完（一般 16 人、低畫質 8 人），沿固定路線慢慢走，偶爾停在櫥窗前
+function buildWalkers(g) {
+  const N = LOW ? 8 : 16, body = new THREE.InstancedMesh(new THREE.CapsuleGeometry(.28, .8, 3, 8).translate(0, .78, 0), new THREE.MeshStandardMaterial({ roughness: .7 }), N), head = new THREE.InstancedMesh(new THREE.SphereGeometry(.24, 10, 8).translate(0, 1.62, 0), std('#f2c9a4', { roughness: .6 }), N);
+  body.frustumCulled = head.frustumCulled = false; g.add(body, head); const cc = new THREE.Color();
+  const ROUTES = [[[-62, -11], [62, -11], [62, 11.5], [-62, 11.5]], [[-14, PLAZA.z - 1], [0, PLAZA.z - 14.5], [14, PLAZA.z - 1], [0, PLAZA.z + 13.5]], [[-44, 34], [44, 34], [44, 20.5], [-44, 20.5]]];
+  const len = r => r.reduce((a, p, i) => a + Math.hypot(r[(i + 1) % r.length][0] - p[0], r[(i + 1) % r.length][1] - p[1]), 0);
+  const W0 = Array.from({ length: N }, (_, i) => ({ r: i % 3, s: Math.random() * len(ROUTES[i % 3]), v: rnd(1, 1.5) * (i % 2 ? 1 : -1), stop: 0, ph: rnd(0, 6) }));
+  W0.forEach((w, i) => body.setColorAt(i, cc.set(['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', '#64748b', '#ec4899', '#14b8a6'][i % 8])));
+  const at = (route, s) => { const L0 = len(route); s = ((s % L0) + L0) % L0; for (let i = 0; i < route.length; i++) { const a = route[i], b = route[(i + 1) % route.length], d = Math.hypot(b[0] - a[0], b[1] - a[1]); if (s <= d) return [a[0] + (b[0] - a[0]) * s / d, a[1] + (b[1] - a[1]) * s / d, Math.atan2(b[0] - a[0], b[1] - a[1])]; s -= d; } return [route[0][0], route[0][1], 0]; };
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), pv = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  W.anim.push((dt, t) => {
+    if (!inCity()) return;
+    W0.forEach((w, i) => {
+      if (w.stop > 0) w.stop -= dt; else { w.s += w.v * dt; if (Math.random() < dt * .04) w.stop = rnd(1.5, 3.5); }
+      const [x, z, yaw] = at(ROUTES[w.r], w.s), near = Math.hypot(CITY.x + x - P.x, CITY.z + z - P.z) < 60, bob = near && w.stop <= 0 ? Math.abs(Math.sin(t * 7 + w.ph)) * .06 : 0;
+      q.setFromAxisAngle(up, yaw + (w.v < 0 ? Math.PI : 0)); m.compose(pv.set(x, bob, z), q, one); body.setMatrixAt(i, m); head.setMatrixAt(i, m);
+    });
+    body.instanceMatrix.needsUpdate = head.instanceMatrix.needsUpdate = true;
+  });
+}
+function cafeAct() {
+  const day = Math.floor(Date.now() / 864e5); if (S.cafe.d !== day) S.cafe = { d: day, done: false };
+  const r = seeded(day * 13 + 5), us = unlockedSpecies(), sp = us[Math.floor(r() * us.length)], p = S.stock.find(q => q.sp === sp.id), reward = Math.round(fair({ sp: sp.id, crisp: .7, dur: 100, deco: [] }, 'shop') * 1.6);
+  drawTV();
+  const tv = '<p class="small" style="color:var(--sub)">牆上的電視正在播「本週直播排行」，你的最高紀錄是 ' + (S.liveBest || 0) + ' 位觀眾。</p>';
+  if (S.cafe.done) return modal('<h2>咖啡館</h2><p>你在窗邊坐下，喝了一杯熱可可，看著廣場上的噴泉。</p>' + tv + '<p class="small">老闆：「今天的訂單已經收到了，謝謝你！明天再來喔。」</p>', [{ t: '起身' }]);
+  modal('<h2>咖啡館</h2><p>你在窗邊坐下休息。老闆端來一杯熱可可：</p><div class="riddle" style="text-align:left">「今天店裡想擺一個<b>' + sp.name + '</b>的捏捏，可以賣我一個嗎？我出 ' + fmt(reward) + '。」</div>' + tv,
+    [{ t: '先坐一下', ghost: true }, { t: p ? '交給老闆（' + fmt(reward) + '）' : '背包裡沒有' + short(sp.id) + '捏捏', f: () => { if (!p) return toast('背包裡沒有' + sp.name + '捏捏，做一個再來吧'); S.stock = S.stock.filter(q => q !== p); addMoney(reward); S.fans += 1; gainXP(6); S.cafe.done = true; sfx.coin && sfx.coin(); toast('老闆的小訂單完成 +' + fmt(reward)); renderTop(); renderHotbar(true); saveCloud(); } }]);
+}
+// 週末市集：每週六日擺攤，每週輪替一種稀有凝膠，加上一個打折的裝飾零件包
+const mktOpenNow = () => { const d = new Date().getDay(); return d === 0 || d === 6; };
+function marketOffers() {
+  const w = weekNo(), rares = SPECIES.filter(s => s.rar >= 3), sp = rares[w % rares.length], pk = Object.keys(PACKS).filter(k => !S.packs.includes(k))[0];
+  const list = [{ id: 'gel', t: sp.name + '凝膠 × 3', d: '本週限定的稀有凝膠（不用去' + ZONES.find(z => z.id === sp.zone).name + '也能拿到）', cost: sp.price * 4, f: () => { S.gel[sp.id] = (S.gel[sp.id] || 0) + 3; discover(sp.id); } }];
+  if (pk) list.push({ id: 'pack', t: PACKS[pk].name + '（市集價 7 折）', d: '市集限定的裝飾零件', cost: Math.round(PACKS[pk].cost * .7), f: () => { S.packs.push(pk); } });
+  return list;
+}
+function marketAct() {
+  if (!mktOpenNow()) return toast('週末市集只在星期六、日擺攤，平日攤位都蓋著布。');
+  if (S.mkt.w !== weekNo()) S.mkt = { w: weekNo(), got: [] };
+  const offers = marketOffers();
+  modal('<h2>週末市集</h2><p>攤販們吆喝著本週的限定商品（每週輪替，每樣限買一次）：</p>' + offers.map(o => '<div class="card small"><b>' + o.t + '</b>　' + fmt(o.cost) + (S.mkt.got.includes(o.id) ? '　<span class="tag">已購買</span>' : '') + '<br><span style="color:var(--sub)">' + o.d + '</span></div>').join(''),
+    [...offers.filter(o => !S.mkt.got.includes(o.id)).map(o => ({ t: '買' + o.t.split('（')[0] + '（' + fmt(o.cost) + '）', f: () => { if (S.money < o.cost) return toast('資金不足'); S.money -= o.cost; o.f(); S.mkt.got.push(o.id); sfx.pop(); toast('買到了：' + o.t); renderTop(); renderHotbar(true); saveCloud(); } })), { t: '離開', ghost: true }]);
+}
 function taxiAsk() {
   const toCity = !inCity();
   modal(`<h2>${toCity ? '前往大城市' : '回到月光谷'}</h2><p>${toCity ? '大城市裡有機械行、器材行與生活百貨，可以購買加工機器、直播設備與各種升級。' : '搭計程車回到月光谷的中央平地。'}</p>`, [{ t: '取消', ghost: true }, { t: '出發', f: taxiRide }]);
@@ -4138,10 +4255,10 @@ function taxiAsk() {
 function taxiRide() {
   const toCity = !inCity(), f = $('#fade'); f.textContent = toCity ? '計程車駛向大城市…' : '計程車駛回月光谷…'; f.hidden = false; requestAnimationFrame(() => f.classList.add('on')); sfx.open();
   setTimeout(() => {
-    if (toCity) { P.x = CITY.x; P.z = CITY.z + 10; } else { P.x = BASE.taxi[0] + 3; P.z = BASE.taxi[1]; }
-    P.yaw = 0; P.pitch = -.05; P.y = G(P.x, P.z); P.camY = P.y; P.vy = 0; W.camAway = false; save();
+    if (toCity) { P.x = CITY.x + 3; P.z = CITY.z + 9; } else { P.x = BASE.taxi[0] + 3; P.z = BASE.taxi[1]; }
+    P.yaw = toCity ? Math.PI : 0; P.pitch = -.05; P.y = G(P.x, P.z); P.camY = P.y; P.vy = 0; W.camAway = false; save();
   }, 700);
-  setTimeout(() => { f.classList.remove('on'); setTimeout(() => f.hidden = true, 500); toast(toCity ? '抵達大城市。機械行、生活百貨、器材行都在路的北側。' : '回到月光谷。'); }, 1500);
+  setTimeout(() => { f.classList.remove('on'); setTimeout(() => f.hidden = true, 500); toast(toCity ? '抵達大城市的中央廣場。商店在路的北側，咖啡館、週末市集與公告欄在廣場兩旁。' : '回到月光谷。'); }, 1500);
 }
 /* ---------- 商店 ---------- */
 function buyOwn(k) {
