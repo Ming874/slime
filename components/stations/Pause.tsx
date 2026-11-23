@@ -55,6 +55,15 @@ export default function Pause() {
         {user?.admin && <a href="/admin" target="_blank" rel="noopener"><Icon name="shield" /><b>管理後台</b><small>允許名單與玩家</small></a>}
       </div>
 
+      <section className="rx-audio" aria-label="音量與畫質">
+        <label><span>音樂</span><input type="range" min={0} max={100} step={5} defaultValue={Math.round((S.vol?.music ?? .6) * 100)} data-vol="music" aria-label="音樂音量" /></label>
+        <label><span>音效</span><input type="range" min={0} max={100} step={5} defaultValue={Math.round((S.vol?.sfx ?? .9) * 100)} data-vol="sfx" aria-label="音效音量" /></label>
+        <div className="rx-qual"><span>畫質</span>{(['auto', 'high', 'low'] as const).map((k) => (
+          <button key={k} type="button" data-act="quality" data-k={k} className={(S.quality || 'auto') === k ? 'on' : ''}>{{ auto: '自動', high: '高', low: '低' }[k]}</button>
+        ))}</div>
+        {g.creditsHTML?.() ? <div className="rx-credits" dangerouslySetInnerHTML={{ __html: g.creditsHTML() }} /> : null}
+      </section>
+
       <button type="button" className="rx-quit" data-act="toTitle"><Icon name="exit" />儲存並回到主選單</button>
       <div className="rx-pause-links">
         <span>按 Esc、切換畫面、開關介面時都會自動儲存</span>

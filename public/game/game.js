@@ -45,7 +45,11 @@ const SPECIES = [
   { id: 'lava', name: '熔岩史萊姆', zone: 'volcano', color: '#f97316', rar: 2, price: 28, w: 8 },
   { id: 'obsid', name: '黑曜史萊姆', zone: 'volcano', color: '#8b5cf6', rar: 3, price: 50, w: 3 },
   { id: 'ice', name: '冰晶史萊姆', zone: 'snow', color: '#bae6fd', rar: 2, price: 30, w: 8 },
-  { id: 'aurora', name: '極光史萊姆', zone: 'snow', color: '#34d399', color2: '#a78bfa', rar: 4, price: 90, w: 1 },
+  { id: 'aurora', name: '極光史萊姆', zone: 'snow', color: '#34d399', color2: '#a78bfa', rar: 4, price: 90, w: 1, night: true },
+  // 夜行種類：只在夜晚出現（白天躲起來）；做出來的捏捏帶微光，直播售價小幅加成
+  { id: 'glowgrass', name: '螢光青草史萊姆', zone: 'forest', color: '#a3f7b5', rar: 3, price: 42, w: 3, night: true, look: 'grass' },
+  { id: 'nightcoral', name: '夜光珊瑚史萊姆', zone: 'coast', color: '#c4b5fd', rar: 3, price: 46, w: 2, night: true, look: 'coral' },
+  { id: 'ember', name: '餘燼熔岩史萊姆', zone: 'volcano', color: '#ff7a59', rar: 3, price: 52, w: 2, night: true, look: 'lava' },
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 const HOSPITAL_FEE = 20; // 醫院診療費
@@ -110,7 +114,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, tier: { live: {}, web: {} }, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null, own: {}, warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] },
+    pos: null, hb: 0, sens: 1, q: null, own: {}, vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] },
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -149,6 +153,7 @@ function sanitize(o) {
   // 已經解鎖雪原的舊存檔：補發保暖衣，避免被突然擋在雪原外面
   if (s.zones.includes('snow') && !s.own.coat) { s.own.coat = true; s.coatMigrated = true; }
   if (s.own.coat && !s.zones.includes('snow')) s.zones.push('snow'); // 雪原改成「有保暖衣就能去」，不再需要解謎
+  const vo = obj(o.vol); s.vol = { music: clamp(isFinite(+vo.music) ? +vo.music : .6, 0, 1), sfx: clamp(isFinite(+vo.sfx) ? +vo.sfx : .9, 0, 1) }; if (!['auto', 'high', 'low'].includes(s.quality)) s.quality = 'auto';
   s.warm = clamp(isFinite(+s.warm) ? +s.warm : WARM_MAX, 0, WARM_MAX); s.frozen = !!s.frozen;
   // 改版前的存檔：已經做過東西就視為完成教學；有機器的視為用過產線
   if (!('tutDone' in o)) s.tutDone = !!o.seen && ((+o.sales || 0) > 0 || arr(o.stock).length > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0));
@@ -181,7 +186,7 @@ const effCrisp = p => p.crisp * (0.35 + 0.65 * p.dur / 100);
 const decoBonus = p => p.deco.reduce((a, d) => a + (DECO[d.k] ? DECO[d.k].v : 0), 0);
 const CH = { live: 1.4, web: 0.9, shop: 1.25, corp: 1.5 };
 const priceOf = (p, ch) => p.crude ? 10 : Math.max(1, Math.round(getPrice(ch, p.sp) * cutMul(p)));
-function fair(p, ch) { if (p.crude) return 12; const sp = SP[p.sp]; return sp.price * (0.4 + 1.1 * effCrisp(p)) * (1 + decoBonus(p)) * (trend.sp === p.sp ? 1.35 : 1) * (CH[ch] || 1) * cutMul(p); }
+function fair(p, ch) { if (p.crude) return 12; const sp = SP[p.sp]; return sp.price * (0.4 + 1.1 * effCrisp(p)) * (1 + decoBonus(p)) * (trend.sp === p.sp ? 1.35 : 1) * (CH[ch] || 1) * cutMul(p) * (SP[p.sp].night && ch === 'live' ? 1.15 : 1); }
 const defPrice = (spId, ch) => Math.round(SP[spId].price * 1.28 * CH[ch]);
 const TIER = [{ n: '便宜', m: .8 }, { n: '合理', m: 1 }, { n: '高價', m: 1.35 }];
 const tierOf = (ch, spId) => (S.tier && S.tier[ch] && S.tier[ch][spId] != null) ? S.tier[ch][spId] : 1;
@@ -221,6 +226,65 @@ function sweep(f0, f1, t0, len, vol, type = 'sine') {
   const o = AC.createOscillator(), g = AC.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + len);
   g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(vol, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0008, t0 + len);
   o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + len + 0.05);
+}
+/* ============================================================
+   配樂與環境音（第 3 堂 08）
+   音樂檔放在 public/music/，曲目清單與授權寫在 public/music/tracks.json；授權確認、檔案放進去之前不播音樂，只有環境音。
+   清單格式：{ "base": { "src": "base.mp3", "lo": "base-96k.mp3", "title": "曲名", "author": "作者", "license": "CC0", "url": "原始頁面" }, ... }
+   鍵：base（基地／森林）、coast、volcano、snow、city、night（或 base_night 等各區夜間版）、museum
+   ============================================================ */
+const MUS = { list: null, els: {}, g: {}, want: '', duck: 1 };
+try { fetch('/music/tracks.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(j => { if (j && typeof j === 'object') MUS.list = j; }).catch(() => { }); } catch (e) { }
+function musicWant() {
+  const L0 = MUS.list; if (!L0) return '';
+  const has = k => !!(L0[k] && L0[k].src), pk = (...ks) => ks.find(has) || '';
+  const z = TITLE.on ? 'forest' : (W.zoneNow || 'forest'), nite = DN.night > .55;
+  if (z === 'city') return nite ? pk('city_night', 'night', 'city') : pk('city', 'base');
+  const base = z === 'forest' ? 'base' : z;
+  return nite ? pk(base + '_night', 'night', base, 'base') : pk(base, 'base');
+}
+function musicEl(k) {
+  if (MUS.els[k]) return MUS.els[k];
+  const t = MUS.list[k], el = new Audio(); el.src = '/music/' + (LOW && t.lo ? t.lo : t.src); el.loop = true; el.preload = 'none'; el.crossOrigin = 'anonymous';
+  const ac = audio(), g = ac.createGain(); g.gain.value = 0; ac.createMediaElementSource(el).connect(g); g.connect(ac.destination);
+  el.addEventListener('error', () => { MUS.list[k] = null; }); // 檔案不見：之後就不再試
+  MUS.els[k] = el; MUS.g[k] = { node: g, v: 0 }; return el;
+}
+function musicStep(dt) {
+  if (!AC || AC.state !== 'running') return; // 瀏覽器規定：玩家第一次點畫面之後才能出聲
+  if (master) master.gain.value = .9 * (S.vol ? S.vol.sfx : .9) / .9;
+  const want = musicWant(); MUS.want = want;
+  MUS.duck += ((L.on ? .3 : 1) - MUS.duck) * Math.min(1, dt * 2); // 直播時音樂自動降低，讓捏捏聲更清楚
+  const vol = (S.vol ? S.vol.music : .6) * MUS.duck;
+  if (want && !MUS.els[want]) { try { musicEl(want); } catch (e) { MUS.list[want] = null; } }
+  // 走到別區附近時先開始下載那一區的曲子（串流，不必整首下載完）
+  if (MUS.list && !TITLE.on && P && (W.preT = (W.preT || 0) - dt) <= 0) { W.preT = 2; const w = biomeW(P.x, P.z); BIOMES.forEach((b, i) => { const k = b === 'forest' ? 'base' : b; if (w[i] > .12 && MUS.list[k] && MUS.list[k].src && !MUS.els[k]) { try { const el = musicEl(k); el.preload = 'auto'; el.load(); } catch (e) { } } }); }
+  for (const k in MUS.els) {
+    const el = MUS.els[k], gg = MUS.g[k]; gg.v = k === want ? Math.min(1, gg.v + dt / 2.5) : Math.max(0, gg.v - dt / 2.5); // 換區時 2.5 秒交叉淡入淡出
+    gg.node.gain.value = Math.sin(gg.v * Math.PI / 2) * vol;
+    if (gg.v > 0 && el.paused) { const r = el.play(); if (r && r.catch) r.catch(() => { }); }
+    if (gg.v <= 0 && !el.paused) el.pause();
+  }
+}
+// 環境音：程式合成（不需要音樂檔），白天鳥叫、夜裡蟲鳴、海浪、火山低鳴、雪原的風、城市車流
+function swell(t, dur, f, q, vol, type = 'lowpass') {
+  const ac = AC, src = ac.createBufferSource(); src.buffer = NB; src.loop = true; src.playbackRate.value = rnd(.7, 1.1);
+  const fl = ac.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
+  const g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(vol, t + dur * .45); g.gain.linearRampToValueAtTime(.0001, t + dur);
+  src.connect(fl); fl.connect(g); g.connect(master); src.start(t); src.stop(t + dur + .05);
+}
+const AMB = { t: 1 };
+function ambStep(dt) {
+  if (!AC || AC.state !== 'running' || !S.sound || TITLE.on || !P || GUI.kind === 'live') return;
+  if ((AMB.t -= dt) > 0) return; const t = AC.currentTime, z = W.zoneNow || 'forest', nite = DN.night > .5;
+  if (z === 'forest') {
+    if (!nite) { const f = rnd(2400, 3600); for (let i = 0, n = 2 + Math.floor(rnd(0, 3)); i < n; i++) sweep(f * rnd(.9, 1.1), f * rnd(1.2, 1.5), t + i * .13, .09, .012); AMB.t = rnd(2.5, 6); }
+    else { for (let i = 0; i < 6; i++) tone(4300, t + i * .055, .03, .006, 'triangle'); AMB.t = rnd(.7, 1.6); }
+  } else if (z === 'coast') { swell(t, rnd(3.5, 5), 520, .7, .05); if (!nite && Math.random() < .25) sweep(1500, 900, t + 1, .35, .01, 'triangle'); AMB.t = rnd(3.5, 5.5); }
+  else if (z === 'volcano') { swell(t, rnd(2.5, 4), 85, .8, .07); AMB.t = rnd(3, 5); }
+  else if (z === 'snow') { swell(t, rnd(3.5, 5.5), rnd(380, 650), .9, .035, 'bandpass'); AMB.t = rnd(3, 5); }
+  else if (z === 'city') { swell(t, rnd(2, 3.5), 260, .7, .025); AMB.t = rnd(2.5, 4.5); }
+  else AMB.t = 3;
 }
 const sfx = {
   crunch(power = 1, crisp = 0.8) {
@@ -404,6 +468,7 @@ function jellyColors(J, sp) {
   const col = J.geo.attributes.color, c1 = new THREE.Color(sp.color), c2 = new THREE.Color(sp.color2 || sp.color), wh = new THREE.Color('#ffffff'), t = new THREE.Color();
   for (let i = 0; i < J.n; i++) { const x = J.base[i * 3], y = J.base[i * 3 + 1]; t.copy(c1).lerp(c2, clamp((x + y) / 4 + .5, 0, 1)).lerp(wh, clamp(y * .12 + .05, 0, .2)); col.setXYZ(i, t.r, t.g, t.b); }
   col.needsUpdate = true; if (J.mesh.material.attenuationColor) J.mesh.material.attenuationColor.set(sp.color);
+  if (J.mesh.material.emissive) { J.mesh.material.emissive.set(sp.night ? sp.color : '#000000'); J.mesh.material.emissiveIntensity = sp.night ? .35 : 0; }
 }
 function jellyTexture(J, p) {
   const g = J.cv.getContext('2d'); g.clearRect(0, 0, 512, 512); const rd = seeded(p.id + 7);
@@ -579,6 +644,21 @@ function makeStage(cv, mode) {
    中央森林（工坊所在）被一圈山脊環繞，東／北／西各有一個隘口，
    隘口被能量門封住，需解開前一區的謎題才能通過。
    ============================================================ */
+const DAY_LEN = 600, DN = { t: 0, night: 0, dusk: 0, dawn: 0, phase: 'day', p: 0 };
+const DN_PHASE = { day: '白天', dusk: '黃昏', night: '夜晚', dawn: '黎明' };
+// 時間不存檔：同一間教室看到同一個天色，多人連線也不用同步（W.dnOff 只給測試用）
+function dnUpdate() {
+  const t = ((Date.now() / 1000 + (W.dnOff || 0)) % DAY_LEN + DAY_LEN) % DAY_LEN, sm = x => x * x * (3 - 2 * x);
+  DN.t = t; DN.p = t / DAY_LEN;
+  DN.night = t < 300 ? 0 : t < 360 ? sm((t - 300) / 60) : t < 540 ? 1 : 1 - sm((t - 540) / 60);
+  DN.dusk = t >= 300 && t < 360 ? Math.sin(Math.PI * (t - 300) / 60) : 0; DN.dawn = t >= 540 ? Math.sin(Math.PI * (t - 540) / 60) : 0;
+  const ph = t < 300 ? 'day' : t < 360 ? 'dusk' : t < 540 ? 'night' : 'dawn';
+  if (ph !== DN.phase) { const prev = DN.phase; DN.phase = ph; if (W.ready && !TITLE.on && prev) { if (ph === 'dusk') toast('夜晚快到了，夜行史萊姆要出來了'); else if (ph === 'night') toast('夜晚來臨：史萊姆身上發著微光，夜行種類出現了'); else if (ph === 'dawn') toast('天快亮了，夜行史萊姆要躲回去了'); } }
+  NIGHT_U.value = DN.night;
+}
+const NIGHT_U = { value: 0 }; // 所有史萊姆共用：夜裡身上發光（自發光材質，不加光源）
+const DNC = { fog: new THREE.Color('#1c2650'), top: new THREE.Color('#0a1130'), sun: new THREE.Color('#b8c6ff'), hs: new THREE.Color('#4b5b9a'), hg: new THREE.Color('#141a33'),
+  duskFog: new THREE.Color('#e9a07a'), duskTop: new THREE.Color('#6b4c93'), duskSun: new THREE.Color('#ffb27a'), dawnFog: new THREE.Color('#f2b9c8'), dawnTop: new THREE.Color('#7a8fd0'), dawnSun: new THREE.Color('#ffd2c2') };
 const ZONE3D = {
   forest: { top: '#5ea7d6', fog: '#cfe6dc', sun: '#fff1d0', hemiS: '#d8f0ff', hemiG: '#2d4a2f', pal: ['#5a9a4c', '#3f7f45', '#5b7a50', '#707468', '#e2e8f0'] },
   coast: { top: '#3f9fe0', fog: '#d4ecf8', sun: '#fff6e0', hemiS: '#e0f4ff', hemiG: '#6b6247', pal: ['#e3d09a', '#79ad62', '#4f8a4f', '#8b9096', '#e2e8f0'] },
@@ -675,13 +755,13 @@ function initWorld() {
   if (!LOW) { const sh = W.sun.shadow; sh.mapSize.set(SH_RES, SH_RES); Object.assign(sh.camera, { left: -SH_EXT, right: SH_EXT, top: SH_EXT, bottom: -SH_EXT, near: 1, far: 140 }); sh.bias = -.0004; sh.normalBias = .05; sh.camera.updateProjectionMatrix(); }
   // 天空（漸層 shader）
   W.sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
-    uniforms: { top: { value: new THREE.Color('#5ea7d6') }, bot: { value: new THREE.Color('#cfe6dc') }, sunDir: { value: new THREE.Vector3(30, 55, 22).normalize() } }, side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color('#5ea7d6') }, bot: { value: new THREE.Color('#cfe6dc') }, sunDir: { value: new THREE.Vector3(30, 55, 22).normalize() }, night: NIGHT_U }, side: THREE.BackSide, depthWrite: false, fog: false,
     vertexShader: 'varying vec3 vd; void main(){ vd = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-    fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; varying vec3 vd; void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); c += vec3(1.0, 0.93, 0.78) * (pow(s, 700.0) * 3.5 + pow(s, 48.0) * 0.28 + pow(s, 6.0) * 0.07) * smoothstep(-0.05, 0.05, d.y); c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
+    fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform float night; varying vec3 vd; float h3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); } void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); vec3 sc = mix(vec3(1.0, 0.93, 0.78), vec3(0.78, 0.84, 1.0), night); c += sc * (pow(s, 700.0) * 3.5 * (1.0 - night * 0.3) + pow(s, 48.0) * 0.28 * (1.0 - night * 0.5) + pow(s, 6.0) * 0.07 * (1.0 - night)) * smoothstep(-0.05, 0.05, d.y); float st = step(0.9965, h3(floor(d * 230.0))) * night * smoothstep(0.03, 0.3, d.y); c += vec3(0.85, 0.9, 1.0) * st; c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
   buildTerrain(); buildWater(); buildProps(); buildLandmarks(); buildFauna(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
   W.goo = makeGoo(sc); skyEnv(true);
-  initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); W.ready = true; return true;
+  initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); W.ready = true; return true;
 }
 /* ---------- 小徑：烘焙成遮罩（地表著色、道具避讓、腳步聲共用） ---------- */
 const MAP_SIZE = 370 * K, PMR = 512, PMASK = new Float32Array(PMR * PMR); let PATH_TEX = null;
@@ -1218,19 +1298,29 @@ function dotTex() {
 }
 /* 環境粒子：依玩家所在生態區切換（花粉／火星／雪花） */
 function buildParticles() {
-  const n = LOW ? 220 : 420, geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) { pos[i * 3] = rnd(-25, 25); pos[i * 3 + 1] = rnd(0, 14); pos[i * 3 + 2] = rnd(-25, 25); }
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const mat = new THREE.PointsMaterial({ size: .14, map: dotTex(), color: '#fef08a', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; W.scene.add(pts);
-  const K = { forest: ['float', '#fef08a', .13, THREE.AdditiveBlending], coast: ['float', '#ffffff', .08, THREE.AdditiveBlending], volcano: ['rise', '#fb923c', .16, THREE.AdditiveBlending], snow: ['fall', '#ffffff', .18, THREE.NormalBlending] };
+  const n = LOW ? 220 : 420, geo = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), ph = new Float32Array(n);
+  for (let i = 0; i < n; i++) { pos[i * 3] = rnd(-25, 25); pos[i * 3 + 1] = rnd(0, 14); pos[i * 3 + 2] = rnd(-25, 25); ph[i] = rnd(0, 6.28); }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('ph', new THREE.BufferAttribute(ph, 1));
+  // 每顆粒子自己的相位：螢火蟲一閃一閃（不是點光源，只是發亮的點）
+  const U = { map: { value: dotTex() }, col: { value: new THREE.Color('#fef08a') }, size: { value: .14 }, time: { value: 0 }, blink: { value: 0 }, op: { value: 1 }, scale: { value: 300 } };
+  const mat = new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: 'attribute float ph; uniform float size; uniform float time; uniform float blink; uniform float scale; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float b = pow(max(0.0, sin(time * 1.7 + ph * 3.0)), 3.0); vA = mix(1.0, 0.08 + b, blink); gl_PointSize = size * scale / -mv.z * mix(1.0, 0.7 + b * 0.6, blink); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform sampler2D map; uniform vec3 col; uniform float op; varying float vA; void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(col, t.a * op * vA); }' });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; W.scene.add(pts); W.parts = pts;
+  // 種類：[動作, 顏色, 大小, 混合, 閃爍, 不透明度]
+  const K = { pollen: ['drift', '#fff3c4', .1, THREE.NormalBlending, 0, .75], firefly: ['float', '#ffd75e', .3, THREE.AdditiveBlending, 1, 1], coast: ['float', '#ffffff', .08, THREE.AdditiveBlending, 0, .9],
+    volcano: ['rise', '#fb923c', .16, THREE.AdditiveBlending, 0, 1], snow: ['fall', '#ffffff', .18, THREE.NormalBlending, 0, .9] };
   let cur = '';
   W.anim.push((dt, t) => {
-    const b = domBiome(P.x, P.z); if (b !== cur) { cur = b; mat.color.set(K[b][1]); mat.size = K[b][2]; mat.blending = K[b][3]; mat.needsUpdate = true; }
-    const kind = K[b][0]; pts.position.set(Math.floor(P.x / 50) * 50, G(P.x, P.z), Math.floor(P.z / 50) * 50);
+    const b = domBiome(P.x, P.z), nite = DN.night > .3, key = inCity() ? '' : b === 'forest' ? (nite ? 'firefly' : 'pollen') : b === 'coast' ? (nite ? 'firefly' : 'coast') : b;
+    pts.visible = !!key && !QL.noParts; if (!pts.visible) return;
+    if (key !== cur) { cur = key; const k = K[key]; U.col.value.set(k[1]); U.size.value = k[2]; mat.blending = k[3]; U.blink.value = k[4]; U.op.value = k[5]; mat.needsUpdate = true; }
+    U.time.value = t; U.scale.value = innerHeight * .5;
+    const kind = K[key][0]; pts.position.set(Math.floor(P.x / 50) * 50, G(P.x, P.z), Math.floor(P.z / 50) * 50);
     for (let i = 0; i < n; i++) {
       const k = i * 3;
       if (kind === 'float') { pos[k] += Math.sin(t * .6 + i) * dt * .3; pos[k + 1] += Math.cos(t * .5 + i * 1.3) * dt * .2; }
+      else if (kind === 'drift') { pos[k] += (.25 + Math.sin(t * .4 + i) * .2) * dt; pos[k + 1] -= dt * (.08 + (i % 3) * .04); pos[k + 2] += Math.cos(t * .3 + i) * dt * .15; if (pos[k + 1] < 0) pos[k + 1] = 14; }
       else if (kind === 'rise') { pos[k + 1] += dt * (1 + (i % 5) * .3); pos[k] += Math.sin(t * 2 + i) * dt * .4; if (pos[k + 1] > 14) pos[k + 1] = 0; }
       else { pos[k + 1] -= dt * (1 + (i % 4) * .25); pos[k] += Math.sin(t + i) * dt * .5; if (pos[k + 1] < 0) pos[k + 1] = 14; }
       const lx = pos[k] + pts.position.x - P.x, lz = pos[k + 2] + pts.position.z - P.z;
@@ -1238,6 +1328,12 @@ function buildParticles() {
     }
     geo.attributes.position.needsUpdate = true;
   });
+}
+/* 夜裡亮起來的東西：城市窗戶與招牌、路燈（只改既有材質的亮度，不加光源） */
+function nightLights() {
+  const n = DN.night, k = Math.round(n * 20); if (k === W.nlK) return; W.nlK = k;
+  (W.cityWin || []).forEach(m => { m.emissiveIntensity = .12 + n * .85; });
+  (W.lampMats || []).forEach(m => { m.emissiveIntensity = .4 + n * 1.6; });
 }
 
 /* ============================================================
@@ -1732,6 +1828,9 @@ const SLOOK = {
   obsid: { pat: 5, c2: '#c4b5fd', deep: '#2e1065', iris: '#7c3aed', rim: '#ddd6fe', core: '#f0abfc' },
   ice: { pat: 6, c2: '#ffffff', deep: '#38bdf8', iris: '#075985', rim: '#ffffff', core: '#f0f9ff' },
   aurora: { pat: 7, c2: '#a78bfa', deep: '#0f766e', iris: '#4c1d95', rim: '#f5d0fe', core: '#f0abfc' },
+  glowgrass: { pat: 0, c2: '#ecfccb', deep: '#0f766e', iris: '#134e4a', rim: '#d9f99d', core: '#fefce8' },
+  nightcoral: { pat: 3, c2: '#fbcfe8', deep: '#6d28d9', iris: '#3b0764', rim: '#ede9fe', core: '#fdf4ff' },
+  ember: { pat: 4, c2: '#fecaca', deep: '#7f1d1d', iris: '#450a0a', rim: '#fed7aa', core: '#fff7ed' },
 };
 /* ---------- 著色器 ---------- */
 const SL_DEFORM = `
@@ -1757,6 +1856,7 @@ vec3 slDeform(vec3 p) {
 }
 `;
 const SL_FRAG = `
+uniform float uNight;
 uniform float uT;
 uniform vec3 uC1;
 uniform vec3 uC2;
@@ -1969,7 +2069,7 @@ function slimeMat(U) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + SL_FRAG)
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + SL_COLOR)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(clamp(roughnessFactor + slPr, 0.04, 1.0), 0.32, slFm * 0.5);')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += slPe * (1.0 - slFm);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += slPe * (1.0 - slFm) + diffuseColor.rgb * uNight * 0.32;')
       .replace('#include <opaque_fragment>', SL_LIGHT + '\n#include <opaque_fragment>');
   };
   m.customProgramCacheKey = () => 'slimeJelly2';
@@ -1994,19 +2094,19 @@ function slimeFeat(sp, F, ud) {
   const R = SCACHE[sp.id] || (SCACHE[sp.id] = {}), once = (k, fn) => R[k] || (R[k] = fn());
   const add = (geoK, gfn, matK, mfn, x = 0, y = 0, z = 0) => { const m = mesh(once(geoK, gfn), once(matK, mfn), x, y, z, F); m.castShadow = !LOW; return m; };
   const phys = o => () => new THREE.MeshPhysicalMaterial(Object.assign({ vertexColors: true, roughness: .3, clearcoat: 1, clearcoatRoughness: .15 }, o));
-  if (sp.id === 'grass') {
+  if ((sp.look || sp.id) === 'grass') {
     ud.sprout = add('g', () => mergeParts([[new THREE.CylinderGeometry(.022, .032, .3, 8).translate(0, .15, 0), '#3f7f45'],
       ...[-1, 1].map(s => { const l = new THREE.SphereGeometry(1, 14, 8); l.scale(.17, .028, .08); l.translate(.15, 0, 0); return [l, s < 0 ? '#4ade80' : '#22c55e', M4(0, .27, 0, s * .15, s < 0 ? Math.PI : 0, .45)]; }),
       [new THREE.SphereGeometry(.036, 10, 8), '#bbf7d0', M4(0, .305, 0)]], true), 'gm', phys({ roughness: .45, clearcoat: .3 }), 0, SL_H - .04, 0);
-  } else if (sp.id === 'honey') {
+  } else if ((sp.look || sp.id) === 'honey') {
     const T = M4(.22, 1.1, -.1, .25, .3, -.42);
     add('g', () => mergeParts([[new THREE.CylinderGeometry(.17, .17, .075, 6), '#f59e0b', T],
       ...[[0, 0], [.075, .043], [-.075, .043], [0, -.086], [.075, -.043], [-.075, -.043], [0, .086]].map(([x, z]) => [new THREE.CylinderGeometry(.034, .034, .078, 6), '#b45309', T.clone().multiply(M4(x, .002, z))])], true), 'gm', phys({ roughness: .25 }));
-  } else if (sp.id === 'salt') {
+  } else if ((sp.look || sp.id) === 'salt') {
     add('g', () => mergeParts([[0, 1, 0, .13, 1], [.27, .9, .1, .09, .6], [-.22, .93, -.14, .1, 1.3], [.06, .88, -.3, .08, 2.1], [-.13, .92, .24, .075, .4], [.18, .95, -.18, .06, 2.7]].map(([x, y, z, s, r], i) => {
       const o = sPos([x, y, z], s * .25); return [new THREE.BoxGeometry(1, 1, 1), i % 2 ? '#e0f2fe' : '#f8fafc', MQn(o.p, o.n, s, s * 1.35, s, r)];
     }), true), 'gm', phys({ roughness: .06, emissive: '#bae6fd', emissiveIntensity: .18 }));
-  } else if (sp.id === 'coral') {
+  } else if ((sp.look || sp.id) === 'coral') {
     add('g', () => {
       const parts = [], V = (x, y, z) => new THREE.Vector3(x, y, z);
       [[-.2, -.06, .36, 1], [.18, .1, .44, -1], [.02, -.24, .3, 1]].forEach(([x, z, h, s]) => {
@@ -2019,20 +2119,20 @@ function slimeFeat(sp, F, ud) {
       });
       return mergeParts(parts, true);
     }, 'gm', phys({ roughness: .55, clearcoat: .4 }));
-  } else if (sp.id === 'lava') {
+  } else if ((sp.look || sp.id) === 'lava') {
     const fl = new THREE.Group(); fl.position.set(0, SL_H + .02, 0); F.add(fl); ud.flame = fl;
     mesh(once('fo', () => new THREE.ConeGeometry(.17, .55, 18).translate(0, .24, 0)), once('fom', () => new THREE.MeshBasicMaterial({ color: '#fb923c', transparent: true, opacity: .7, blending: THREE.AdditiveBlending, depthWrite: false })), 0, 0, 0, fl);
     mesh(once('fi', () => new THREE.ConeGeometry(.09, .32, 14).translate(0, .15, 0)), once('fim', () => new THREE.MeshBasicMaterial({ color: '#fde047', transparent: true, opacity: .95, blending: THREE.AdditiveBlending, depthWrite: false })), 0, 0, 0, fl);
-  } else if (sp.id === 'obsid') {
+  } else if ((sp.look || sp.id) === 'obsid') {
     add('g', () => mergeParts([[0, .85, -.5, 1.25], [.38, .65, -.62, .95], [-.38, .65, -.62, .95], [0, .4, -.92, .75], [.22, .95, -.12, .6], [-.25, .9, -.2, .5]].map(([x, y, z, s], i) => {
       const o = sPos([x, y, z], s * .1); return [new THREE.OctahedronGeometry(.16), i % 2 ? '#4c1d95' : '#2e1065', MQn(o.p, o.n, s * .62, s * 2.1, s * .62, i)];
     }), true), 'gm', phys({ roughness: .05, metalness: .35, emissive: '#4c1d95', emissiveIntensity: .3, flatShading: true }));
-  } else if (sp.id === 'ice') {
+  } else if ((sp.look || sp.id) === 'ice') {
     add('g', () => mergeParts([...Array(7)].map((_, i) => {
       const a = i / 7 * PI2, r = i % 2 ? .45 : .56, o = sPos([Math.cos(a) * r, .85, Math.sin(a) * r], .1), s = i % 2 ? .75 : 1.1;
       return [new THREE.ConeGeometry(.065, .36, 6), i % 2 ? '#e0f2fe' : '#bae6fd', MQn(o.p, o.n, s, s, s, a)];
     }).concat([[new THREE.ConeGeometry(.085, .5, 6), '#f0f9ff', M4(0, SL_H + .2, 0)]]), true), 'gm', phys({ roughness: .04, emissive: '#7dd3fc', emissiveIntensity: .3, flatShading: true }));
-  } else if (sp.id === 'aurora') {
+  } else if ((sp.look || sp.id) === 'aurora') {
     add('g', () => mergeParts([[new THREE.CylinderGeometry(.014, .02, .36, 6), '#c4b5fd', M4(0, SL_H + .16, 0)], [new THREE.OctahedronGeometry(.085), '#fde047', M4(0, SL_H + .4, 0, .3, .5, 0)]], true), 'gm', () => new THREE.MeshBasicMaterial({ vertexColors: true }));
     ud.orbit = add('o', () => mergeParts(['#22d3ee', '#a78bfa', '#34d399', '#f0abfc'].map((c, i) => [new THREE.SphereGeometry(.06, 10, 8), c, M4(Math.cos(i / 4 * PI2) * 1.3, Math.sin(i * 2) * .18, Math.sin(i / 4 * PI2) * 1.3)]), true), 'om', () => new THREE.MeshBasicMaterial({ vertexColors: true }), 0, .75, 0);
     ud.orbit.castShadow = false;
@@ -2042,11 +2142,11 @@ function slimeFeat(sp, F, ud) {
   }
 }
 function slimeMesh(sp) {
-  const L0 = SLOOK[sp.id] || SLOOK.grass, g = new THREE.Group(), col = new THREE.Color(sp.color), C = k => new THREE.Color(k);
+  const L0 = SLOOK[sp.id] || SLOOK[sp.look] || SLOOK.grass, g = new THREE.Group(), col = new THREE.Color(sp.color), C = k => new THREE.Color(k);
   const c1 = col.clone().offsetHSL(rnd(-.012, .012), rnd(-.04, .04), rnd(-.025, .025));
   const U = {
     uT: { value: 0 }, uSq: { value: new THREE.Vector4(1, 0, 0, 0) }, uDent: { value: new THREE.Vector4(0, .7, 1, 0) }, uRip: { value: new THREE.Vector4(9, 0, .012, rnd(0, 6)) },
-    uC1: { value: c1 }, uC2: { value: C(L0.c2) }, uC3: { value: C(L0.deep) }, uLine: { value: C(L0.deep).multiplyScalar(.3) }, uIris: { value: C(L0.iris) },
+    uNight: NIGHT_U, uC1: { value: c1 }, uC2: { value: C(L0.c2) }, uC3: { value: C(L0.deep) }, uLine: { value: C(L0.deep).multiplyScalar(.3) }, uIris: { value: C(L0.iris) },
     uRimC: { value: C(L0.rim).lerp(c1, .45) }, uSSS: { value: c1.clone().multiplyScalar(.7) }, uCoreC: { value: C(L0.core) }, uCam: { value: new THREE.Vector3(0, 2, 5) },
     uFace: { value: new THREE.Vector4() }, uFace2: { value: new THREE.Vector4(0, 0, 0, .5) }, uCore: { value: new THREE.Vector4(sp.rar >= 3 ? .9 : .55, 1, 0, 0) },
     uMisc: { value: new THREE.Vector4(L0.pat, .88, 0, 0) },
@@ -2182,7 +2282,7 @@ function slimeStep(dt, t) {
   W.slimes.forEach(s => {
     if (!s.mirror) { s.cool = Math.max(0, s.cool - dt); if (s.hits > 0 && (s.since = (s.since || 0) + dt) > 10) { s.hits = 0; s.perf = 0; } }
     s.sq = Math.max(0, s.sq - dt * 3); s.happy = Math.max(0, s.happy - dt);
-    const dx = s.x - P.x, dz = s.z - P.z, dist = Math.hypot(dx, dz); s.m.visible = dist < 62;
+    const dx = s.x - P.x, dz = s.z - P.z, dist = Math.hypot(dx, dz); s.m.visible = dist < 62 && !(s.sp.night && DN.night < .5);
     if (!s.m.visible) { s.noticed = false; s.flee = 0; return; }
     const cool = s.cool > 0, ud = s.m.userData, U = s.U;
     let wx = 0, wz = 0, spd = 0;
@@ -2675,6 +2775,12 @@ function waypointStep() {
   if (off) el.querySelector('.wpa').style.transform = `translate(-50%,-50%) rotate(${ang.toFixed(0)}deg) translateY(-25px)`;
 }
 let cmpSig = '';
+function renderClock() {
+  let el = document.getElementById('dnClock'); if (!el) { el = document.createElement('div'); el.id = 'dnClock'; el.innerHTML = '<i class="dn-ic"></i><span class="dn-bar"><b></b></span><em></em>'; (document.getElementById('hud') || document.body).appendChild(el); }
+  const sig = DN.phase + Math.round(DN.p * 200); if (sig === W.clkSig) return; W.clkSig = sig;
+  el.className = 'dn-' + DN.phase; el.querySelector('b').style.width = (DN.p * 100).toFixed(1) + '%'; el.querySelector('em').textContent = DN_PHASE[DN.phase];
+  el.title = '月光谷的一天 10 分鐘：白天 5、黃昏 1、夜晚 3、黎明 1 分鐘';
+}
 function renderCompass() {
   const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .8, items = [], o0 = W.obj;
   const sig = `${P.yaw.toFixed(3)}|${Math.round(P.x * 2)}|${Math.round(P.z * 2)}|${w}|${o0 && o0.x}|${o0 && o0.z}|${S.zones.length}`; if (sig === cmpSig) return; cmpSig = sig;
@@ -2989,6 +3095,7 @@ function renderDecor() {
   ui('decor'); // 庫存與工具由 React 畫（components/stations/Decor.tsx）
 }
 function renderDecorTools() { ui('decor'); } // 裝飾工具由 React 畫（components/stations/Decor.tsx）
+document.addEventListener('input', e => { const vk = e.target.dataset && e.target.dataset.vol; if (vk && S.vol && vk in S.vol) { S.vol[vk] = clamp(+e.target.value / 100, 0, 1); save(); return; } });
 document.addEventListener('input', e => { const r = e.target.dataset && e.target.dataset.r; if (!r) return; const p = decorSt.p; if (!p) return; const d = p.deco[decorSt.sel]; if (d) d[r] = +e.target.value; });
 
 /* ---------- 直播 ---------- */
@@ -3174,7 +3281,7 @@ function chooseBranch(k) {
 }
 
 /* ---------- 圖鑑 / 背包 ---------- */
-const GOAL = { species: 8, fans: 800, earned: 40000 };
+const GOAL = { species: SPECIES.length, fans: 800, earned: 40000 };
 function renderCodex() { ui('codex'); } // 畫面改由 React 負責（components/stations/）
 function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
 let invSel = null;
@@ -3238,6 +3345,7 @@ document.addEventListener('click', e => {
     case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; gainXP(4); addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
     case 'finish': finish(); break;
     case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
+    case 'quality': if (['auto', 'high', 'low'].includes(k)) { S.quality = k; applyQuality(true); save(); ui('pause'); toast('畫質：' + { auto: '自動', high: '高', low: '低' }[k]); } break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
     case 'help': showHelp(); break;
     case 'home': P.x = 0; P.z = 16; P.y = G(0, 16); P.yaw = 0; closeGui(); toast('已傳送回中央平地入口'); break;
@@ -3245,6 +3353,7 @@ document.addEventListener('click', e => {
   }
 });
 // 加工的「停機」用 pointerdown 觸發：比 click 少一個放開手指的延遲，計時更準
+function creditsHTML() { const L0 = MUS.list; if (!L0) return ''; const a = Object.values(L0).filter(t => t && t.title); return a.length ? '<p class="small" style="color:var(--sub);margin-top:8px"><b>配樂</b>：' + a.map(t => esc(t.title) + ' — ' + esc(t.author || '') + '（' + esc(t.license || '') + '）').join('；') + '</p>' : ''; }
 function showHelp() {
   const keys = TOUCH
     ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span></div>'
@@ -3303,6 +3412,7 @@ function newGame(archiveTo) {
   if (archiveTo) { save(); const cur = lsGet(SAVE_KEY); if (cur) { try { localStorage.setItem(slotKey(archiveTo), cur); } catch (e) { toast('存檔空間不足，無法另存目前進度'); return; } } }
   NOSAVE = true; netLeave(true); try { localStorage.removeItem(SAVE_KEY); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { } if (window.SlimeCloud) SlimeCloud.resetLocal(); location.reload(); }
 function titleStep(dt) {
+  musicStep(dt);
   W.t += dt; W.wind.value = W.t; if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(W.cam.position); slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt);
   const a = W.t * .04; W.cam.position.set(Math.sin(a) * 30, 13 + Math.sin(W.t * .1) * 2, Math.cos(a) * 30); W.cam.lookAt(0, 2.5, 0);
   W.r.render(W.scene, W.cam);
@@ -3343,7 +3453,7 @@ const nCol = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : '#22d
 const nCrack = c => Array.isArray(c) ? c.slice(0, 12).map(v => nNum(v, -1, 2)) : null;
 function nPlayer(m) {
   const lv = m.live && typeof m.live === 'object' && m.live.on ? { on: true, hype: Math.round(nNum(m.live.hype, 0, 100)), viewers: Math.round(nNum(m.live.viewers, 0, 1e6)), sp: SP[m.live.sp] ? m.live.sp : null } : null;
-  return { name: nStr(m.name, 12) || '玩家', color: nCol(m.color), x: nNum(m.x, -1e4, 1e4), y: nNum(m.y, -100, 500), z: nNum(m.z, -1e4, 1e4), yaw: nNum(m.yaw, -1e3, 1e3), live: lv, held: typeof m.held === 'string' && /^[pg][0-7]$/.test(m.held) ? m.held : '', show: Array.isArray(m.show) ? m.show.slice(0, 4).filter(x => x && SP[x.sp]).map(x => ({ sp: x.sp, cut: CUTS[x.cut] ? x.cut : null, cr: Math.round(nNum(x.cr, 0, 100)) })) : [] };
+  return { name: nStr(m.name, 12) || '玩家', color: nCol(m.color), x: nNum(m.x, -1e4, 1e4), y: nNum(m.y, -100, 500), z: nNum(m.z, -1e4, 1e4), yaw: nNum(m.yaw, -1e3, 1e3), live: lv, held: typeof m.held === 'string' && /^[pg]\d{1,2}$/.test(m.held) ? m.held : '', show: Array.isArray(m.show) ? m.show.slice(0, 4).filter(x => x && SP[x.sp]).map(x => ({ sp: x.sp, cut: CUTS[x.cut] ? x.cut : null, cr: Math.round(nNum(x.cr, 0, 100)) })) : [] };
 }
 function nProd(p) {
   if (!p || typeof p !== 'object' || !SP[p.sp]) return null;
@@ -3776,7 +3886,7 @@ function buildCity() {
   const winTex = (() => { const c = document.createElement('canvas'); c.width = 64; c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#1f2937'; x.fillRect(0, 0, 64, 128); for (let i = 0; i < 4; i++) for (let j = 0; j < 8; j++) { x.fillStyle = Math.random() < .5 ? '#fde68a' : '#475569'; x.fillRect(4 + i * 15, 4 + j * 15.5, 10, 11); } const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t; })();
   const bld = (x, z, w, d, h, col, solid = true) => {
     const t = winTex.clone(); t.needsUpdate = true; t.repeat.set(Math.max(1, Math.round(w / 4)), Math.max(1, Math.round(h / 7)));
-    const b = box(w, h, d, new THREE.MeshStandardMaterial({ color: col, map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: .22, roughness: .7 }), x, h / 2, z, g);
+    const b = box(w, h, d, new THREE.MeshStandardMaterial({ color: col, map: t, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: .22, roughness: .7 }), x, h / 2, z, g); (W.cityWin = W.cityWin || []).push(b.material);
     b.castShadow = !LOW; b.receiveShadow = true; if (solid) addCol({ box: [CITY.x + x - w / 2, CITY.z + z - d / 2, CITY.x + x + w / 2, CITY.z + z + d / 2] }); return b;
   };
   const rd = seeded(31), cols = ['#64748b', '#475569', '#94a3b8', '#7c8aa0', '#5b6b80', '#a1a1aa'];
@@ -4026,8 +4136,11 @@ const SH_EXT = 34, SH_RES = 2048, shC = new THREE.Vector3();
 function envStep(dt) {
   const w = biomeW(P.x, P.z), [fog, top, sun, hs, hg] = ENVC.map(c => c.setRGB(0, 0, 0));
   BIOMES.forEach((b, i) => { const Z = ZONE3D[b]; fog.add(tmpC.set(Z.fog).multiplyScalar(w[i])); top.add(tmpC.set(Z.top).multiplyScalar(w[i])); sun.add(tmpC.set(Z.sun).multiplyScalar(w[i])); hs.add(tmpC.set(Z.hemiS).multiplyScalar(w[i])); hg.add(tmpC.set(Z.hemiG).multiplyScalar(w[i])); });
+  dnUpdate(); const nN = DN.night;
+  fog.lerp(DNC.duskFog, DN.dusk * .55).lerp(DNC.dawnFog, DN.dawn * .45).lerp(DNC.fog, nN * .9); top.lerp(DNC.duskTop, DN.dusk * .6).lerp(DNC.dawnTop, DN.dawn * .5).lerp(DNC.top, nN * .95);
+  sun.lerp(DNC.duskSun, (DN.dusk + DN.dawn) * .7).lerp(DNC.sun, nN); hs.lerp(DNC.hs, nN * .85); hg.lerp(DNC.hg, nN * .8);
   const k = Math.min(1, dt * 2); W.scene.fog.color.lerp(fog, k); W.scene.background.copy(W.scene.fog.color); W.sky.material.uniforms.bot.value.lerp(fog, k); W.sky.material.uniforms.top.value.lerp(top, k);
-  W.sun.color.lerp(sun, k); W.hemi.color.lerp(hs, k); W.hemi.groundColor.lerp(hg, k); W.sun.intensity = 2.6 - w[2] * .9; skyEnv();
+  W.sun.color.lerp(sun, k); W.hemi.color.lerp(hs, k); W.hemi.groundColor.lerp(hg, k); W.sun.intensity = (2.6 - w[2] * .9) * (1 - .72 * DN.night) * (1 - .25 * (DN.dusk + DN.dawn)); W.hemi.intensity = .55 * (1 - .35 * DN.night); skyEnv(); nightLights();
   W.sky.position.copy(W.cam.position);
   // 陰影範圍往視線前方偏移（身後的陰影用不到），並對齊陰影貼圖的像素格：走動時陰影邊緣不再閃爍、游移
   const fx = P.x - Math.sin(P.yaw) * 10, fz = P.z - Math.cos(P.yaw) * 10, tx = SH_EXT * 2 / SH_RES;
@@ -4042,7 +4155,7 @@ function cullChunks(at = P) {
   const fogFar = (W.scene.fog ? W.scene.fog.far : 260) + 12, city = inCity(at.x);
   for (const c of W.chunks) {
     const u = c.userData, dx = Math.max(u.x0 - at.x, 0, at.x - u.x1), dz = Math.max(u.z0 - at.z, 0, at.z - u.z1), d = Math.hypot(dx, dz);
-    c.visible = !city && d < Math.min(u.far, fogFar); if (u.pair) u.pair.visible = c.visible; if (!c.visible) continue;
+    c.visible = !city && d < Math.min(u.far * (W.vegFar || 1), fogFar); if (u.pair) u.pair.visible = c.visible; if (!c.visible) continue;
     if (u.pair) lodSplit(c, at, d < LOD_D);
     else c.castShadow = u.shadow && d < SHADOW_D; // 只有陰影範圍附近的區塊才進陰影貼圖
   }
@@ -4071,7 +4184,20 @@ function hospitalAct() {
   S.money -= HOSPITAL_FEE; S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level && sfx.level(); renderTop(); saveCloud();
   modal('<h2>醫生：沒問題了</h2><p>診療費 ' + fmt(HOSPITAL_FEE) + '。一杯熱茶和一條毛毯，你的身體立刻暖和起來，不再發抖了。</p><p class="small" style="color:var(--sub)">下次進雪原一樣有 10 分鐘的體溫。</p>');
 }
+/* 畫質：自動／高／低。自動時 FPS 連續 5 秒低於 28 就依序關掉粒子、減少遠景植被、縮短霧距（解析度原本就會自動調整） */
+const QL = { lvl: 0, lowT: 0, frames: 0, acc: 0, noParts: false };
+function applyQuality(reset) {
+  if (reset) QL.lvl = S.quality === 'low' ? 3 : 0;
+  QL.noParts = QL.lvl >= 1; W.vegFar = QL.lvl >= 2 ? .6 : 1;
+  if (W.scene && W.scene.fog) W.scene.fog.far = (LOW ? 170 : 260) * (QL.lvl >= 3 ? .75 : 1);
+}
+function qualityStep(dt) {
+  QL.frames++; QL.acc += dt; if (QL.acc < 1) return; const fps = QL.frames / QL.acc; QL.frames = 0; QL.acc = 0;
+  if (S.quality !== 'auto') return;
+  if (fps < 28) { if (++QL.lowT >= 5 && QL.lvl < 3) { QL.lvl++; QL.lowT = 0; applyQuality(); toast('畫面有點卡，已自動降低畫質（' + ['', '關閉飄浮粒子', '減少遠景植被', '縮短可視距離'][QL.lvl] + '）'); } } else QL.lowT = 0;
+}
 function worldStep(dt) {
+  musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
   W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt); warmStep(dt);
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks();
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
@@ -4138,7 +4264,7 @@ window.SlimeGame = {
   MG, STEPS, MKEY, ownAny, TOUCH,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,
-  SP, SPECIES, ZONES, RAR, UPS, OWN, PACKS, DECO, CUTS, TIER, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
+  SP, SPECIES, ZONES, RAR, DN, DN_PHASE, creditsHTML, UPS, OWN, PACKS, DECO, CUTS, TIER, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, tierOf, defPrice, demand, speedTxt, xpLevel, decoBonus,
   qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, pillarClues, pSp, pillarExtra, hintBlock, tideStepsHTML, cluesDone, mapImage, enter: ENTER,

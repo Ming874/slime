@@ -1,7 +1,7 @@
 /* game.js 的 window.SlimeGame：遊戲狀態與計算函式（定義在 public/game/game.js 的「給 React 介面用」）。
    規則（價格、需求、訂單…）只有 game.js 一份，這裡只讀不改；要改資料就讓按鈕帶 data-act，由 game.js 的點擊處理。 */
 
-export type Species = { id: string; name: string; zone: string; color: string; color2?: string; rar: number; price: number };
+export type Species = { id: string; name: string; zone: string; color: string; color2?: string; rar: number; price: number; night?: boolean };
 export type Deco = { k: string };
 export type Product = { id: number; sp: string; crisp: number; dur: number; deco: Deco[]; cut?: string; cq?: number; wonky?: boolean; crude?: boolean; played?: boolean };
 export type InvItem = { t: 'gel'; sp: string; n: number } | { t: 'prod'; p: Product };
@@ -10,7 +10,7 @@ export type Review = { s: number; who: string; t: string; sp: string };
 export type State = {
   money: number; fans: number; earned: number; xp: number; gel: Record<string, number>; stock: Product[]; web: Product[]; show: Product[];
   zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number }>;
-  reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number;
+  reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number; vol?: { music: number; sfx: number }; quality?: string;
 };
 type Up = { name: string; desc: string; max: number; mach?: number; need?: string };
 type Own = { name: string; cost: number; shop: string; desc: string };
@@ -32,6 +32,7 @@ export type Game = {
   qState: () => { pil: number[]; map: number[]; frags: number[]; notes: number[]; tide: number[]; read: Record<string, boolean> };
   nextQuest: () => string | null; questReady: (k: string) => boolean; madeIn: (zone: string) => number;
   pillarClues: (pil: number[]) => { ok: boolean }[]; pSp: (v: number) => Species; pillarExtra: () => string; hintBlock: (k: string) => string;
+  DN?: { phase: string; night: number; p: number }; DN_PHASE?: Record<string, string>; creditsHTML?: () => string;
   tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
 };
 

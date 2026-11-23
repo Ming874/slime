@@ -459,3 +459,21 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 #warm.frozen .wbar{border-color:#fb7185}
 #warm span{font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000a;white-space:nowrap}
 @keyframes warmBlink{50%{box-shadow:0 0 10px #fb7185}}
+
+/* 第 3 堂：時鐘（指南針右邊的太陽／月亮與一天的進度條） */
+#dnClock{position:absolute;top:calc(max(12px,env(safe-area-inset-top)) + 9px);left:calc(50% + clamp(200px,min(46vw,100vw - 650px),500px) / 2 + 8px);display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;background:#0b0f17a0;border:1px solid #ffffff22;font-size:11px;color:#e2e8f0;pointer-events:none;backdrop-filter:blur(6px)}
+#dnClock .dn-ic{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#fff7d1,#fbbf24);box-shadow:0 0 8px #fbbf24aa}
+#dnClock.dn-night .dn-ic{background:radial-gradient(circle at 65% 35%,transparent 38%,#e0e7ff 40%);box-shadow:0 0 8px #c7d2fe88}
+#dnClock.dn-dusk .dn-ic,#dnClock.dn-dawn .dn-ic{background:radial-gradient(circle at 40% 40%,#ffe4cc,#fb923c);box-shadow:0 0 8px #fb923caa}
+#dnClock .dn-bar{position:relative;width:54px;height:4px;border-radius:9px;overflow:hidden;background:linear-gradient(90deg,#7dd3fc 0 50%,#fb923c 50% 60%,#4c5a9a 60% 90%,#f9a8d4 90%)}
+#dnClock .dn-bar b{position:absolute;left:0;top:0;bottom:0;border-right:2px solid #fff;background:#0006}
+#dnClock em{font-style:normal}
+@media (max-width:640px){#dnClock{left:calc(50% + min(300px,52vw) / 2 + 4px)}#dnClock em{display:none}#dnClock .dn-bar{width:34px}}
+/* 暫停選單：音量與畫質 */
+.rx-audio{display:grid;gap:8px;margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
+.rx-audio label,.rx-qual{display:flex;align-items:center;gap:10px;font-size:13px}
+.rx-audio label span,.rx-qual>span{width:3em;color:var(--sub)}
+.rx-audio input[type=range]{flex:1;accent-color:var(--acc)}
+.rx-qual button{flex:1;padding:5px 0;border-radius:8px;border:1px solid var(--line);background:transparent}
+.rx-qual button.on{border-color:var(--acc);color:var(--acc);background:#22d3ee1a}
+.rx-credits{font-size:11px;color:var(--sub)}
