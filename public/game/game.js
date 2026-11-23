@@ -48,6 +48,7 @@ const SPECIES = [
   { id: 'aurora', name: '極光史萊姆', zone: 'snow', color: '#34d399', color2: '#a78bfa', rar: 4, price: 90, w: 1 },
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
+const HOSPITAL_FEE = 20; // 醫院診療費
 const WARM_MAX = 600; // 雪原體溫：每次進入雪原有 10 分鐘（秒）
 // 切法：marks 切幾刀、tol 判定寬度倍率、pm 售價倍率、wear 直播時的耐久消耗倍率、th 切片厚度
 const CUTS = {
@@ -1585,7 +1586,7 @@ function discoverZone(k) {
   if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
   const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '穿上厚實的保暖衣，西方山脊吹來的冰冷寒風不再擋住你的去路，雪原的入口出現了。' }[k];
-  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${k === 'snow' ? `<p>往西走出月光谷就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>看醫生才會痊癒。</p>` : `<p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`}`, [{ t: '出發' }]);
+  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${k === 'snow' ? `<p>往西走出月光谷就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>付 ¥20 看醫生才會痊癒。</p>` : `<p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`}`, [{ t: '出發' }]);
   toast(`發現新區域：${z.name}`); renderQuest();
 }
 function buildPuzzles() {
@@ -2619,7 +2620,7 @@ function coatObjective() {
   return { t: '購買保暖衣', d: '雪原需要保暖衣才能進入。搭出生點左邊的計程車到大城市，到武器店購買' + lack + '。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的武器店。' };
 }
 function objective() {
-  if (S.frozen) { const E = TOUCH ? '點擊' : '按 E'; return inCity() ? { t: '去醫院看醫生', d: '你凍僵了。到路北側的「醫院」，醫生會讓你立刻痊癒。', x: CITY.x - 34, z: CITY.z - 13, c: '#f87171', n: '醫院', here: '對準醫院的門' + E + '，看醫生。' } : { t: '去醫院看醫生', d: '你凍僵了（發抖、行動變慢）。搭出生點左邊的計程車到大城市的醫院，看醫生就會好。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的醫院。' }; }
+  if (S.frozen) { const E = TOUCH ? '點擊' : '按 E'; return inCity() ? { t: '去醫院看醫生', d: '你凍僵了。到路北側的「醫院」，付診療費 ' + fmt(HOSPITAL_FEE) + '，醫生會讓你立刻痊癒。', x: CITY.x - 34, z: CITY.z - 13, c: '#f87171', n: '醫院', here: '對準醫院的門' + E + '，看醫生。' } : { t: '去醫院看醫生', d: '你凍僵了（發抖、行動變慢）。搭出生點左邊的計程車到大城市的醫院，付診療費 ' + fmt(HOSPITAL_FEE) + ' 看醫生就會好。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的醫院。' }; }
   const co = coatObjective(); if (co && ownAny()) return co;
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
@@ -3719,7 +3720,7 @@ const OWN = {
   dryer: { name: '乾燥烘箱', cost: 800, shop: 'mach', desc: '烘乾定型，品質再升一級（拖曳控溫）。' },
   decor: { name: '裝飾桌', cost: 350, shop: 'gear', desc: '在捏捏上擺放裝飾零件，提高售價與人氣。' },
   live: { name: '直播設備組', cost: 600, shop: 'gear', desc: '補光環燈、攝影機與舞台。可以開直播販售捏捏。' },
-  coat: { name: '保暖衣', cost: 900, shop: 'arms', desc: '厚實的防寒外套。**有了它就能前往雪原**（不需要解謎），沒有保暖衣會被刺骨的寒氣擋住。雪原每次只能待 10 分鐘，凍僵了要來城市的醫院看醫生。' },
+  coat: { name: '保暖衣', cost: 900, shop: 'arms', desc: '厚實的防寒外套。**有了它就能前往雪原**（不需要解謎），沒有保暖衣會被刺骨的寒氣擋住。雪原每次只能待 10 分鐘，凍僵了要來城市的醫院看醫生（診療費 ¥20）。' },
   sword: { name: '長劍', cost: 1200, shop: 'arms', desc: '一把保養良好的長劍。目前只供收藏，之後會派上用場。' },
 };
 const ARMS_LV = 5, armsOpen = () => xpLevel(S.xp) >= ARMS_LV;
@@ -4056,7 +4057,7 @@ function warmStep(dt) {
   if (inS && !S.frozen) {
     S.warm = Math.max(0, S.warm - dt);
     if (S.warm <= 60 && !W.warm1) { W.warm1 = true; toast('體溫只剩 1 分鐘！快離開雪原'); }
-    if (S.warm <= 0) { S.frozen = true; objSig = ''; sfx.squish && sfx.squish(1, .7); saveCloud(); modal('<h2>你凍僵了！</h2><p>身體不停發抖，走路也變慢了。</p><p>到<b>大城市的醫院</b>看醫生就會立刻痊癒（搭出生點左邊的計程車）。</p>'); }
+    if (S.warm <= 0) { S.frozen = true; objSig = ''; sfx.squish && sfx.squish(1, .7); saveCloud(); modal('<h2>你凍僵了！</h2><p>身體不停發抖，走路也變慢了。</p><p>到<b>大城市的醫院</b>看醫生就會立刻痊癒，診療費 <b>¥20</b>（搭出生點左邊的計程車）。</p>'); }
   }
   let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
   const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen;
@@ -4066,8 +4067,9 @@ function warmStep(dt) {
 }
 function hospitalAct() {
   if (!S.frozen) return toast('醫生說你的身體很健康。從雪原回來凍僵了再來吧。');
-  S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level && sfx.level(); saveCloud();
-  modal('<h2>醫生：沒問題了</h2><p>一杯熱茶和一條毛毯，你的身體立刻暖和起來，不再發抖了。</p><p class="small" style="color:var(--sub)">下次進雪原一樣有 10 分鐘的體溫。</p>');
+  if (S.money < HOSPITAL_FEE) return toast('診療費 ' + fmt(HOSPITAL_FEE) + '，你的錢不夠（目前 ' + fmt(S.money) + '）。先賣掉一些捏捏再來吧。');
+  S.money -= HOSPITAL_FEE; S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level && sfx.level(); renderTop(); saveCloud();
+  modal('<h2>醫生：沒問題了</h2><p>診療費 ' + fmt(HOSPITAL_FEE) + '。一杯熱茶和一條毛毯，你的身體立刻暖和起來，不再發抖了。</p><p class="small" style="color:var(--sub)">下次進雪原一樣有 10 分鐘的體溫。</p>');
 }
 function worldStep(dt) {
   W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt); warmStep(dt);
