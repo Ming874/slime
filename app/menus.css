@@ -170,3 +170,8 @@ body.plock .hfree{opacity:1;transform:none}
 body.touch .hk,body.touch .hfree{display:none}
 @media (max-width:1100px){.hbtn .hl{display:none}.hbtn{padding:0 10px}}
 @media (max-width:640px){#compass{width:min(300px,52vw)}.cmk.dir2,.cmp-deg{display:none}}
+
+/* 第 3 堂 3.3：指南針上的地標 */
+.cmk.pin.lm i{width:7px;height:7px;border-radius:2px;transform:rotate(45deg);background:var(--pc,#e2e8f0)}
+.cmk.pin.lm b{font-size:10px;color:var(--pc,#e2e8f0);font-weight:600}
+.cmk.pin.lm.unk{opacity:.55}

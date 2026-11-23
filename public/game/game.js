@@ -659,11 +659,20 @@ function dnUpdate() {
 const NIGHT_U = { value: 0 }; // 所有史萊姆共用：夜裡身上發光（自發光材質，不加光源）
 const DNC = { fog: new THREE.Color('#1c2650'), top: new THREE.Color('#0a1130'), sun: new THREE.Color('#b8c6ff'), hs: new THREE.Color('#4b5b9a'), hg: new THREE.Color('#141a33'),
   duskFog: new THREE.Color('#e9a07a'), duskTop: new THREE.Color('#6b4c93'), duskSun: new THREE.Color('#ffb27a'), dawnFog: new THREE.Color('#f2b9c8'), dawnTop: new THREE.Color('#7a8fd0'), dawnSun: new THREE.Color('#ffd2c2') };
+/* 區域色票（第 3 堂 2.3）：主色決定地面與遠山，強調色只給史萊姆、工作站與地標；之後新增區域先在這裡加一列 */
+const PALETTE = {
+  forest: { main: '#7CC47F', sub: '#C9B48A', light: '#FFE7A8', mark: '森林巨樹' },
+  coast: { main: '#5EC2E8', sub: '#F2DFB0', light: '#FFF6E0', mark: '燈塔' },
+  volcano: { main: '#E8743B', sub: '#5B4A44', light: '#FFB27A', mark: '冒煙的火山口' },
+  snow: { main: '#BFE3F5', sub: '#F4F8FB', light: '#EAF4FF', mark: '冰晶塔' },
+  city: { main: '#8A96A8', sub: '#F2C14E', light: '#FFF1D0', mark: '鐘塔' },
+  night: { main: '#26325C', sub: '#C7D2FE', light: '#B8C6FF', mark: '月亮' },
+};
 const ZONE3D = {
-  forest: { top: '#5ea7d6', fog: '#cfe6dc', sun: '#fff1d0', hemiS: '#d8f0ff', hemiG: '#2d4a2f', pal: ['#5a9a4c', '#3f7f45', '#5b7a50', '#707468', '#e2e8f0'] },
-  coast: { top: '#3f9fe0', fog: '#d4ecf8', sun: '#fff6e0', hemiS: '#e0f4ff', hemiG: '#6b6247', pal: ['#e3d09a', '#79ad62', '#4f8a4f', '#8b9096', '#e2e8f0'] },
+  forest: { top: '#5ea7d6', fog: '#cfe6dc', sun: PALETTE.forest.light, hemiS: '#d8f0ff', hemiG: '#36405e', pal: ['#68ad69', '#4c8a52', '#5f7d58', '#707468', '#e2e8f0'] },
+  coast: { top: '#3f9fe0', fog: '#d4ecf8', sun: PALETTE.coast.light, hemiS: '#e0f4ff', hemiG: '#5a5870', pal: ['#e3d09a', '#79ad62', '#4f8a4f', '#8b9096', '#e2e8f0'] },
   volcano: { top: '#2a0f12', fog: '#6b3324', sun: '#ffb27a', hemiS: '#ff9a6b', hemiG: '#140a08', pal: ['#3d2c27', '#2e221e', '#231a18', '#161112', '#4a332b'] },
-  snow: { top: '#7fa9d8', fog: '#e3edf7', sun: '#ffffff', hemiS: '#eef6ff', hemiG: '#8aa0b8', pal: ['#f3f7fb', '#e5edf6', '#d7e3f0', '#7f8c9e', '#ffffff'] },
+  snow: { top: '#7fa9d8', fog: '#e3edf7', sun: PALETTE.snow.light, hemiS: '#eef6ff', hemiG: '#8a96c0', pal: ['#f3f7fb', '#e5edf6', '#d7e3f0', '#7f8c9e', '#ffffff'] },
 };
 const BIOMES = ['forest', 'coast', 'volcano', 'snow'];
 const K = 1.6, CITY = { x: 4000, z: 0 }, kk = ([x, z]) => [x * K, z * K];
@@ -842,6 +851,10 @@ function terrainMat() {
         float strata = sin(vWP.y * 2.3 + rn * 5.0 + tN(wp * 0.07) * 4.0);
         float rf = tFbm(vec2(wp.x + wp.y, vWP.y * 1.2) * 1.7);
         diffuseColor.rgb *= mix(1.0, 0.86 + 0.08 * strata + 0.14 * rn + 0.1 * rf, rockK);
+        float lyr = vWP.y / 1.8 + rn * 0.35, lyf = fract(lyr), lyi = floor(lyr);
+        float ledge = smoothstep(0.86, 0.97, lyf), under = 1.0 - smoothstep(0.0, 0.14, lyf), bandT = 0.9 + 0.14 * fract(sin(lyi * 12.9898) * 43758.5453);
+        diffuseColor.rgb *= mix(1.0, bandT * (1.0 + ledge * 0.2) * (1.0 - under * 0.3), rockK);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.84, 0.87, 1.08), under * rockK);
         tHt += rockK * (strata * 0.06 + (rn - 0.5) * 0.22 + (rf - 0.5) * 0.08);
         // 小徑
         float pm = texture2D(uPath, wp / ${MAP_SIZE.toFixed(2)} + 0.5).r;
@@ -1227,7 +1240,80 @@ function buildLandmarks() {
   // 雪原的雪人
   { const g = mergeParts([[new THREE.SphereGeometry(.55, 14, 10), '#f8fafc', M4(0, .5, 0)], [new THREE.SphereGeometry(.4, 14, 10), '#f1f5f9', M4(0, 1.2, 0)], [new THREE.SphereGeometry(.28, 12, 9), '#f8fafc', M4(0, 1.75, 0)], [new THREE.ConeGeometry(.05, .25, 8), '#f97316', M4(0, 1.75, .35, Math.PI / 2, 0, 0)], ...[-1, 1].map(s => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(s * .1, 1.84, .24)]), ...[0, 1, 2].map(i => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(0, 1.05 + i * .14, .385 - i * .02)]), [new THREE.TorusGeometry(.28, .07, 8, 18), '#ef4444', M4(0, 1.5, 0, Math.PI / 2, 0, 0)], [new THREE.BoxGeometry(.12, .4, .06), '#ef4444', M4(.15, 1.35, .26, 0, 0, .2)], ...[-1, 1].map(s => [new THREE.CylinderGeometry(.025, .03, .9, 5), '#5b4030', M4(s * .62, 1.38, 0, 0, 0, s * 1.1)]), [new THREE.CylinderGeometry(.2, .22, .3, 12), '#1f2937', M4(0, 2.05, 0)], [new THREE.CylinderGeometry(.3, .3, .03, 14), '#1f2937', M4(0, 1.91, 0)]], true);
     const list = [[-78, 10], [-96, -18], [-118, 24], [-136, -6], [-70, -26]].map(kk).map(([x, z]) => ({ x, y: H(x, z) - .05, z, s: 1, ry: Math.atan2(-x, -z) + rnd(-.4, .4) })); list.forEach(o => addCol({ x: o.x, z: o.z, r: .55 })); scatter(g, smoothM, list); }
-  buildSteam();
+  buildSteam(); buildLandmarks3();
+}
+/* 第 3 堂 03：四個地標。每個至少 25 公尺、剪影就認得出來、各有一個會動的部分。
+   遠景版是一張不受霧影響的單色剪影（幾十個面），走近 120 公尺內才換成完整模型（3.2） */
+const LMS = [];
+const LM_POS = { tree: GIANT, light: kk([126, 10]), crater: [0, -130 * K], ice: kk([-112, -8]) };
+function silMat() { return new THREE.MeshBasicMaterial({ color: '#334155', fog: false, transparent: true, opacity: .92 }); }
+function buildLandmarks3() {
+  const sc = W.scene;
+  const addLM = (id, name, zone, x, z, near, far, col) => { far.position.set(x, 0, z); sc.add(far); far.visible = false; LMS.push({ id, name, zone, x, z, near, far, col: new THREE.Color(col) }); };
+  // 森林巨樹：把月光巨木放大到約 25 公尺，夜裡樹洞亮起暖光
+  {
+    const [x, z] = LM_POS.tree, y = H(x, z) - .2, near = sc.children.filter(o => o.isMesh && Math.hypot(o.position.x - x, o.position.z - z) < .1 && o.position.y > y - 1 && o.position.y < y + 1.5);
+    near.forEach(o => o.scale.multiplyScalar(1.9));
+    const lb = sc.children.find(o => o.isSprite && Math.hypot(o.position.x - x, o.position.z - z) < .1); if (lb) lb.position.y = y + 27;
+    const face = Math.atan2(-x, -z), hol = new THREE.Group(); hol.position.set(x, y, z); hol.rotation.y = face; sc.add(hol);
+    const hm = new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, opacity: .15, toneMapped: false }); const h = mesh(new THREE.CircleGeometry(.85, 18), hm, 0, 3.4, 2.15, hol); h.scale.y = 1.35;
+    W.anim.push(() => { hm.opacity = .12 + DN.night * .85; });
+    near.push(hol); addCol({ x, z, r: 2.8 });
+    const f = new THREE.Group(), m = silMat(); mesh(new THREE.CylinderGeometry(1.6, 2.6, 15, 6), m, 0, 7.5, 0, f); mesh(new THREE.IcosahedronGeometry(9, 0), m, 0, 20, 0, f).scale.y = .7;
+    addLM('tree', '森林巨樹', 'forest', x, z, near, f, '#3f6b47');
+  }
+  // 海岸燈塔：紅白條紋，燈光每 6 秒掃過海面一圈，夜晚最明顯
+  {
+    const [x, z] = LM_POS.light, y = H(x, z) - .3, g = new THREE.Group(); g.position.set(x, y, z); sc.add(g);
+    const red = std('#d94b3d', { roughness: .6, flatShading: true }), white = std('#f4efe6', { roughness: .6, flatShading: true }), dark = std('#334155', { metalness: .5, roughness: .4 });
+    mesh(jit(new THREE.CylinderGeometry(5, 6.5, 3, 9), .3, 3), std('#6b6f68', { flatShading: true, roughness: .95 }), 0, 1, 0, g);
+    for (let i = 0; i < 6; i++) { const r0 = 2.6 - i * .22, r1 = 2.6 - (i + 1) * .22; mesh(new THREE.CylinderGeometry(r1, r0, 3.5, 12), i % 2 ? white : red, 0, 2.5 + 1.75 + i * 3.5, 0, g); }
+    const top = 2.5 + 21; cyl(1.9, 1.9, .5, 12, dark, 0, top + .25, 0, g);
+    const lampM = new THREE.MeshBasicMaterial({ color: '#fff3c4', toneMapped: false }); cyl(1.2, 1.2, 2.2, 12, new THREE.MeshPhysicalMaterial({ color: '#e0f2fe', transparent: true, opacity: .35, roughness: .05 }), 0, top + 1.6, 0, g); mesh(new THREE.SphereGeometry(.7, 12, 8), lampM, 0, top + 1.6, 0, g);
+    mesh(new THREE.ConeGeometry(1.7, 2, 12), red, 0, top + 3.7, 0, g);
+    addCol({ x, z, r: 5.6 });
+    // 光束：不受霧影響、加法混色的長三角錐，繞一圈 6 秒
+    const beam = new THREE.Group(); beam.position.set(x, y + top + 1.6, z); sc.add(beam);
+    const bg = new THREE.ConeGeometry(9, 150, 20, 1, true); bg.translate(0, -75, 0); bg.rotateZ(Math.PI / 2);
+    const bm = new THREE.MeshBasicMaterial({ color: '#fff6d6', transparent: true, opacity: .1, fog: false, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    const b1 = mesh(bg, bm, 0, 0, 0, beam); b1.rotation.x = 0; const b2 = mesh(bg, bm, 0, 0, 0, beam); b2.rotation.y = Math.PI;
+    W.anim.push((dt, t) => { beam.rotation.y = (t % 6) / 6 * PI2; bm.opacity = .03 + DN.night * .2 + (DN.dusk + DN.dawn) * .06; beam.visible = !inCity(); });
+    const f = new THREE.Group(), m = silMat(); mesh(new THREE.CylinderGeometry(1.4, 2.6, 23, 6), m, 0, 11.5, 0, f); mesh(new THREE.ConeGeometry(1.8, 3, 6), m, 0, 25.5, 0, f);
+    addLM('light', '燈塔', 'coast', x, z, [g], f, '#c2453a');
+  }
+  // 火山口：持續冒出慢慢上升的煙柱，夜裡口緣透出橘光
+  {
+    const [x, z] = LM_POS.crater, y = H(x, z), rimY = H(x + 5.6 * K, z) - .6;
+    const rimM = new THREE.MeshBasicMaterial({ color: '#ff8a3d', transparent: true, opacity: .35, toneMapped: false }); const rim = mesh(new THREE.TorusGeometry(5.6 * K, .45, 6, 48), rimM, x, rimY, z, sc); rim.rotation.x = Math.PI / 2;
+    const puffG = new THREE.IcosahedronGeometry(1, 0), puffM = new THREE.MeshStandardMaterial({ color: '#5b5452', flatShading: true, roughness: 1, transparent: true, opacity: .55 }), puffs = [];
+    const NP = LOW ? 8 : 14; for (let i = 0; i < NP; i++) { const p = mesh(puffG, puffM, x, y, z, sc); p.userData.o = i / NP; p.userData.a = rnd(0, 6.28); puffs.push(p); }
+    W.anim.push((dt, t) => {
+      rimM.opacity = .25 + DN.night * .6 + Math.sin(t * 1.3) * .05;
+      if (inCity()) return; for (const p of puffs) { const k = (t * .045 + p.userData.o) % 1, s = 3 + k * 11; p.position.set(x + Math.sin(p.userData.a + t * .2) * k * 6, y + 6 + k * 70, z + Math.cos(p.userData.a) * k * 4); p.scale.setScalar(s); p.rotation.y = t * .1 + p.userData.a; }
+      puffM.opacity = .5;
+    });
+    const f = new THREE.Group(), m = silMat(); const plume = mesh(new THREE.CylinderGeometry(14, 4, 70, 8, 1, true), m, 0, y + 40, 0, f); plume.material.side = THREE.DoubleSide;
+    addLM('crater', '火山口', 'volcano', x, z, [...puffs, rim], f, '#5b4a44');
+  }
+  // 雪原冰晶塔：三根交錯的巨大冰晶，太陽照到時閃一下亮光
+  {
+    const [x, z] = LM_POS.ice, y = H(x, z) - .5, g = new THREE.Group(); g.position.set(x, y, z); sc.add(g);
+    const iceM = new THREE.MeshPhysicalMaterial({ color: '#bfe3f5', emissive: '#7dd3fc', emissiveIntensity: .12, roughness: .08, metalness: .1, clearcoat: 1, flatShading: true, transparent: true, opacity: .92 });
+    [[0, 0, 0, 1, 15], [2.6, 0, 1.2, -.32, 11], [-2.4, 0, -1.4, .38, 12.5]].forEach(([cx, cy, cz, tilt, h], i) => { const c = mesh(new THREE.OctahedronGeometry(1, 0), iceM, cx, cy + h, cz, g); c.scale.set(3.2, h, 3.2); c.rotation.set(tilt, i * .7, tilt * .6); c.castShadow = !LOW; });
+    addCol({ x, z, r: 5 });
+    W.anim.push((dt, t) => { const gl = Math.max(0, Math.sin(t * .9)) ** 24 * (1 - DN.night); iceM.emissiveIntensity = .12 + gl * 1.6 + DN.night * .45; });
+    const f = new THREE.Group(), m = silMat(); [[0, 15, 1, 0], [2.6, 11, -.32, 1.2], [-2.4, 12.5, .38, -1.4]].forEach(([cx, h, tilt, cz]) => { const c = mesh(new THREE.OctahedronGeometry(1, 0), m, cx, y + h, cz, f); c.scale.set(3.2, h, 3.2); c.rotation.x = tilt; });
+    addLM('ice', '冰晶塔', 'snow', x, z, [g], f, '#9cc9e4');
+  }
+  W.anim.push(() => landmarkStep());
+}
+// 遠近切換：120 公尺外只畫剪影（顏色跟著霧與天色走，夜裡更暗）
+function landmarkStep() {
+  const c = W.cam.position, city = inCity(), fogC = W.scene.fog.color;
+  for (const L of LMS) {
+    const far = !city && Math.hypot(L.x - c.x, L.z - c.z) > 120; L.near.forEach(o => { o.visible = !city && !far; }); L.far.visible = far;
+    if (far) { const m = L.far.children[0].material; m.color.copy(fogC).lerp(L.col, .42 - DN.night * .12); }
+  }
 }
 /* 火山的蒸氣噴口：每個噴口一團緩緩上升、膨脹、淡出的蒸氣 */
 function buildSteam() {
@@ -1682,7 +1768,8 @@ function discoverZone(k) {
   if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
   const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '穿上厚實的保暖衣，西方山脊吹來的冰冷寒風不再擋住你的去路，雪原的入口出現了。' }[k];
-  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${k === 'snow' ? `<p>往西走出月光谷就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>付 ¥20 看醫生才會痊癒。</p>` : `<p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`}`, [{ t: '出發' }]);
+  const lmk = { coast: '燈塔', volcano: '冒煙的火山口', snow: '冰晶塔' }[k];
+  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${lmk ? `<p>抬頭找<b>${lmk}</b>：往它的方向走就對了（指南針上也有標示）。</p>` : ''}${k === 'snow' ? `<p>往西走出月光谷就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>付 ¥20 看醫生才會痊癒。</p>` : `<p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`}`, [{ t: '出發' }]);
   toast(`發現新區域：${z.name}`); renderQuest();
 }
 function buildPuzzles() {
@@ -2717,7 +2804,7 @@ function coatObjective() {
   if (!armsOpen()) return { t: '升級解鎖武器店', d: '雪原極度寒冷，需要保暖衣才能進入。大城市的武器店要 Lv ' + ARMS_LV + ' 才營業（目前 Lv ' + lv + '，還差 ' + need + ' 經驗）。多採集、加工、販售可以累積經驗。' };
   const lack = S.money < OWN.coat.cost ? '（要 ' + fmt(OWN.coat.cost) + '，目前 ' + fmt(S.money) + '，還需要賺一點錢）' : '';
   if (inCity()) return { t: '購買保暖衣', d: '到路北側最右邊的「武器店」購買保暖衣' + lack + '。', x: CITY.x + 35, z: CITY.z - 13, c: '#f87171', n: '武器店', here: '對準武器店的店門' + E + '，購買保暖衣（' + fmt(OWN.coat.cost) + '）。' };
-  return { t: '購買保暖衣', d: '雪原需要保暖衣才能進入。搭出生點左邊的計程車到大城市，到武器店購買' + lack + '。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的武器店。' };
+  return { t: '購買保暖衣', d: '雪原在西方，往冰晶塔的方向。要先有保暖衣才能進入：搭出生點左邊的計程車到大城市，到武器店購買' + lack + '。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的武器店。' };
 }
 function objective() {
   if (S.frozen) { const E = TOUCH ? '點擊' : '按 E'; return inCity() ? { t: '去醫院看醫生', d: '你凍僵了。到路北側的「醫院」，付診療費 ' + fmt(HOSPITAL_FEE) + '，醫生會讓你立刻痊癒。', x: CITY.x - 34, z: CITY.z - 13, c: '#f87171', n: '醫院', here: '對準醫院的門' + E + '，看醫生。' } : { t: '去醫院看醫生', d: '你凍僵了（發抖、行動變慢）。搭出生點左邊的計程車到大城市的醫院，付診療費 ' + fmt(HOSPITAL_FEE) + ' 看醫生就會好。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的醫院。' }; }
@@ -2792,6 +2879,7 @@ function renderCompass() {
   const bearing = (x, z) => Math.atan2(-(x - P.x), -(z - P.z)), dist = (x, z) => Math.round(Math.hypot(x - P.x, z - P.z));
   put(bearing(0, 0), '<i></i>', 'pin home', '#22d3ee');
   const o = W.obj; if (o && o.x != null) put(bearing(o.x, o.z), `<i></i><b>${dist(o.x, o.z)}m</b>`, 'pin goal', o.c || '#c4b5fd');
+  LMS.forEach(L => { const known = S.zones.includes(L.zone); put(bearing(L.x, L.z), `<i></i><b>${known ? L.name : '？'}</b>`, 'pin lm' + (known ? '' : ' unk'), known ? '#e2e8f0' : '#64748b'); });
   Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].x * 1.4, GATES[k].z * 1.4), '<i></i>', 'pin gate', '#fbbf24'); });
   el.innerHTML = items.join('');
   const deg = Math.round(((-P.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360, dn = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'][Math.round(deg / 45) % 8];
