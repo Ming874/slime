@@ -48,6 +48,7 @@ const SPECIES = [
   { id: 'aurora', name: '極光史萊姆', zone: 'snow', color: '#34d399', color2: '#a78bfa', rar: 4, price: 90, w: 1 },
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
+const WARM_MAX = 600; // 雪原體溫：每次進入雪原有 10 分鐘（秒）
 // 切法：marks 切幾刀、tol 判定寬度倍率、pm 售價倍率、wear 直播時的耐久消耗倍率、th 切片厚度
 const CUTS = {
   thick: { n: '厚塊', marks: 3, tol: 1.45, pm: .9, wear: .7, th: .26, col: '#22d3ee', desc: '容易切準・耐久高' },
@@ -108,7 +109,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, tier: { live: {}, web: {} }, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null, own: {}, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] },
+    pos: null, hb: 0, sens: 1, q: null, own: {}, warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] },
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -146,6 +147,8 @@ function sanitize(o) {
   else s.own = Object.fromEntries(Object.entries(o.own).filter(([k, v]) => OWN_KEYS.includes(k) && v).map(([k]) => [k, true]));
   // 已經解鎖雪原的舊存檔：補發保暖衣，避免被突然擋在雪原外面
   if (s.zones.includes('snow') && !s.own.coat) { s.own.coat = true; s.coatMigrated = true; }
+  if (s.own.coat && !s.zones.includes('snow')) s.zones.push('snow'); // 雪原改成「有保暖衣就能去」，不再需要解謎
+  s.warm = clamp(isFinite(+s.warm) ? +s.warm : WARM_MAX, 0, WARM_MAX); s.frozen = !!s.frozen;
   // 改版前的存檔：已經做過東西就視為完成教學；有機器的視為用過產線
   if (!('tutDone' in o)) s.tutDone = !!o.seen && ((+o.sales || 0) > 0 || arr(o.stock).length > 0 || Object.values(obj(o.codex)).some(c => c && c.made > 0));
   if (!('lineMade' in o)) s.lineMade = !!(s.own.slicer || s.own.coater || s.own.dryer) && s.tutDone;
@@ -1112,7 +1115,7 @@ function buildLandmarks() {
   scatter(mergeParts([[new THREE.BoxGeometry(1.6, .08, .45), '#a07850', M4(0, .48, 0)], [new THREE.BoxGeometry(1.6, .4, .06), '#8b6544', M4(0, .78, -.22, -.15, 0, 0)], ...[-.65, .65].flatMap(x => [[new THREE.BoxGeometry(.08, .48, .4), '#334155', M4(x, .24, 0)], [new THREE.BoxGeometry(.08, .5, .06), '#334155', M4(x, .7, -.22, -.15, 0, 0)]])]), flatM, benches);
   // 廣場路標：指向三個隘口
   const signTex = (txt, sub, c) => { const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96; const g = cv.getContext('2d'); g.fillStyle = '#8b6544'; g.fillRect(0, 0, 256, 96); g.fillStyle = '#7a5838'; for (let i = 0; i < 6; i++) g.fillRect(0, i * 16 + 6, 256, 2); g.fillStyle = c; g.font = 'bold 40px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.textAlign = 'center'; g.fillText(txt, 128, 48); g.fillStyle = '#fef3c7'; g.font = '24px "Noto Sans TC",sans-serif'; g.fillText(sub, 128, 82); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; };
-  [[21.5, 2.5, '東 · 海岸', '沿小徑直走到能量門', '#7dd3fc', 0], [2.5, -21.5, '北 · 火山', '沿小徑直走到能量門', '#fdba74', -Math.PI / 2], [-21.5, -2.5, '西 · 雪原', '沿小徑直走到能量門', '#e0f2fe', Math.PI]].forEach(([x, z, t, s, c, a]) => {
+  [[21.5, 2.5, '東 · 海岸', '沿小徑直走到能量門', '#7dd3fc', 0], [2.5, -21.5, '北 · 火山', '沿小徑直走到能量門', '#fdba74', -Math.PI / 2], [-21.5, -2.5, '西 · 雪原', '需要保暖衣才能進入', '#e0f2fe', Math.PI]].forEach(([x, z, t, s, c, a]) => {
     const g = new THREE.Group(); g.position.set(x, H(x, z), z); g.rotation.y = -a; sc.add(g); addCol({ x, z, r: .25 });
     cyl(.07, .09, 2.2, 8, std('#6b4d33', { roughness: .9 }), 0, 1.1, 0, g);
     const sm = new THREE.MeshStandardMaterial({ map: signTex(t, s, c), roughness: .8 }), wd = std('#8b6544', { roughness: .85 });
@@ -1467,11 +1470,10 @@ function lineStep(dt) {
 /* ============================================================
    能量門與探索謎題
    ============================================================ */
-const GATES = { coast: { x: 54 * K, z: 0, ax: 'x', title: '破碎的古地圖' }, volcano: { x: 0, z: -54 * K, ax: 'z', title: '潮汐石陣' }, snow: { x: -54 * K, z: 0, ax: 'x', title: '四座熔岩柱' } };
+const GATES = { coast: { x: 54 * K, z: 0, ax: 'x', title: '破碎的古地圖' }, volcano: { x: 0, z: -54 * K, ax: 'z', title: '潮汐石陣' } };
 const QUEST = {
   coast: { from: 'forest', title: '破碎的古地圖', need: 2, hint: '森林各處藏著 5 片古地圖碎片，只有靠近時才會微微發光。集齊後，到東方能量門前的古地圖石台，把地圖拼回原狀。' },
   volcano: { from: 'coast', title: '潮汐石陣', need: 4, hint: '海灘上散落著 3 張被撕碎的紙條。拼湊出完整的謎語後，依序點亮六顆潮汐石中的四顆，順序錯了會重來。' },
-  snow: { from: 'volcano', title: '四座熔岩柱', need: 4, hint: '火山腳下的石碑刻著一道邏輯謎題。推理出四根熔岩柱該有的顏色，西方之門才會開啟。' },
 };
 const FRAG_SPOTS = [[-34, 30], [38, -34], [-14, -42], [22, 38], [-41, -16]].map(kk), ALTAR = kk([44, 5]), NOTES = [[66, 22], [81, -4], [71, -32]].map(kk);
 const TIDE_SPOTS = [[63, -15], [66.5, -18], [70, -15], [73.5, -18], [77, -15], [80.5, -18]].map(kk), TABLET = kk([-16, -63]), PILLARS = [[-10, -67], [-3.5, -69], [3.5, -69], [10, -67]].map(kk);
@@ -1543,7 +1545,7 @@ function refreshStones() { W.puz.forEach(p => { if (p.pz.type === 'tide') stoneL
 function pillarLabel(g, v, i) { putLabel(g, 'lab', short(PILLAR[v]), pSp(v).color, `第 ${i + 1} 根`, 4.1, 1.7, .53); }
 function showPillarBeams() { W.puz.forEach(p => { if (p.pz.type === 'pillar' && !p.obj.userData.beam) p.obj.userData.beam = beam(p.obj, '#fde68a', 6, .28, 3.1); }); }
 function volcanoHint(zid) {
-  if (zid === 'volcano' && !S.zones.includes('snow') && !qState().read.tablet && !W.volHint) { W.volHint = true; setTimeout(() => toast('火山腳下有一座發光的石碑，往光柱的方向走，看看上面刻了什麼。'), 700); }
+  if (false) { W.volHint = true; setTimeout(() => toast('火山腳下有一座發光的石碑，往光柱的方向走，看看上面刻了什麼。'), 700); }
 }
 function qState() {
   if (!S.q) S.q = {}; const q = S.q; q.frags = q.frags || []; q.notes = q.notes || []; q.tide = q.tide || []; q.read = q.read || {};
@@ -1582,8 +1584,8 @@ function openGate(k) {
 function discoverZone(k) {
   if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
-  const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '四根熔岩柱的光芒交會，冰冷的風從西方山脊吹來，雪原的入口出現了。' }[k];
-  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p><p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>${k === 'snow' && !S.own.coat ? '<p><b>雪原極度寒冷，需要保暖衣才能進入。</b>保暖衣在大城市的武器店販售（升到 Lv ' + ARMS_LV + ' 後開張）。</p>' : ''}`, [{ t: '出發' }]);
+  const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '穿上厚實的保暖衣，西方山脊吹來的冰冷寒風不再擋住你的去路，雪原的入口出現了。' }[k];
+  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${k === 'snow' ? `<p>往西走出月光谷就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>看醫生才會痊癒。</p>` : `<p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`}`, [{ t: '出發' }]);
   toast(`發現新區域：${z.name}`); renderQuest();
 }
 function buildPuzzles() {
@@ -1615,21 +1617,6 @@ function buildPuzzles() {
       g.userData.gem = mesh(new THREE.OctahedronGeometry(.25), new THREE.MeshStandardMaterial({ color: TIDE[ci].c, emissive: TIDE[ci].c, emissiveIntensity: q.tide.includes(ci) ? 1.8 : .15, roughness: .2 }), 0, 1.55, 0, g);
       addCol({ x, z, r: .8 }); add(g, { type: 'tide', c: ci, g }, `潮汐石（${TIDE[ci].n}色）`, 1.2); stoneLabel(g, ci);
     });
-  }
-  if (!S.zones.includes('snow')) {
-    const t = new THREE.Group(); t.position.set(TABLET[0], H(...TABLET), TABLET[1]); t.rotation.y = .5; W0.add(t);
-    box(1.3, 1.7, .3, std('#57534e', { flatShading: true, roughness: .95 }), 0, .85, 0, t); box(1.0, 1.2, .02, new THREE.MeshStandardMaterial({ color: '#1c1917', emissive: '#f97316', emissiveIntensity: .4 }), 0, .95, .16, t);
-    if (!q.read.tablet) beam(t, '#fdba74', 16, .4);
-    const tl = textSprite('古老的石碑', '#fdba74', q.read.tablet ? '可再讀一次' : '先讀一讀上面的古文'); tl.position.set(0, 2.9, 0); tl.userData.keep = true; t.add(tl);
-    addCol({ x: TABLET[0], z: TABLET[1], r: .8 }); add(t, { type: 'tablet' }, '古老的石碑', 1.2);
-    PILLARS.forEach(([x, z], i) => {
-      const g = new THREE.Group(); g.position.set(x, H(x, z), z); W0.add(g);
-      mesh(new THREE.CylinderGeometry(.45, .55, 2.6, 6), std('#1c1917', { flatShading: true, roughness: .8 }), 0, 1.3, 0, g);
-      mesh(new THREE.CylinderGeometry(.48, .48, .12, 6), glow('#ea580c'), 0, .8, 0, g);
-      const cr = mesh(new THREE.OctahedronGeometry(.32), new THREE.MeshStandardMaterial({ color: '#fff', emissive: '#fff', emissiveIntensity: .7, roughness: .2 }), 0, 2.95, 0, g); cr.scale.y = 1.4; g.userData.cr = cr;
-      setPillar(g, q.pil[i], i); addCol({ x, z, r: .7 }); add(g, { type: 'pillar', i, g }, `熔岩柱（第 ${i + 1} 根）`, 1.4);
-    });
-    if (q.read.tablet) showPillarBeams();
   }
   W.anim.push((dt, t) => W.puz.forEach((it, i) => {
     const o = it.obj, d = Math.hypot(o.position.x - P.x, o.position.z - P.z);
@@ -2472,7 +2459,7 @@ function playerStep(dt) {
   // 潛行（按住 C／觸控潛行鍵）：較慢、視角降低、腳步輕，怕生的史萊姆不容易察覺
   P.sneak = !GUI.kind && (KEYS.has('KeyC') || IN.sneak);
   const run = !P.sneak && (KEYS.has('ShiftLeft') || KEYS.has('ShiftRight') || IN.run) && !!(f || s); P.running = run;
-  const spd = (P.sneak ? 2.2 : run ? 7.5 : 4.3) * (1 + .1 * S.up.boots);
+  const spd = (P.sneak ? 2.2 : run ? 7.5 : 4.3) * (1 + .1 * S.up.boots) * (S.frozen ? .5 : 1);
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw), wx = (-sy * f + cy * s) * spd, wz = (-cy * f - sy * s) * spd;
   // 加速度與摩擦：起步與停下都有一點慣性，空中轉向較弱
   const acc = (P.ground ? ((f || s) ? 34 : 26) : 7) * dt; let ex = wx - P.vx, ez = wz - P.vz; const el = Math.hypot(ex, ez); if (el > acc && el > 1e-6) { ex *= acc / el; ez *= acc / el; }
@@ -2530,6 +2517,7 @@ function cameraStep(dt) {
   }
   cam.position.copy(target);
   cam.rotation.set(P.pitch, P.yaw, P.roll, 'YXZ');
+  if (S.frozen) { cam.position.x += Math.sin(W.t * 47) * .014; cam.position.y += Math.cos(W.t * 53) * .014; cam.rotation.z += Math.sin(W.t * 41) * .012; }
   const fov = (W.fov0 || 72) + (P.running && hsp > 5 ? 7 + 2.5 * S.up.boots : 0) - (P.sneak ? 4 : 0); if (Math.abs(cam.fov - fov) > .02) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
 }
 function resizeWorld() { if (!W.r) return; const w = innerWidth, h = innerHeight; W.r.setSize(w, h, false); W.cam.aspect = w / h; W.fov0 = w / h < 1 ? 80 : 72; W.cam.fov = W.fov0; W.cam.updateProjectionMatrix(); }
@@ -2592,7 +2580,7 @@ function doAct(t) {
 }
 function doActAt(t) {
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
-  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
+  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
   else if (t.type === 'avatar') giftGel(t.id);
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
@@ -2623,7 +2611,7 @@ function fx3(pos, txt, color = '#fff', cls = '') {
 }
 /* 開啟雪原後缺少保暖衣的指引；沒有這個需求時回傳 null */
 function coatObjective() {
-  if (!S.zones.includes('snow') || S.own.coat) return null;
+  if (!S.zones.includes('volcano') || S.own.coat) return null;
   const E = TOUCH ? '點擊' : '按 E', lv = xpLevel(S.xp), need = XP_LV[ARMS_LV] - S.xp;
   if (!armsOpen()) return { t: '升級解鎖武器店', d: '雪原極度寒冷，需要保暖衣才能進入。大城市的武器店要 Lv ' + ARMS_LV + ' 才營業（目前 Lv ' + lv + '，還差 ' + need + ' 經驗）。多採集、加工、販售可以累積經驗。' };
   const lack = S.money < OWN.coat.cost ? '（要 ' + fmt(OWN.coat.cost) + '，目前 ' + fmt(S.money) + '，還需要賺一點錢）' : '';
@@ -2631,6 +2619,7 @@ function coatObjective() {
   return { t: '購買保暖衣', d: '雪原需要保暖衣才能進入。搭出生點左邊的計程車到大城市，到武器店購買' + lack + '。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的武器店。' };
 }
 function objective() {
+  if (S.frozen) { const E = TOUCH ? '點擊' : '按 E'; return inCity() ? { t: '去醫院看醫生', d: '你凍僵了。到路北側的「醫院」，醫生會讓你立刻痊癒。', x: CITY.x - 34, z: CITY.z - 13, c: '#f87171', n: '醫院', here: '對準醫院的門' + E + '，看醫生。' } : { t: '去醫院看醫生', d: '你凍僵了（發抖、行動變慢）。搭出生點左邊的計程車到大城市的醫院，看醫生就會好。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的醫院。' }; }
   const co = coatObjective(); if (co && ownAny()) return co;
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
@@ -3730,7 +3719,7 @@ const OWN = {
   dryer: { name: '乾燥烘箱', cost: 800, shop: 'mach', desc: '烘乾定型，品質再升一級（拖曳控溫）。' },
   decor: { name: '裝飾桌', cost: 350, shop: 'gear', desc: '在捏捏上擺放裝飾零件，提高售價與人氣。' },
   live: { name: '直播設備組', cost: 600, shop: 'gear', desc: '補光環燈、攝影機與舞台。可以開直播販售捏捏。' },
-  coat: { name: '保暖衣', cost: 900, shop: 'arms', desc: '厚實的防寒外套。**穿上它才能進入雪原**，沒有保暖衣會被刺骨的寒氣擋在雪原之外。' },
+  coat: { name: '保暖衣', cost: 900, shop: 'arms', desc: '厚實的防寒外套。**有了它就能前往雪原**（不需要解謎），沒有保暖衣會被刺骨的寒氣擋住。雪原每次只能待 10 分鐘，凍僵了要來城市的醫院看醫生。' },
   sword: { name: '長劍', cost: 1200, shop: 'arms', desc: '一把保養良好的長劍。目前只供收藏，之後會派上用場。' },
 };
 const ARMS_LV = 5, armsOpen = () => xpLevel(S.xp) >= ARMS_LV;
@@ -3790,7 +3779,7 @@ function buildCity() {
     b.castShadow = !LOW; b.receiveShadow = true; if (solid) addCol({ box: [CITY.x + x - w / 2, CITY.z + z - d / 2, CITY.x + x + w / 2, CITY.z + z + d / 2] }); return b;
   };
   const rd = seeded(31), cols = ['#64748b', '#475569', '#94a3b8', '#7c8aa0', '#5b6b80', '#a1a1aa'];
-  [-46, -34, 46].forEach(x => bld(x, -21, 11, 14, 12 + rd() * 14, pick(cols)));
+  [-46, 46].forEach(x => bld(x, -21, 11, 14, 12 + rd() * 14, pick(cols)));
   for (let x = -60; x <= 60; x += 13) bld(x + rd() * 3, -42 - rd() * 8, 11, 14, 18 + rd() * 30, pick(cols));
   for (let x = -60; x <= 60; x += 13) { if (Math.abs(x) < 10) continue; bld(x + rd() * 2, 24, 11, 12, 10 + rd() * 20, pick(cols)); }
   for (let i = 0; i < 26; i++) { const a = i / 26 * PI2, r = 110 + rd() * 30; bld(Math.cos(a) * r, Math.sin(a) * r, 14, 14, 30 + rd() * 50, pick(cols), false); }
@@ -3802,12 +3791,14 @@ function buildCity() {
     const c = document.createElement('canvas'); c.width = 512; c.height = 128; drawShopSign(c, name, accent, id === 'arms' && !armsOpen());
     const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; mesh(new THREE.PlaneGeometry(w - 2, 2), new THREE.MeshBasicMaterial({ map: tx }), x, 5.6, -13.9, g);
     if (id === 'arms') W.armsSign = { c, tx, name, accent, x };
-    const hb = hitBox(w - 2, 3.4, 2.2, x, 1.7, -12.6, g); addInter(hb, 'station', 'shop:' + id, name);
+    const hb = hitBox(w - 2, 3.4, 2.2, x, 1.7, -12.6, g); addInter(hb, 'station', id === 'hospital' ? 'hospital' : 'shop:' + id, name);
     const lb = textSprite(name, accent, sub); lb.position.set(x, 9.2, -13.5); g.add(lb); if (id === 'arms') W.armsLabel = lb;
   };
   shop('mach', -18, 12, '#334155', '機械行', '加工機器與升級', '#22d3ee');
   shop('mall', 0, 13, '#475569', '生活百貨', '倉儲、網路、跑鞋', '#34d399');
   shop('gear', 18, 12, '#3f3f63', '器材行', '直播設備、裝飾桌', '#e879f9');
+  shop('hospital', -34, 11, '#d5dde6', '醫院', '凍僵了來這裡看醫生', '#f87171');
+  box(.45, 1.3, .25, glow('#ef4444'), -34, 7.35, -13.9, g); box(1.3, .45, .25, glow('#ef4444'), -34, 7.35, -13.9, g);
   shop('arms', 35, 11, '#4a3b3b', '武器店', armsOpen() ? '長劍、保暖衣' : 'Lv 5 解鎖營業', '#f87171');
   // 路燈、行道樹、長椅
   const pole = std('#334155', { metalness: .7, roughness: .4 }), leaf = std('#4c9440', { flatShading: true }), pot = std('#57534e');
@@ -3834,7 +3825,7 @@ function taxiRide() {
 /* ---------- 商店 ---------- */
 function buyOwn(k) {
   const o = OWN[k]; if (!o || S.own[k]) return; if (S.money < o.cost) return toast('資金不足');
-  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); refreshCold(); objSig = ''; renderShop(tab); renderTop(); saveCloud(); toast(k === 'coat' ? '已購買保暖衣！現在可以前往雪原了' : k === 'sword' ? '已購買長劍（目前只供收藏）' : `已購買${o.name}，已經送到月光谷的中央平地`);
+  S.money -= o.cost; S.own[k] = true; sfx.pop(); refreshBase(); refreshCold(); objSig = ''; renderShop(tab); renderTop(); saveCloud(); if (k === 'coat') setTimeout(() => discoverZone('snow'), 400); toast(k === 'coat' ? '已購買保暖衣！現在可以前往雪原了' : k === 'sword' ? '已購買長劍（目前只供收藏）' : `已購買${o.name}，已經送到月光谷的中央平地`);
 }
 function renderShop(kind) { ui('shop'); } // 畫面改由 React 負責（components/stations/）
 /* ---------- 手作台 ---------- */
@@ -4055,8 +4046,31 @@ function cullChunks(at = P) {
     else c.castShadow = u.shadow && d < SHADOW_D; // 只有陰影範圍附近的區塊才進陰影貼圖
   }
 }
+/* ---------- 雪原體溫：每次進入雪原有 10 分鐘，歸零就凍僵（發抖、減速），要到大城市的醫院看醫生 ---------- */
+const inSnowZone = () => !!P && P.x < -56 * K && !inCity(P.x);
+let warmSig = '';
+function warmStep(dt) {
+  const inS = inSnowZone();
+  if (W.inSnow == null) { W.inSnow = inS; if (inS && !S.frozen && !(S.warm > 0)) S.warm = WARM_MAX; }
+  else if (inS !== W.inSnow) { W.inSnow = inS; if (inS && !S.frozen) { S.warm = WARM_MAX; W.warm1 = false; toast('進入雪原：體溫條（畫面左側）有 10 分鐘，歸零就會凍僵'); } }
+  if (inS && !S.frozen) {
+    S.warm = Math.max(0, S.warm - dt);
+    if (S.warm <= 60 && !W.warm1) { W.warm1 = true; toast('體溫只剩 1 分鐘！快離開雪原'); }
+    if (S.warm <= 0) { S.frozen = true; objSig = ''; sfx.squish && sfx.squish(1, .7); saveCloud(); modal('<h2>你凍僵了！</h2><p>身體不停發抖，走路也變慢了。</p><p>到<b>大城市的醫院</b>看醫生就會立刻痊癒（搭出生點左邊的計程車）。</p>'); }
+  }
+  let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
+  const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen;
+  if (sig === warmSig) return; warmSig = sig; el.hidden = !show; if (!show) return;
+  el.classList.toggle('low', !S.frozen && pct < .25); el.classList.toggle('frozen', S.frozen);
+  el.querySelector('i').style.height = pct * 100 + '%'; el.querySelector('span').textContent = S.frozen ? '凍僵了' : Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+function hospitalAct() {
+  if (!S.frozen) return toast('醫生說你的身體很健康。從雪原回來凍僵了再來吧。');
+  S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level && sfx.level(); saveCloud();
+  modal('<h2>醫生：沒問題了</h2><p>一杯熱茶和一條毛毯，你的身體立刻暖和起來，不再發抖了。</p><p class="small" style="color:var(--sub)">下次進雪原一樣有 10 分鐘的體溫。</p>');
+}
 function worldStep(dt) {
-  W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt);
+  W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt); warmStep(dt);
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks();
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); viewModelStep(dt); avatarsStep(dt);

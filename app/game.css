@@ -448,3 +448,14 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 #coop{position:absolute;left:50%;bottom:calc(120px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(420px,90vw);background:#10161ff2;border:1px solid var(--warn);border-radius:14px;padding:10px 12px;pointer-events:auto;z-index:60;text-align:center}
 #coop b{display:block;margin-bottom:6px;color:var(--warn)}
 #coop .btn{width:100%;margin-top:8px}
+
+/* 雪原體溫條：畫面左側的垂直進度條 */
+#warm{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:34px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;pointer-events:none;color:#e0f2fe}
+#warm .wbar{position:relative;width:16px;height:190px;border-radius:10px;background:#0b0f17b0;border:1px solid #ffffff33;overflow:hidden;display:flex;align-items:flex-end}
+#warm .wbar i{display:block;width:100%;background:linear-gradient(0deg,#22d3ee,#a5f3fc);transition:height .6s linear;border-radius:0 0 9px 9px}
+#warm.low .wbar i{background:linear-gradient(0deg,#f97316,#fbbf24)}
+#warm.low .wbar{animation:warmBlink 1s infinite}
+#warm.frozen{color:#fda4af}
+#warm.frozen .wbar{border-color:#fb7185}
+#warm span{font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000a;white-space:nowrap}
+@keyframes warmBlink{50%{box-shadow:0 0 10px #fb7185}}
