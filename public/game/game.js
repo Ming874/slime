@@ -1242,7 +1242,25 @@ function buildLandmarks() {
   // 雪原的雪人
   { const g = mergeParts([[new THREE.SphereGeometry(.55, 14, 10), '#f8fafc', M4(0, .5, 0)], [new THREE.SphereGeometry(.4, 14, 10), '#f1f5f9', M4(0, 1.2, 0)], [new THREE.SphereGeometry(.28, 12, 9), '#f8fafc', M4(0, 1.75, 0)], [new THREE.ConeGeometry(.05, .25, 8), '#f97316', M4(0, 1.75, .35, Math.PI / 2, 0, 0)], ...[-1, 1].map(s => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(s * .1, 1.84, .24)]), ...[0, 1, 2].map(i => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(0, 1.05 + i * .14, .385 - i * .02)]), [new THREE.TorusGeometry(.28, .07, 8, 18), '#ef4444', M4(0, 1.5, 0, Math.PI / 2, 0, 0)], [new THREE.BoxGeometry(.12, .4, .06), '#ef4444', M4(.15, 1.35, .26, 0, 0, .2)], ...[-1, 1].map(s => [new THREE.CylinderGeometry(.025, .03, .9, 5), '#5b4030', M4(s * .62, 1.38, 0, 0, 0, s * 1.1)]), [new THREE.CylinderGeometry(.2, .22, .3, 12), '#1f2937', M4(0, 2.05, 0)], [new THREE.CylinderGeometry(.3, .3, .03, 14), '#1f2937', M4(0, 1.91, 0)]], true);
     const list = [[-78, 10], [-96, -18], [-118, 24], [-136, -6], [-70, -26]].map(kk).map(([x, z]) => ({ x, y: H(x, z) - .05, z, s: 1, ry: Math.atan2(-x, -z) + rnd(-.4, .4) })); list.forEach(o => addCol({ x: o.x, z: o.z, r: .55 })); scatter(g, smoothM, list); }
-  buildSteam(); buildLandmarks3();
+  buildSteam(); buildLandmarks3(); buildSignposts();
+}
+function buildSignposts() {
+  const sc = W.scene, wood = woodMat('#8b6544'), post = std('#6b4d33', { roughness: .9 }), lampM = new THREE.MeshStandardMaterial({ color: '#fff3c4', emissive: '#ffd27a', emissiveIntensity: .4 }); (W.lampMats = W.lampMats || []).push(lampM);
+  const ends = { 0: ['海岸', '#7dd3fc', [54 * K, 0]], 1: ['火山', '#fdba74', [0, -54 * K]], 3: ['雪原', '#e0f2fe', [-54 * K, 0]] };
+  Object.keys(ends).forEach(li => {
+    const [name, col, goal] = ends[li], pts = crPts(PATH_LINES[li], 10); let acc = 0, next = 26;
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, az] = pts[i - 1], [bx, bz] = pts[i], d = Math.hypot(bx - ax, bz - az); acc += d; if (acc < next) continue; next += 30;
+      const dist = Math.round(Math.hypot(goal[0] - bx, goal[1] - bz)); if (dist < 12) break;
+      const nx = -(bz - az) / d, nz = (bx - ax) / d, x = bx + nx * 2.4, z = bz + nz * 2.4, y = H(x, z), g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.atan2(bx - ax, bz - az); sc.add(g);
+      const cv = document.createElement('canvas'); cv.width = 256; cv.height = 96; const c = cv.getContext('2d'); c.fillStyle = '#9a7652'; c.fillRect(0, 0, 256, 96); c.fillStyle = '#7a5838'; for (let k = 0; k < 6; k++) c.fillRect(0, 14 + k * 14, 256, 2);
+      c.fillStyle = col; c.font = 'bold 40px "Noto Sans TC","Microsoft JhengHei",sans-serif'; c.textAlign = 'center'; c.fillText('往' + name, 128, 46); c.fillStyle = '#fef3c7'; c.font = 'bold 26px "Noto Sans TC","Microsoft JhengHei",sans-serif'; c.fillText('還有 ' + dist + ' 公尺', 128, 82);
+      const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; const sm = new THREE.MeshStandardMaterial({ map: tx, roughness: .85 });
+      cyl(.07, .09, 2.3, 7, post, 0, 1.15, 0, g); box(1.3, .5, .06, [wood, wood, wood, wood, sm, sm], 0, 1.85, 0, g);
+      box(.04, .3, .04, post, .5, 2.2, 0, g); mesh(new THREE.BoxGeometry(.16, .2, .16), lampM, .5, 2.42, 0, g);
+      addCol({ x, z, r: .2 });
+    }
+  });
 }
 /* 第 3 堂 03：四個地標。每個至少 25 公尺、剪影就認得出來、各有一個會動的部分。
    遠景版是一張不受霧影響的單色剪影（幾十個面），走近 120 公尺內才換成完整模型（3.2） */
@@ -1843,7 +1861,7 @@ function buildGates() {
     const mat = new THREE.MeshBasicMaterial({ color: '#a78bfa', map: gateTex, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     const wall = mesh(new THREE.PlaneGeometry(14, 8), mat, 0, 4, 0, g); wall.rotation.y = Math.PI / 2;
     const run = textSprite('能量門', '#c4b5fd', '需解開：' + d.title); run.position.set(0, 9.2, 0); g.add(run);
-    const col = addCol({ box: d.ax === 'x' ? [d.x - K, -8 * K, d.x + K, 8 * K] : [-8 * K, d.z - K, 8 * K, d.z + K] });
+    const col = addCol({ gate: k, box: d.ax === 'x' ? [d.x - K, -8 * K, d.x + K, 8 * K] : [-8 * K, d.z - K, 8 * K, d.z + K] });
     const it = addInter(hitBox(1, 8, 14, 0, 4, 0, g), 'gate', k, '能量門');
     W.gates[k] = { g, mat, col, it, fade: 0 };
   });
@@ -2711,18 +2729,28 @@ function buildColdWall() {
   mesh(new THREE.PlaneGeometry(14 * K, 9 * K), new THREE.MeshBasicMaterial({ color: '#bae6fd', map: gateTex, transparent: true, opacity: .3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), 0, 4.5 * K, 0, w);
   const lb = textSprite('刺骨寒氣', '#bae6fd', '需要保暖衣才能進入'); lb.position.set(0, 7.5, 0); lb.scale.set(4.4, 1.38, 1); w.add(lb); refreshCold();
 }
+function barrierMsg(msg) { const now = performance.now(); W.barT = W.barT || {}; if (now - (W.barT[msg] || 0) < 4000) return; W.barT[msg] = now; toast(msg); }
+function barrierWhy(x, z) {
+  const ox = x / K, oz = z / K, ax = Math.abs(ox), az = Math.abs(oz), r = Math.max(ax, az);
+  if (Math.hypot(ox, oz + 130) < 5.3) return '火山口裡是滾燙的岩漿，太危險了，靠近不了。';
+  const ew = ax >= az, side = ew ? (ox > 0 ? 'coast' : 'snow') : (oz < 0 ? 'volcano' : null);
+  if (!side && r > 49) return '南方是陡峭的高山，一層層岩階爬不上去。';
+  if (r <= 58 || Math.abs(ax - az) < 9) return '山脊太陡了，爬不上去。沿著小徑走隘口（指南針上有地標）。';
+  if (side && !S.zones.includes(side)) return side === 'snow' ? '刺骨的寒氣：穿上保暖衣才能進雪原（大城市武器店）。' : { coast: '東方能量門還封著：解開「破碎的古地圖」才能前往海岸。', volcano: '北方能量門還封著：解開「潮汐石陣」才能前往火山。' }[side];
+  return '前面過不去了。';
+}
 function tryMove(dx, dz) {
   let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z), h1 = G(nx, nz), d = Math.hypot(dx, dz) || 1e-6;
   if (h1 < -2.2) return false;
   const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7);
-  if ((ha - h0) / .7 > 1.1) return false;
-  if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) return false;
+  if ((ha - h0) / .7 > 1.1) { const rr = Math.max(Math.abs(nx), Math.abs(nz)) / K; if (!inCity(nx) && rr > 44 && rr < 60) barrierMsg('山脊太陡了，爬不上去。沿著小徑走隘口（指南針上有地標）。'); return false; }
+  if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) { if ((ha - h0) / .7 < .8) barrierMsg(barrierWhy(nx, nz)); return false; }
   if (coldBlocked(nx, nz) && !coldBlocked(P.x, P.z)) { const nw = performance.now(); if (!W.coldT || nw - W.coldT > 4000) { W.coldT = nw; toast('刺骨的寒氣擋住了去路……沒有保暖衣無法進入雪原。' + (armsOpen() ? '到大城市的武器店買一件吧。' : '升到 Lv ' + ARMS_LV + ' 後，大城市會開設武器店。')); } return false; }
   for (const c of colsNear(nx, nz)) {
-    if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
+    if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (c.gate && GATES[c.gate]) barrierMsg({ coast: '東方', volcano: '北方' }[c.gate] + '能量門還封著：解開「' + GATES[c.gate].title + '」才能通過。'); if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
   }
-  if (inCity(nx)) { const cx = nx - CITY.x, cz = nz - CITY.z; if (Math.abs(cx) > 70 || cz < -30 || cz > 44) return false; }
+  if (inCity(nx)) { const cx = nx - CITY.x, cz = nz - CITY.z; if (Math.abs(cx) > 70 || cz < -30 || cz > 44) { barrierMsg('這個街區就到這裡了。想回月光谷，到廣場邊搭計程車。'); return false; } }
   else if (Math.max(Math.abs(nx), Math.abs(nz)) > 178 * K) return false;
   P.x = nx; P.z = nz; return true;
 }
