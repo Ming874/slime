@@ -1458,7 +1458,7 @@ function lineStep(dt) {
   const slicing = M.active && M.step === 0 && M.g && !!M.g.marks;
   const tx = slicing ? MX[0] - LT / 2 + LT * (M.phase === 'run' ? slicePos(M.g) : 0) : M.active ? MX[M.step] : (M.last ? 8.2 : -6.4); if (slicing && M.phase === 'run') MK.bx = tx; else MK.bx += (tx - MK.bx) * Math.min(1, dt * 3); const onTurn = !M.active && M.last && MK.bx > 7.6;
   J.group.position.set(MK.bx + (M.active && !slicing && act(M.step) ? Math.sin(t * 40) * .01 : 0), onTurn ? 1.15 + Math.sin(t * 2) * .05 : 1.14, 0);
-  J.group.rotation.y = onTurn ? t * .8 : 0; MK.turn.rotation.y = t * .8; MK.sx = (MK.sx || 1) + ((slicing ? 2.4 : 1) - (MK.sx || 1)) * Math.min(1, dt * 5); J.group.scale.set(.42 * MK.sx, .42 * (slicing ? .86 : M.active && M.step >= 1 ? .92 : 1), .42);
+  J.group.rotation.y = onTurn ? t * .8 : 0; MK.turn.rotation.y = t * .8; const cutK = slicing && M.g.marks ? M.g.hit.filter(h => h != null && h > .3).length / M.g.marks.length : 0; MK.sx = (MK.sx || 1) + ((slicing ? 2.4 * (1 - .4 * cutK) : 1) - (MK.sx || 1)) * Math.min(1, dt * 5); J.group.scale.set(.42 * MK.sx, .42 * (slicing ? .86 : M.active && M.step >= 1 ? .92 : 1), .42);
   jellyCut(J, !M.active && M.last ? M.last : null); cutLinesStep(slicing); if (!MK.pieces) MK.pieces = []; piecesStep(dt); cutFxStep(dt);
   if (W.sample) W.sample.rotation.y = t * .6; if (W.liveSample) { W.liveSample.rotation.y = -t * .4; W.liveSample.position.y = 1.4 + Math.sin(t * 2) * .04; }
   if (W.neon) W.neon.forEach((n, i) => n.scale.y = .7 + .3 * Math.abs(Math.sin(t * 1.5 + i))); if (W.recLed) W.recLed.visible = L.on ? Math.sin(t * 6) > 0 : false;
@@ -2907,21 +2907,26 @@ function screenFlash(color) {
   el.style.setProperty('--fc', color); el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
 }
 function spawnSlice(q) {
-  const C = CUTS[M.cut] || CUTS.thick, sp = SP[M.sp], th = C.th, side = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .15, clearcoat: 1, transparent: true }), face = faceMat(sp, q);
-  let geo; if (C.shape) { geo = new THREE.ExtrudeGeometry(cutShape(C.shape, .34), { depth: th, bevelEnabled: false }); geo.translate(0, 0, -th / 2); geo.rotateY(Math.PI / 2); } else geo = new THREE.BoxGeometry(th, .66, .74);
-  const m = new THREE.Mesh(geo, C.shape ? [face, side] : [face, face, side, side, side, side]); m.position.set(MX[0] + th / 2 + .03, 1.14, 0); m.castShadow = !LOW; W.lineG.add(m);
-  MK.pieces.push({ m, vx: 1 + rnd(0, .4), vy: 1.5, vz: rnd(-.35, .35), spin: -(3 + rnd(0, 2)), rz: 0, life: 2.4, th, face, base: face.emissiveIntensity, glint: q > .9 ? 1.6 : q * .8 });
+  // 切下來的那一塊：造型切就是星形／愛心（正面朝向鏡頭），厚塊／薄片就是一片切片；它會從刀口翻出輸送帶、掉到地上
+  const C = CUTS[M.cut] || CUTS.thick, sp = SP[M.sp], th = C.shape ? .2 : C.th, side = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .15, clearcoat: 1, transparent: true }), face = faceMat(sp, q);
+  let geo; if (C.shape) { geo = new THREE.ExtrudeGeometry(cutShape(C.shape, .5), { depth: th, bevelEnabled: false }); geo.translate(0, C.shape === 'heart' ? -.02 : 0, -th / 2); } else geo = new THREE.BoxGeometry(th, .66, .74);
+  const m = new THREE.Mesh(geo, C.shape ? [face, side] : [face, face, side, side, side, side]); m.position.set(MX[0] + (C.shape ? 0 : th / 2 + .03), 1.14, C.shape ? .1 : 0); m.castShadow = !LOW; W.lineG.add(m);
+  MK.pieces.push({ m, vx: .5 + rnd(0, .3), vy: 1.3, vz: 1.5 + rnd(0, .4), spin: 3.2 + rnd(0, 1.5), rx: 0, land: false, life: 3.2, th, face, base: face.emissiveIntensity, glint: q > .9 ? 1.6 : q * .8 });
   while (MK.pieces.length > 8) dropPiece(MK.pieces.shift());
+  MK.cutDone = (MK.cutDone || 0) + 1;
 }
 function dropPiece(p) { W.lineG.remove(p.m); p.m.geometry.dispose(); [].concat(p.m.material).forEach(x => x.dispose()); }
 function piecesStep(dt) {
   for (let i = MK.pieces.length - 1; i >= 0; i--) {
-    const p = MK.pieces[i], m = p.m; p.rz = Math.max(-Math.PI / 2, p.rz + p.spin * dt); m.rotation.z = p.rz;
+    const p = MK.pieces[i], m = p.m;
     if (p.glint > 0) { p.glint = Math.max(0, p.glint - dt * 1.8); p.face.emissiveIntensity = p.base + p.glint; }
     p.vy -= 9.8 * dt; m.position.x += p.vx * dt; m.position.y += p.vy * dt; m.position.z += p.vz * dt;
-    const rest = .73 + (.33 + (p.th / 2 - .33) * Math.abs(p.rz) / (Math.PI / 2)); if (m.position.y <= rest && p.vy < 0) { m.position.y = rest; p.vy = 0; p.vx = .8; p.vz *= .85; }
-    p.life -= dt; if (p.life < .6) [].concat(m.material).forEach(x => x.opacity = Math.max(0, p.life / .6));
-    if (p.life <= 0 || m.position.x > 7.6) { dropPiece(p); MK.pieces.splice(i, 1); }
+    const onBelt = m.position.z < .88, rest = onBelt ? 1.04 : .1;
+    if (!p.land) p.rx += p.spin * dt; else p.rx += (-Math.PI / 2 - p.rx) * Math.min(1, dt * 12);
+    if (m.position.y <= rest && p.vy < 0) { m.position.y = rest; if (!onBelt && Math.abs(p.vy) > 1.2) p.vy = -p.vy * .25; else { p.vy = 0; if (!onBelt) { p.land = true; p.vx *= .2; p.vz *= .2; } } }
+    m.rotation.x = p.rx;
+    p.life -= dt; if (p.life < .8) [].concat(m.material).forEach(x => x.opacity = Math.max(0, p.life / .8));
+    if (p.life <= 0) { dropPiece(p); MK.pieces.splice(i, 1); }
   }
 }
 // 切割線（跟著史萊姆移動）與刀下的紅色雷射
@@ -3220,8 +3225,8 @@ document.addEventListener('click', e => {
     case 'saveNow': saveCloud(); S.savedAt = Date.now(); toast('遊戲已儲存'); renderPause(); break;
     case 'toTitle': if (M.active) { S.gel[M.sp] = (S.gel[M.sp] || 0) + 2; M.active = false; M.g = null; toast('產線中斷，已退回 2 份凝膠'); } saveCloud(); netLeave(true); showTitle(); break;
     case 'netLeave': netLeave(); renderPause(); break;
-    case 'tContinue': startPlay(); break;
-    case 'tNew': if (lsGet(SAVE_KEY)) modal('<h2>開始新遊戲？</h2><p>目前的存檔會被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定', f: newGame }]); else newGame(); break;
+    case 'tContinue': continueGame(); break;
+    case 'tNew': newGameAsk(); break;
     case 'tMulti': TITLE.mp = true; renderTitle(); { const n = $('#mpName'); if (n) n.value = S.name || ''; } break;
     case 'tBack': TITLE.mp = false; renderTitle(); break;
     case 'mpHost': netHost(); break;
@@ -3275,7 +3280,37 @@ function startPlay() {
   $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast(S.tutDone ? '歡迎回到月光谷。左上角是目前目標。' : '歡迎來到月光谷！跟著畫面中央的提示一步一步來。');
   if (!S.seen) { S.seen = true; save(); }
 }
-function newGame() { NOSAVE = true; netLeave(true); try { localStorage.removeItem(SAVE_KEY); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { } if (window.SlimeCloud) SlimeCloud.resetLocal(); location.reload(); }
+/* ---------- 多存檔：目前的進度（slime_world_v1，會同步到雲端）加上最多 2 個另存的存檔（只存在這台電腦），共 3 個 ---------- */
+const MAX_SAVES = 3, slotKey = i => 'slime_slot_v1_' + ((window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.id) || 'local') + '_' + i;
+function savesInfo() {
+  const parse = raw => { try { const o = JSON.parse(raw); return o && typeof o === 'object' && o.seen ? o : null; } catch (e) { return null; } };
+  const out = []; const cur = parse(lsGet(SAVE_KEY)); if (cur) out.push({ slot: 0, o: cur });
+  for (let i = 1; i < MAX_SAVES; i++) { const o = parse(lsGet(slotKey(i))); if (o) out.push({ slot: i, o }); }
+  return out;
+}
+const saveLabel = e => { const o = e.o; return 'Lv ' + (xpLevel(Math.max(0, +o.xp || 0)) + 1) + ' · ' + fmt(+o.money || 0) + ' · 粉絲 ' + Math.floor(+o.fans || 0) + ' · ' + fmtTime(o.last); };
+const freeSlot = () => { for (let i = 1; i < MAX_SAVES; i++) if (!lsGet(slotKey(i))) return i; return 0; };
+// 把存檔 slot 換成目前的進度（0＝目前這份）：目前的進度另存到被換掉的位置，再重新載入遊戲
+function switchSave(slot) {
+  if (!slot) { startPlay(); return; }
+  save(); const cur = lsGet(SAVE_KEY), pick = lsGet(slotKey(slot)); if (!pick) return;
+  NOSAVE = true; netLeave(true);
+  try { if (cur) localStorage.setItem(slotKey(slot), cur); else localStorage.removeItem(slotKey(slot)); localStorage.setItem(SAVE_KEY, pick); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { NOSAVE = false; toast('切換存檔失敗'); return; }
+  if (window.SlimeCloud) SlimeCloud.swapLocal(); location.reload();
+}
+function continueGame() {
+  const list = savesInfo(); if (list.length < 2) return startPlay();
+  modal('<h2>選擇存檔</h2><p class="small" style="color:var(--sub)">最多 3 個存檔。目前正在使用的那份會同步到雲端，其他存檔只存在這台電腦。</p>', [...list.map(e => ({ t: (e.slot ? '' : '目前：') + saveLabel(e), f: () => switchSave(e.slot) })), { t: '取消', ghost: true }]);
+}
+function newGameAsk() {
+  const list = savesInfo(); if (!list.length) return newGame();
+  if (list.length < MAX_SAVES) return modal('<h2>開始新遊戲？</h2><p>目前的進度會另存起來（存檔 ' + list.length + '/' + MAX_SAVES + '），之後可以從「繼續遊戲」選回來。</p>', [{ t: '取消', ghost: true }, { t: '開始新遊戲', f: () => newGame(freeSlot()) }]);
+  modal('<h2>存檔已滿（3/3）</h2><p>要先刪除一個存檔，才能開始新遊戲。刪除後無法復原。</p>', [...list.map(e => ({ t: '刪除：' + saveLabel(e), red: true, f: () => modal('<h2>確定刪除這個存檔？</h2><p>' + esc(saveLabel(e)) + '</p><p>刪除後無法復原。</p>', [{ t: '取消', ghost: true }, { t: '刪除並開始新遊戲', red: true, f: () => newGame(e.slot ? e.slot : 0) }]) })), { t: '取消', ghost: true }]);
+}
+function newGame(archiveTo) {
+  // archiveTo：把目前的進度另存到這個位置（沒給＝直接丟掉目前進度）。slot 0 以外的位置若已有存檔，會被目前進度取代
+  if (archiveTo) { save(); const cur = lsGet(SAVE_KEY); if (cur) { try { localStorage.setItem(slotKey(archiveTo), cur); } catch (e) { toast('存檔空間不足，無法另存目前進度'); return; } } }
+  NOSAVE = true; netLeave(true); try { localStorage.removeItem(SAVE_KEY); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { } if (window.SlimeCloud) SlimeCloud.resetLocal(); location.reload(); }
 function titleStep(dt) {
   W.t += dt; W.wind.value = W.t; if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(W.cam.position); slimeStep(dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt);
   const a = W.t * .04; W.cam.position.set(Math.sin(a) * 30, 13 + Math.sin(W.t * .1) * 2, Math.cos(a) * 30); W.cam.lookAt(0, 2.5, 0);
@@ -4082,7 +4117,7 @@ function ui(name) { window.dispatchEvent(new CustomEvent('slime:ui', { detail: n
 window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
-  get title() { return TITLE; }, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
+  get title() { return TITLE; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
   MG, STEPS, MKEY, ownAny, TOUCH,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,

@@ -13,7 +13,7 @@ const ago = (t?: number) => {
 };
 
 export default function Title() {
-  const g = G(), S = g.S, has = g.hasSave(), mp = g.title.mp, user = window.SlimeCloud?.user;
+  const g = G(), S = g.S, has = g.hasSave(), nSaves = g.saveCount?.() ?? (g.hasSave() ? 1 : 0), mp = g.title.mp, user = window.SlimeCloud?.user;
 
   // Enter＝繼續遊戲（輸入框裡按 Enter 不算）
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function Title() {
             <nav className="rx-menu" aria-label="主選單">
               <button type="button" className="rx-mi primary" data-act="tContinue">
                 <span className="rx-mi-ic"><Icon name="play" /></span>
-                <span className="rx-mi-tx"><b>{has ? '繼續遊戲' : '開始遊戲'}</b><small>{has ? `從上次離開的地方繼續 · ${ago(S.last)}` : '從月光谷的中央平地出發'}</small></span>
+                <span className="rx-mi-tx"><b>{has ? '繼續遊戲' : '開始遊戲'}</b><small>{has ? (nSaves > 1 ? `有 ${nSaves} 個存檔，按下後選擇` : `從上次離開的地方繼續 · ${ago(S.last)}`) : '從月光谷的中央平地出發'}</small></span>
                 <kbd>Enter</kbd>
               </button>
               <button type="button" className="rx-mi" data-act="tMulti">
@@ -54,7 +54,7 @@ export default function Title() {
               {has && (
                 <button type="button" className="rx-mi subtle" data-act="tNew">
                   <span className="rx-mi-ic"><Icon name="plus" /></span>
-                  <span className="rx-mi-tx"><b>新遊戲</b><small>清除目前存檔，從頭開始</small></span>
+                  <span className="rx-mi-tx"><b>新遊戲</b><small>{nSaves >= 3 ? '存檔已滿（3/3），需先刪除一個' : `目前進度會另存，最多 3 個存檔（${nSaves}/3）`}</small></span>
                   <Icon name="chevron" className="rx-mi-go" />
                 </button>
               )}
@@ -108,7 +108,7 @@ function SaveCard() {
           <span><em>設備</em><b>{owned}/{ownMax}</b></span>
           <span className="rx-zones" title={`已發現區域 ${S.zones.length}/${g.ZONES.length}`}>
             <em>區域</em>
-            <span>{g.ZONES.map((z) => <i key={z.id} style={{ background: S.zones.includes(z.id) ? z.acc : undefined }} title={z.name} />)}</span>
+            <b>{S.zones.length}/{g.ZONES.length}　{g.ZONES.filter((z) => S.zones.includes(z.id)).map((z) => z.name).join('、')}</b>
           </span>
         </div>
       </div>

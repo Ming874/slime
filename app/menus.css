@@ -31,7 +31,7 @@
 .rx-save-stats em{font-style:normal;font-size:10.5px;letter-spacing:1px;color:#94a3b8}
 .rx-save-stats b{font-size:14px;color:#e2e8f0;font-variant-numeric:tabular-nums}
 .rx-save-stats b.gold{color:#fbbf24}
-.rx-zones>span{display:flex;gap:4px;margin-top:3px}
+.rx-zones>b{font-size:12px}
 .rx-zones i{width:12px;height:12px;border-radius:50%;background:#ffffff1c;box-shadow:inset 0 0 0 1px #ffffff2e}
 
 /* 選單按鈕 */

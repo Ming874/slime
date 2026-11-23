@@ -175,6 +175,8 @@ export const cloud = {
     else if (how === 'leave') pushLeave();
   },
   // 開新遊戲：雲端那份等第一次存檔時換掉（伺服器會保留舊的 30 天）
+  // 換成另一個存檔：這台的進度換了，之後第一次存檔會上傳到雲端
+  swapLocal() { const m = getMeta(); setMeta({ owner: m.owner, ver: m.ver || 0, dirty: true }); },
   resetLocal() { const m = getMeta(); setMeta({ owner: m.owner, ver: m.ver || 0, fresh: true }); },
   status() {
     if (SY.err) return SY.err;
