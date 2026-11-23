@@ -64,6 +64,16 @@ export default function Pause() {
         {g.creditsHTML?.() ? <div className="rx-credits" dangerouslySetInnerHTML={{ __html: g.creditsHTML() }} /> : null}
       </section>
 
+      {user?.dev && (
+        <section className="rx-dev" aria-label="開發者工具">
+          <div className="rx-room-hd"><b>開發者工具</b><span className="tag">測試用</span></div>
+          <p className="rx-dim">已解鎖 {g.ZONES.filter((z) => S.zones.includes(z.id)).map((z) => z.name).join('、')}（{S.zones.length}/{g.ZONES.length}）</p>
+          <button type="button" className="btn sm" data-act="devZones" disabled={S.zones.length >= g.ZONES.length && !!S.own.coat}>
+            {S.zones.length >= g.ZONES.length && S.own.coat ? '全部地圖都已解鎖' : '解鎖全部地圖（含保暖衣）'}
+          </button>
+        </section>
+      )}
+
       <button type="button" className="rx-quit" data-act="toTitle"><Icon name="exit" />儲存並回到主選單</button>
       <div className="rx-pause-links">
         <span>按 Esc、切換畫面、開關介面時都會自動儲存</span>

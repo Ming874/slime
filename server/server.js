@@ -103,6 +103,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS archived_user ON archived_saves(user_id);
 `);
+// 舊資料庫補欄位：dev＝開發測試帳號（遊戲暫停選單會出現「開發者工具」；管理員一律算）
+if (!db.prepare('PRAGMA table_info(users)').all().some((c) => c.name === 'dev')) db.exec('ALTER TABLE users ADD COLUMN dev INTEGER NOT NULL DEFAULT 0');
 const q = {
   userBySub: db.prepare('SELECT * FROM users WHERE sub = ?'),
   userById: db.prepare('SELECT * FROM users WHERE id = ?'),
@@ -198,7 +200,7 @@ const readCookie = (req, name) => new RegExp(`(?:^|;\\s*)${name}=([A-Za-z0-9_.-]
 const cookie = (name, value, maxAgeSec, cookiePath = '/') => `${name}=${value}; HttpOnly; SameSite=Lax; Path=${cookiePath}; Max-Age=${maxAgeSec}${SECURE ? '; Secure' : ''}`;
 // 暱稱：去掉控制字元與前後空白，最多 12 個字（以字元計，emoji 不會被切半）
 const cleanName = (s) => [...String(s ?? '').replace(/[\p{C}<>]/gu, '').trim()].slice(0, NAME_MAX).join('').trim();
-const pubUser = (u) => ({ id: u.id, name: u.name, ...(u.admin ? { admin: true } : {}) }); // 不把 email 送到遊戲畫面上
+const pubUser = (u) => ({ id: u.id, name: u.name, ...(u.admin ? { admin: true } : {}), ...(u.admin || u.dev ? { dev: true } : {}) }); // 不把 email 送到遊戲畫面上
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -444,7 +446,7 @@ async function api(req, res, url) {
     }
     // 玩家列表：帳號、最後登入、存檔摘要（只取幾個數字）、可疑標記、目前還能不能登入
     if (route === 'GET /api/admin/users') {
-      const rows = db.prepare('SELECT u.id, u.name, u.email, u.created_at, u.last_login, u.flag, s.ver, s.updated_at, s.data FROM users u LEFT JOIN saves s ON s.user_id = u.id ORDER BY u.last_login DESC').all();
+      const rows = db.prepare('SELECT u.id, u.name, u.email, u.created_at, u.last_login, u.flag, u.dev, s.ver, s.updated_at, s.data FROM users u LEFT JOIN saves s ON s.user_id = u.id ORDER BY u.last_login DESC').all();
       const users = rows.map((r) => {
         let save = null;
         if (r.data) {
@@ -454,7 +456,7 @@ async function api(req, res, url) {
           } catch { save = { ver: r.ver, updatedAt: r.updated_at, broken: true }; }
         }
         const acc = access(r.email);
-        return { id: r.id, name: r.name, email: r.email, createdAt: r.created_at, lastLogin: r.last_login, flag: r.flag || '', allowed: !!acc, admin: !!acc?.admin, save };
+        return { id: r.id, name: r.name, email: r.email, createdAt: r.created_at, lastLogin: r.last_login, flag: r.flag || '', allowed: !!acc, admin: !!acc?.admin, dev: r.dev === 1, save };
       });
       return out(200, { users, me: user.id });
     }
@@ -463,6 +465,14 @@ async function api(req, res, url) {
       const r = db.prepare('UPDATE users SET flag = NULL WHERE id = ?').run(String(b.id || ''));
       if (!r.changes) return out(404, { error: '找不到這位玩家' });
       console.log(new Date().toISOString(), `清除可疑標記（${user.id}）：${b.id}`);
+      return out(200, {});
+    }
+    // 開發測試帳號：{ id, dev }。開了之後那位玩家的暫停選單會有「開發者工具」（解鎖全部地圖），重新整理遊戲後生效
+    if (route === 'POST /api/admin/users/dev') {
+      const b = await readBody(req, 1024);
+      const r = db.prepare('UPDATE users SET dev = ? WHERE id = ?').run(b.dev === true ? 1 : 0, String(b.id || ''));
+      if (!r.changes) return out(404, { error: '找不到這位玩家' });
+      console.log(new Date().toISOString(), `開發測試 ${b.dev === true ? '開啟' : '關閉'}（${user.id}）：${b.id}`);
       return out(200, {});
     }
     if (route === 'DELETE /api/admin/allow') {

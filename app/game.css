@@ -7,6 +7,12 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html,body{margin:0;height:100%;background:#000;color:var(--tx);font-family:"Inter","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;overscroll-behavior:none;-webkit-text-size-adjust:100%;overflow:hidden;user-select:none;-webkit-user-select:none}
+/* 遊戲介面的文字一律不能被選取（拖曳、雙擊、Ctrl+A 都不會反白），只有輸入框可以 */
+#slime,#slime *,body *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#slime input,#slime textarea,#slime [contenteditable],body input,body textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+img,svg,canvas{-webkit-user-drag:none}
+::selection{background:transparent}
+input::selection,textarea::selection{background:#22d3ee55}
 button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation}
 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #game{position:fixed;inset:0}
@@ -118,7 +124,7 @@ body.touch #startHint{display:none!important}
 #gtabs button{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--sub);font-size:13px;white-space:nowrap}
 #gtabs button.on{background:var(--acc);color:#03212a;border-color:var(--acc);font-weight:700}
 .gclose{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);display:grid;place-items:center;flex:none;margin-left:auto}
-.gbody{overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch;user-select:text}
+.gbody{overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .panel{display:none}
 .panel.on{display:block;animation:fade .2s}
 .menu{display:grid;gap:10px;max-width:360px;margin:6px auto}
@@ -224,7 +230,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
   background:radial-gradient(900px 520px at 50% -10%,#22d3ee26,transparent 70%),radial-gradient(700px 480px at 50% 110%,#818cf826,transparent 70%),var(--bg)}
 #login[hidden]{display:none}
 #login.out{opacity:0;pointer-events:none}
-.login-card{width:100%;max-width:390px;text-align:center;padding:34px 24px 24px;border-radius:22px;background:linear-gradient(180deg,#151d29f0,#10161ff0);border:1px solid var(--line);box-shadow:0 30px 80px -30px #000,inset 0 1px 0 #ffffff10;user-select:text}
+.login-card{width:100%;max-width:390px;text-align:center;padding:34px 24px 24px;border-radius:22px;background:linear-gradient(180deg,#151d29f0,#10161ff0);border:1px solid var(--line);box-shadow:0 30px 80px -30px #000,inset 0 1px 0 #ffffff10}
 .login-card.shake{animation:shake .45s}
 @keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 .lkicker{margin-top:16px;font:800 12px/1 Inter,sans-serif;letter-spacing:4px;color:var(--acc)}
@@ -268,7 +274,7 @@ input[type=range]{width:100%;accent-color:var(--acc);height:28px}
 .bootc{display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--sub);font-size:14px}
 .spin{width:38px;height:38px;border-radius:50%;border:3px solid #22d3ee33;border-top-color:var(--acc);animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.mbox{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:18px;max-width:480px;width:100%;max-height:86vh;overflow-y:auto;line-height:1.7;user-select:text}
+.mbox{background:var(--bg2);border:1px solid var(--line);border-radius:16px;padding:18px;max-width:480px;width:100%;max-height:86vh;overflow-y:auto;line-height:1.7}
 .mbox h2{margin-top:0}
 .mbox .row{margin-top:12px;justify-content:flex-end}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}

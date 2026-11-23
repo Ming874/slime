@@ -136,6 +136,8 @@ main{padding:26px 0 70px}
 .pill{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.3px;border:1px solid}
 .pill svg{width:11px;height:11px;stroke-width:2.4}
 .pill.admin{color:var(--warn);border-color:#fbbf2455;background:var(--warn-soft)}
+.pill.dev{color:#a5b4fc;border-color:#818cf855;background:#818cf81a}
+.row-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 .pill.you{color:var(--acc);border-color:#22d3ee44;background:var(--acc-soft)}
 .pill.dom{color:#c7cbff;border-color:#818cf855;background:#818cf81a}
 .pill.all{color:var(--warn);border-color:#fbbf2455;background:var(--warn-soft)}

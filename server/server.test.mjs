@@ -199,6 +199,14 @@ test('管理員：玩家列表、清除可疑標記、只改備註', async () =>
   assert.equal((await admin('POST', '/api/admin/users/clear-flag', { id: kid.id })).status, 200);
   assert.equal((await admin('GET', '/api/admin/users')).body.users.find((u) => u.id === kid.id).flag, '');
   assert.equal((await admin('POST', '/api/admin/users/clear-flag', { id: 'nope' })).status, 404);
+  // 開發測試帳號：管理員一律有；一般玩家要管理員打開
+  assert.equal((await admin('GET', '/api/me')).body.user.dev, true);
+  assert.equal((await student('GET', '/api/me')).body.user.dev, undefined);
+  assert.equal((await student('POST', '/api/admin/users/dev', { id: kid.id, dev: true })).status, 403);
+  assert.equal((await admin('POST', '/api/admin/users/dev', { id: kid.id, dev: true })).status, 200);
+  assert.equal((await admin('GET', '/api/admin/users')).body.users.find((u) => u.id === kid.id).dev, true);
+  assert.equal((await admin('POST', '/api/admin/users/dev', { id: kid.id, dev: false })).status, 200);
+  assert.equal((await admin('POST', '/api/admin/users/dev', { id: 'nope', dev: true })).status, 404);
   // 只改備註，權限不變
   assert.equal((await admin('PATCH', '/api/admin/allow', { entry: 'boss@test.dev', note: '  助教<b>  ' })).status, 200);
   const boss = (await admin('GET', '/api/admin/allow')).body.list.find((x) => x.entry === 'boss@test.dev');

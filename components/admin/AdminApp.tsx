@@ -27,7 +27,7 @@ const fmtDate = (t: number) => { const d = new Date(t); return `${d.getFullYear(
 const KIND_ICON = { email: 'mail', domain: 'school', all: 'globe', bad: 'alert' } as const;
 
 type Player = {
-  id: string; name: string; email: string; createdAt: number; lastLogin: number; flag: string; allowed: boolean; admin: boolean;
+  id: string; name: string; email: string; createdAt: number; lastLogin: number; flag: string; allowed: boolean; admin: boolean; dev?: boolean;
   save: { ver: number; updatedAt: number; money?: number; earned?: number; fans?: number; xp?: number; zones?: number; stock?: number; broken?: boolean } | null;
 };
 type View = 'overview' | 'allow' | 'players';
@@ -546,9 +546,10 @@ function Players({ users, ask, toast, onDone }: { users: Player[] } & Common) {
                   {u.admin && <span className="pill admin"><Icon name="shield" />管理員</span>}
                   {!u.allowed && <span className="pill off">已移出名單</span>}
                   {u.flag && <span className="pill flag" title={u.flag}><Icon name="alert" />可疑</span>}
-                  {u.allowed && !u.flag && !u.admin && <span className="pill ok">正常</span>}
+                  {u.dev && !u.admin && <span className="pill dev" title="暫停選單有開發者工具"><Icon name="sliders" />開發測試</span>}
+                  {u.allowed && !u.flag && !u.admin && !u.dev && <span className="pill ok">正常</span>}
                 </td>
-                <td>{u.flag && <FlagClear u={u} ask={ask} toast={toast} onDone={onDone} />}</td>
+                <td><div className="row-acts">{u.flag && <FlagClear u={u} ask={ask} toast={toast} onDone={onDone} />}{!u.admin && u.allowed && <DevToggle u={u} ask={ask} toast={toast} onDone={onDone} />}</div></td>
               </tr>
             ))}
           </tbody>
@@ -556,6 +557,19 @@ function Players({ users, ask, toast, onDone }: { users: Player[] } & Common) {
         {!rows.length && <div className="empty"><Icon name="search" /><div>{users.length ? '沒有符合的玩家' : '還沒有玩家登入過'}</div></div>}
       </div>
     </section>
+  );
+}
+
+// 開發測試帳號：遊戲暫停選單會出現「開發者工具」（解鎖全部地圖），方便測試；管理員本來就有
+function DevToggle({ u, ask, toast, onDone }: { u: Player } & Common) {
+  const [busy, setBusy] = useState(false), on = !!u.dev;
+  return (
+    <button type="button" className="btn ghost sm" disabled={busy} onClick={async () => {
+      if (!on && !(await ask({ title: `讓 ${u.name} 成為開發測試帳號？`, text: '這位玩家的暫停選單會出現「開發者工具」，可以一鍵解鎖全部地圖。玩家重新整理遊戲後生效。', ok: '開啟開發測試', tone: 'warn' }))) return;
+      setBusy(true);
+      try { const r = await api('POST', '/api/admin/users/dev', { id: u.id, dev: !on }); if (!r.ok) toast(r.body.error || '設定失敗', true); else toast(on ? `已關閉 ${u.name} 的開發測試` : `${u.name} 重新整理遊戲後就能用開發者工具`); await onDone(); }
+      catch { toast('連不上伺服器，請稍後再試', true); } finally { setBusy(false); }
+    }}>{on ? '關閉開發測試' : '開發測試'}</button>
   );
 }
 

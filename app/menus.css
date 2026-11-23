@@ -109,6 +109,8 @@
 .rx-sync.err{color:var(--red)}
 .rx-room{display:grid;gap:6px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:13px}
 .rx-room-hd{display:flex;align-items:center;gap:8px}
+.rx-dev{display:grid;gap:6px;margin:10px 0;padding:12px;border-radius:12px;border:1px dashed #818cf8aa;background:#818cf810;font-size:13px}
+.rx-dev .btn{justify-self:start}
 .rx-room ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .rx-room li{display:flex;align-items:center;gap:6px}
 .rx-room .btn{justify-self:start}

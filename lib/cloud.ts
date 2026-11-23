@@ -5,7 +5,7 @@
    - 存檔帶版本號：別台裝置存過較新的進度時伺服器回 409，問玩家「另一台有較新進度，要載入嗎？」
    game.js 透過 window.SlimeCloud 使用這裡的功能（sync、resetLocal、status、rename、logout、deleteMe、user、frozen）。 */
 
-export type User = { id: string; name: string; admin?: boolean };
+export type User = { id: string; name: string; admin?: boolean; dev?: boolean };
 export type CloudSave = { ver: number; data: string; updatedAt: number; device: string };
 type Meta = { owner?: string; ver?: number; dirty?: boolean; fresh?: boolean };
 type Btn = { t: string; ghost?: boolean; red?: boolean; f?: () => void };
