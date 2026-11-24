@@ -77,6 +77,7 @@ svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 #log{position:absolute;left:12px;bottom:calc(var(--slot) + 52px + env(safe-area-inset-bottom));width:min(420px,70vw);display:flex;flex-direction:column;gap:3px}
 .logl{background:#0b0f17a8;border-radius:6px;padding:4px 9px;font-size:13px;line-height:1.45;width:max-content;max-width:100%;animation:fade .25s;transition:opacity .6s}
 .logl.old{opacity:0}
+.logl.egg{background:linear-gradient(90deg,#6d28d9d9,#be185dc2);box-shadow:0 0 12px #f0abfc59;font-weight:700} /* 發現月光谷的小秘密 */
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
 
 /* 快捷列（9 格） */

@@ -20,6 +20,7 @@ export default function Inventory() {
         <Equip />
       </div>
       <Quest />
+      <Eggs />
     </div>
   );
 }
@@ -91,6 +92,31 @@ function Equip() {
       <ul>
         {row(!!S.own.coat, '保暖衣', '大城市武器店')}
         {row(!!S.own.sword, '長劍', '大城市武器店')}
+      </ul>
+    </div>
+  );
+}
+
+// 月光谷的小秘密（彩蛋，登記與發現在 game.js 的 regEgg／foundEgg）：找到的寫名字，還沒找到的只給一句提示
+const EGG_ZONE: Record<string, string> = { forest: '中央平地', coast: '海岸', volcano: '火山', snow: '雪原', city: '大城市' };
+function Eggs() {
+  const list = G().eggs?.() ?? [];
+  if (!list.length) return null;
+  const n = list.filter((e) => e.found).length;
+  return (
+    <div className="rx-eggs">
+      <div className="rx-eggs-hd"><b>月光谷的小秘密</b><span>已找到 {n} / {list.length}</span></div>
+      <ul>
+        {list.map((e) => (
+          <li key={e.id} className={e.found ? 'on' : ''}>
+            <i className="rx-egg-ic" aria-hidden="true">{e.found ? '✦' : '?'}</i>
+            <span className="rx-egg-tx">
+              <b>{e.found ? e.name : '？？？'}</b>
+              {!e.found && e.hint && <small>{e.hint}</small>}
+            </span>
+            <em>{EGG_ZONE[e.id.split('_')[0]] ?? ''}</em>
+          </li>
+        ))}
       </ul>
     </div>
   );
