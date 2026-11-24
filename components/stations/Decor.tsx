@@ -26,11 +26,12 @@ export function DecoTools() {
       </div>
       <div className="rx-palette">
         {Object.entries(g.DECO).map(([k, dc]) => {
-          const has = S.packs.includes(dc.pack);
+          // 苔光（第 4 堂）不是零件包：在山洞裡摘到幾份就能放幾個
+          const cave = dc.pack === 'cave', moss = (S as { cave?: { mossN?: number } }).cave?.mossN || 0, has = cave ? moss > 0 : S.packs.includes(dc.pack);
           return (
             <button key={k} type="button" className={`rx-part${has ? '' : ' locked'}`} data-act="addDeco" data-k={k} disabled={!has || p.deco.length >= 6}
-              title={has ? `加上${dc.n}` : `需要${packName(dc.pack)}（工作電腦的網購／器材行）`} style={{ '--pc': dc.c } as React.CSSProperties}>
-              <i aria-hidden="true" /><span>{dc.n}</span>
+              title={cave ? (has ? `加上${dc.n}（還有 ${moss} 份）` : '到山洞裡摘發光苔蘚，就能做成苔光') : has ? `加上${dc.n}` : `需要${packName(dc.pack)}（工作電腦的網購／器材行）`} style={{ '--pc': dc.c } as React.CSSProperties}>
+              <i aria-hidden="true" /><span>{dc.n}{cave ? ` ×${moss}` : ''}</span>
             </button>
           );
         })}

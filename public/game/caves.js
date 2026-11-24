@@ -594,7 +594,7 @@ function caveEnv(dt) {
 function caveMoonStep(dt) {
   const c = CAVES.find(o => o.id === 'moon'); if (!c) return; const n = DN.night;
   if (c.lake) { const u = c.lake.m.material.uniforms.mk; u.value += (n - u.value) * Math.min(1, dt * .5); }
-  if (c.crack) { c.crack.material.opacity = .15 + .85 * n; c.crack.visible = true; if (c.plug) c.plug.visible = n < .5; }
+  if (c.crack) { c.crack.material.opacity = .15 + .85 * n; c.crack.visible = true; if (c.plug) c.plug.visible = n < .5 && CV.c !== c; } // 天亮時人還在洞裡：洞口不封起來（5.3 出口一直開著）
   c.shafts.forEach(sh => { if (sh.m) sh.m.material.uniforms.k.value = .15 + .5 * n; if (sh.hole) sh.hole.material.color.set(n > .5 ? '#c7d2fe' : '#3b3f66'); });
 }
 // 洞裡的配樂：進洞時淡出、換成環境音；出洞時新區域的主題曲淡入（2.2）
@@ -719,6 +719,8 @@ function introStart(done) {
   el.textContent = TOUCH ? '點一下略過' : '按任意鍵略過'; el.hidden = false;
   INTRO.onKey = e => { if (INTRO.on && INTRO.t > .25) INTRO.skip = true; };
   ['keydown', 'pointerdown', 'touchstart'].forEach(k => addEventListener(k, INTRO.onKey, { passive: true }));
+  // 開場會一路看到平常不同時出現的東西：先把著色器編譯好，第一次看到山洞時才不會卡一下（設計分析 13.2 第 6 點）
+  try { const m0 = W.cam.layers.mask; W.cam.layers.mask = 7; W.r.compile(W.scene, W.cam); W.cam.layers.mask = m0; } catch (e) { }
   introSound(true); return true;
 }
 function introSpeed(c, i) { const w = c.Wd[i]; return w > 3.5 ? 12 : w > 2.4 ? 20 : 25; } // 公尺／秒
@@ -726,7 +728,7 @@ const crV = (a, b, c2, d, t, out) => out.set(0, 0, 0).addScaledVector(b, 2).addS
 function introCurve(pts, t, out) { const n = pts.length - 1, f = clamp(t, 0, 1) * n, i = Math.min(n - 1, Math.floor(f)); return crV(pts[Math.max(0, i - 1)], pts[i], pts[i + 1], pts[Math.min(n, i + 2)], f - i, out); }
 function introStep(dt) {
   const I = INTRO, c = I.c, cam = W.cam; if (I.skip && I.t < I.dA + I.dB) { I.t = I.dA + I.dB + I.dC * .55; I.skip = false; I.inCave = false; }
-  I.t += dt; const tA = I.dA, tB = tA + I.dB, tC = tB + I.dC; let look = IV[1], pos = I.pos, fov = 96, bank = 0;
+  I.t += dt; DRS.skip = Math.max(DRS.skip || 0, 1); const tA = I.dA, tB = tA + I.dB, tC = tB + I.dC; // 開場期間動態解析度不計時 let look = IV[1], pos = I.pos, fov = 96, bank = 0;
   if (I.t < tA) { // A：從洞口外俯衝進洞
     const u = smooth(0, 1, I.t / tA) * .55 + I.t / tA * .45; introCurve(I.A, u, pos); introCurve(I.A, Math.min(1, u + .06), look); I.inCave = false;
     if (I.t / tA > .8 && !I.inCave) { I.s = c.L; }

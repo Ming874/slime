@@ -76,6 +76,8 @@ const DECO = {
   gem: { n: '寶石', v: .10, pack: 'glass', c: '#38bdf8' }, crystal: { n: '晶柱', v: .10, pack: 'glass', c: '#a78bfa' }, star: { n: '星晶', v: .10, pack: 'glass', c: '#fde047' },
   orb: { n: '光球', v: .16, pack: 'neon', c: '#22d3ee', glow: 1 }, knot: { n: '扭結', v: .18, pack: 'neon', c: '#fb7185', glow: 1 }, drop: { n: '水滴', v: .14, pack: 'neon', c: '#34d399', glow: 1 },
   dodeca: { n: '稜鏡', v: .22, pack: 'prism', c: '#e879f9', metal: 1 }, helix: { n: '螺旋', v: .25, pack: 'prism', c: '#818cf8', glow: 1 }, halo: { n: '光環', v: .18, pack: 'prism', c: '#fbbf24', glow: 1 },
+  // 苔光（第 4 堂 06）：山洞裡摘的發光苔蘚，放在捏捏上會微微發光；不是零件包，每放一個用掉一份（S.cave.mossN）
+  moss: { n: '苔光', v: .12, pack: 'cave', c: '#86efac', glow: 1 },
 };
 const PACKS = { metal: { name: '金屬零件包', cost: 200 }, glass: { name: '水晶零件包', cost: 500 }, neon: { name: '霓虹零件包', cost: 1500 }, prism: { name: '稜鏡零件包', cost: 3000 } };
 const UPS = {
@@ -636,12 +638,13 @@ function decoGeo(k) {
     case 'dodeca': return new THREE.DodecahedronGeometry(.25);
     case 'helix': return new THREE.TorusKnotGeometry(.14, .04, 100, 10, 2, 5);
     case 'halo': { const g = new THREE.TorusGeometry(.26, .03, 10, 48); g.rotateX(Math.PI / 2); return g; }
+    case 'moss': { const g = new THREE.IcosahedronGeometry(.2, 1); g.scale(1, .55, 1); return g; } // 一小團軟軟的苔蘚
   }
   return new THREE.SphereGeometry(.2);
 }
 function decoMat(k) {
   const d = DECO[k];
-  return new THREE.MeshPhysicalMaterial({ color: d.c, roughness: d.metal ? .22 : .3, metalness: d.metal ? .9 : .1, clearcoat: 1, emissive: d.glow ? d.c : '#000000', emissiveIntensity: d.glow ? .9 : 0, transmission: d.pack === 'glass' ? .5 : 0, thickness: .5 });
+  return new THREE.MeshPhysicalMaterial({ color: d.c, roughness: d.metal ? .22 : .3, metalness: d.metal ? .9 : .1, clearcoat: 1, emissive: d.glow ? d.c : '#000000', emissiveIntensity: d.glow ? (k === 'moss' ? .55 : .9) : 0, transmission: d.pack === 'glass' ? .5 : 0, thickness: .5 });
 }
 function jellyDeco(J, p) {
   J.decoMeshes.forEach(m => { J.dg.remove(m); m.geometry.dispose(); m.material.dispose(); });
@@ -3942,8 +3945,9 @@ document.addEventListener('click', e => {
     case 'wkDeliver': { if (S.wk.w !== weekNo()) S.wk = { w: weekNo(), done: [] }; const o = weeklyOrders().find(x => x.id === +id); if (!o || S.wk.done.includes(o.id)) return; const it = wkItems(o); if (it.length < o.n) return; S.stock = S.stock.filter(p => !it.includes(p)); addMoney(o.reward); S.fans += o.fans; gainXP(15); S.wk.done.push(o.id); sfx.level(); toast(`本週限定訂單完成 +${fmt(o.reward)}　粉絲 +${o.fans}`); refresh(); save(); break; }
     case 'pickCut': if (CUTS[k] && !M.active) { S.cut = k; renderMake(); save(); } break;
     case 'decoSel': D.id = +id; renderDecor(); break;
-    case 'addDeco': { const p = decorSt.p; if (!p) return; if (p.deco.length >= 6) return toast('最多 6 個零件'); p.deco.push({ k, x: rnd(-.45, .45), z: rnd(-.45, .45), s: 1, r: 0 }); decorSt.sel = p.deco.length - 1; decorSt.rebuildDeco(); sfx.tick(); renderDecorTools(); save(); break; }
-    case 'delDeco': { const p = decorSt.p; if (p && decorSt.sel >= 0) { p.deco.splice(decorSt.sel, 1); decorSt.sel = -1; decorSt.rebuildDeco(); renderDecorTools(); save(); } break; }
+    case 'addDeco': { const p = decorSt.p; if (!p) return; if (p.deco.length >= 6) return toast('最多 6 個零件');
+      if (DECO[k] && DECO[k].pack === 'cave') { if (!(S.cave && S.cave.mossN > 0)) return toast('還沒有苔光：到山洞裡摘發光苔蘚（每個洞每天 3 次）'); S.cave.mossN--; } p.deco.push({ k, x: rnd(-.45, .45), z: rnd(-.45, .45), s: 1, r: 0 }); decorSt.sel = p.deco.length - 1; decorSt.rebuildDeco(); sfx.tick(); renderDecorTools(); save(); break; }
+    case 'delDeco': { const p = decorSt.p; if (p && decorSt.sel >= 0) { const gone = p.deco[decorSt.sel]; if (gone && DECO[gone.k] && DECO[gone.k].pack === 'cave' && S.cave) S.cave.mossN = (S.cave.mossN || 0) + 1; p.deco.splice(decorSt.sel, 1); decorSt.sel = -1; decorSt.rebuildDeco(); renderDecorTools(); save(); } break; }
     case 'photo': { if (!decorSt.ready) return; decorSt.selRing.visible = false; decorSt.v.render(); const a2 = document.createElement('a'); a2.download = 'squish-lab.png'; a2.href = decorSt.cv.toDataURL('image/png'); a2.click(); toast('已儲存圖片'); break; }
     case 'toggleLive': L.auto = false; toggleLive(); setTimeout(liveBroadcast, 50); break;
     case 'stageSel': L.stageId = +id; renderLive(); liveBroadcast(); break;
