@@ -536,13 +536,16 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 @keyframes zoneTitle { 0% { opacity: 0; transform: translate(-50%, -42%); letter-spacing: .3em; } 18% { opacity: 1; transform: translate(-50%, -50%); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -54%); } }
 @media (prefers-reduced-motion: reduce) { #zoneTitle.on { animation: zoneTitleR 4.2s linear forwards; } @keyframes zoneTitleR { 0%, 100% { opacity: 0; } 12%, 80% { opacity: 1; } } }
 
-/* 第 4 堂：開場的穿越機鏡頭——HUD 先收起來、上下一點黑邊、右下角「略過」提示 */
-body.intro #hud > *:not(#vig) { opacity: 0 !important; transition: opacity .3s; pointer-events: none; }
+/* 第 4 堂：開場的穿越機鏡頭——HUD 先收起來（訊息列 #log 照常，房號、時段提示看得到）、上下一點黑邊、右下角「略過」提示；
+   最後 0.8 秒黑邊收回（intro-out），結束時 HUD 用 0.5 秒淡入（intro-done），不會一下子跳回來 */
+body.intro #hud > *:not(#vig):not(#log) { opacity: 0 !important; transition: opacity .3s; pointer-events: none; }
 body.intro #game::before, body.intro #game::after { content: ''; position: fixed; left: 0; right: 0; height: 7vh; background: #000; z-index: 5; pointer-events: none; animation: introBar .5s ease both; }
 body.intro #game::before { top: 0; } body.intro #game::after { bottom: 0; }
 @keyframes introBar { from { height: 0; } }
+body.intro.intro-out #game::before, body.intro.intro-out #game::after { animation: introBarOut .8s ease forwards; }
+@keyframes introBarOut { to { height: 0; } }
+body.intro-done #hud > *:not(#vig):not(#log) { animation: hudIn .5s ease both; }
+@keyframes hudIn { from { opacity: 0; } }
 #introSkip { position: fixed; right: 22px; bottom: calc(7vh + 14px); z-index: 7; color: rgba(255, 255, 255, .78); font-size: 13px; letter-spacing: .08em; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); animation: introHint 2.4s ease-in-out infinite; }
 @keyframes introHint { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-#introFade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 8; }
-#introFade.on { animation: introFade 1.1s ease forwards; }
-@keyframes introFade { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0; } }
+#introFade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 8; } /* 遮罩：caves.js 每格設 opacity 與顏色（黑幕、雲、出口的白光），和鏡頭同步 */

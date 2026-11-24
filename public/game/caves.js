@@ -551,12 +551,18 @@ function caveSurface() { return CV.c ? (CV.c.puddles && CV.c.puddles.some(p => M
 const CAVE_TC = new THREE.Color(), CAVE_TC2 = new THREE.Color();
 function caveEnv(dt) {
   if (!CAVES.length || !P) return;
-  if (INTRO.on) { if (INTRO.inCave) { CV.c = INTRO.c; CV.s = INTRO.s; CV.i = INTRO.i || 0; CV.dir = -1; } else CV.c = null; } // 開場：山洞的霧、光、圖層跟著穿越機走
-  if (TITLE.on) { if (CV.mode !== 'out') { CV.mode = 'out'; W.cam.layers.mask = 1; CAVES.forEach(o => { o.g.visible = true; }); } return; } // 主選單的環繞鏡頭不受玩家位置影響
-  // 讀檔或傳送之後人在洞裡（例如存檔時正在洞裡）：找出是哪個洞
-  if (!INTRO.on && !CV.c && (++CV.scanN % 20 === 0 || CV.scanNow)) for (const c of CAVES) { const q = caveQ(c, P.x, P.z, null); if (q.s > .3 && q.s < c.L - .3 && Math.abs(q.l) < q.w * .9) { caveEnter(c, q.s < c.L / 2 ? 1 : -1); CV.i = q.i; CV.s = q.s; P.y = q.y; P.vy = 0; break; } } // 山脊上走不到，人在洞的範圍裡一定是在洞裡
+  // 主選單的環繞鏡頭不受玩家位置影響；順便記下「標題還在畫」與鏡頭的地面投影（天色跟著鏡頭），第一格先預熱開場會用到的著色器
+  if (TITLE.on) {
+    const cp = W.cam.position, e = INTRO.env || (INTRO.env = { x: 0, y: 0, z: 0, yaw: 0 }); INTRO.titleAt = performance.now(); e.x = cp.x; e.z = cp.z; e.y = H(cp.x, cp.z); IPV[5].set(0, 0, -1).applyQuaternion(W.cam.quaternion); e.yaw = Math.atan2(-IPV[5].x, -IPV[5].z); if (!INTRO.warm) introPrewarm();
+    if (CV.mode !== 'out') { CV.mode = 'out'; W.cam.layers.mask = 1; CAVES.forEach(o => { o.g.visible = true; }); } return;
+  }
+  // 開場：先算好穿越機這一格的位置，山洞的霧、光、圖層、曝光跟著它（R），玩家自己的山洞狀態（CV.c、CV.s、CV.dir）不動
+  if (INTRO.on) introAdvance(dt);
+  const R = INTRO.on ? INTRO.v : CV;
+  // 讀檔或傳送之後人在洞裡（例如存檔時正在洞裡）：找出是哪個洞（山脊上走不到，人在洞的範圍裡一定是在洞裡）
+  if (!INTRO.on && !CV.c && (++CV.scanN % 20 === 0 || CV.scanNow)) { const h = caveAt(P.x, P.z); if (h) { caveEnter(h.c, h.q.s < h.c.L / 2 ? 1 : -1); CV.i = h.q.i; CV.s = h.q.s; P.y = h.q.y; P.vy = 0; if (CV.scanNow) P.camY = P.y; } CV.scanNow = 0; }
   if (CV.c && !INTRO.on) { const q = caveQ(CV.c, P.x, P.z, CV.i); if (q.s < -3 || q.s > CV.c.L + 3 || Math.abs(q.l) > q.w + 3) { CV.c = null; } }
-  const c = CV.c, s = CV.s; let k = 0, mode = 'out';
+  const c = R.c, s = R.s; let k = 0, mode = 'out';
   if (c) { k = smooth(1.5, c.sIn, s) * (c.dead ? 1 : 1 - smooth(c.L - c.sIn, c.L - 1.5, s)); mode = s > c.sIn && (c.dead || s < c.L - c.sIn) ? 'deep' : 'mouth'; }
   CV.k = k;
   if (mode !== CV.mode) {
@@ -578,14 +584,14 @@ function caveEnv(dt) {
   if (Math.abs((CV.envK || 0) - k) > .01) { CV.envK = k; W.cam.traverse(o => { const m = o.material; if (m && 'envMapIntensity' in m) m.envMapIntensity = 1 - .85 * k; }); }
   // 曝光：洞裡眼睛適應黑暗；快到出口時越走越亮，走出去的一瞬間豁然開朗，再慢慢回到正常
   let ex = 1 + .28 * k;
-  if (c && !c.dead) { const toEnd = CV.dir > 0 ? c.L - s : s; ex += .55 * smooth(24, 3, toEnd) * (mode === 'deep' || toEnd < c.sIn ? 1 : 0); }
+  if (c && !c.dead) { const toEnd = R.dir > 0 ? c.L - s : s; ex += .55 * smooth(24, 3, toEnd) * (mode === 'deep' || toEnd < c.sIn ? 1 : 0); }
   if (CV.flash > 0) { CV.flash = Math.max(0, CV.flash - dt * .6); ex += .5 * CV.flash * CV.flash; }
   W.r.toneMappingExposure += (ex - W.r.toneMappingExposure) * Math.min(1, dt * 4);
   // 出口時鏡頭稍微抬起（第一次，2.3）
   if (CV.lift > 0 && !INTRO.on) { CV.lift = Math.max(0, CV.lift - dt); if (!GUI.kind) P.pitch += (.12 - P.pitch) * Math.min(1, dt * 1.6) * smooth(0, .5, CV.lift); }
   // 動畫：發光痕跡往出口流動、出口亮光在走近時淡出、月光洞窟
   for (const o of CAVES) {
-    if (o.trailTex) o.trailTex.offset.x = -W.t * .45 * (o === c ? CV.dir : 1);
+    if (o.trailTex) o.trailTex.offset.x = -W.t * .45 * (o === c ? R.dir : 1);
     if (o !== c && mode !== 'out') continue;
     o.glows.forEach((g, j) => { const e = o.ends[j], d = o === c ? Math.abs((e.s || 0) - s) : 99; g.material.opacity = smooth(4, 16, d) * (1 - .55 * DN.night); });
     if (o.mat) o.mat.color.setRGB(1 - .3 * DN.night, 1 - .27 * DN.night, 1 - .15 * DN.night);
@@ -596,13 +602,13 @@ function caveEnv(dt) {
 function caveMoonStep(dt) {
   const c = CAVES.find(o => o.id === 'moon'); if (!c) return; const n = DN.night;
   if (c.lake) { const u = c.lake.m.material.uniforms.mk; u.value += (n - u.value) * Math.min(1, dt * .5); }
-  if (c.crack) { c.crack.material.opacity = .15 + .85 * n; c.crack.visible = true; if (c.plug) c.plug.visible = n < .5 && CV.c !== c; } // 天亮時人還在洞裡：洞口不封起來（5.3 出口一直開著）
+  if (c.crack) { c.crack.material.opacity = .15 + .85 * n; c.crack.visible = true; if (c.plug) c.plug.visible = n < .5 && CV.c !== c && !(INTRO.on && INTRO.via === c); } // 天亮時人還在洞裡：洞口不封起來（5.3 出口一直開著）；開場穿過這個洞時整段都不封
   c.shafts.forEach(sh => { if (sh.m) sh.m.material.uniforms.k.value = .15 + .5 * n; if (sh.hole) sh.hole.material.color.set(n > .5 ? '#c7d2fe' : '#3b3f66'); });
 }
 // 洞裡的配樂：進洞時淡出、換成環境音；出洞時新區域的主題曲淡入（2.2）
 function caveMusic() { return 1 - .92 * CV.k; }
 function caveAmb() {
-  if (!CV.c || CV.k < .3) return false; const t = AC.currentTime, th = CV.c.th;
+  const R = INTRO.on ? INTRO.v : CV; if (!R.c || CV.k < .3) return false; const t = AC.currentTime, th = R.c.th; // 開場時聽的是穿越機所在的洞
   if (th === 'sea') { swell(t, rnd(3, 4.5), 380, 1.2, .05); swell(t + rnd(.25, .4), rnd(2.5, 3.5), 300, 1, .025); AMB.t = rnd(3, 4.5); }
   else if (th === 'lava') { swell(t, rnd(2.5, 3.5), 70, .9, .085); if (Math.random() < .5) for (let i = 0; i < 3; i++) sweep(rnd(90, 160), rnd(50, 70), t + i * rnd(.08, .2), .12, .02); AMB.t = rnd(2, 3.2); }
   else if (th === 'ice') { const f = rnd(1500, 2600); tone(f, t, .08, .03); tone(f * 1.01, t + .19, .07, .012); tone(f * .99, t + .38, .06, .005); AMB.t = rnd(.9, 2.2); }
@@ -697,78 +703,560 @@ function caveSlimeStep(s, dt, dist) {
 }
 
 /* ============================================================
-   開場：穿越機（FPV 空拍機）視角穿過一條山洞，進到月光谷中央平地（每次進入遊戲都播，任意鍵略過）
-   A 從某一區的洞口外俯衝進洞 → B 沿著山洞曲線高速穿梭（轉彎時機身傾斜，大廳放慢）→ C 從平地那側衝出、拉高掠過樹梢 → 接回第一人稱
+   開場：穿越機（FPV 空拍機）——從現在的畫面一路飛進玩家的眼睛（每次進入遊戲都播，任意鍵略過）
+   - 起點是上一格畫出來的鏡頭（標題的環繞鏡頭：位置、方向、速度都接著飛）；開機直接開始時是某個洞口外，黑幕淡入
+   - 終點：最後一格剛好是玩家的眼睛與視線（P.x、P.camY＋P.eye、P.z；P.yaw、P.pitch），接回第一人稱時一格都不跳
+   - 路線一定穿過一條山洞：人在哪一區就從那一區的洞飛出來，人在洞裡就沿著那條洞飛到身邊；可以選的時候用「時間＋懲罰」挑
+   - 整條路線在 introStart 先算成一張表（每 0.5 公尺一筆：位置、時間、速度、在哪個洞的哪裡），播放時照時間查表；
+     方向＝看路線前方的點＋轉彎傾斜＋一點抖動，經過角速度限制（不會急甩），最後 2 秒慢慢轉成玩家的視線
+   - 只有跨 4 公里去大城市、或從標題直接飛到山脊外時，才在畫面完全被遮住（雲裡、出口的白光）的那幾格換位置
+   - 開場期間不動玩家自己的山洞狀態（CV）：穿越機在哪個洞放在 INTRO.v，caveEnv 用它決定霧、光、圖層、曝光
    ============================================================ */
-const INTRO = { on: false, t: 0, c: null, s: 0, inCave: false, done: null, skip: false, pos: new THREE.Vector3(), q: new THREE.Quaternion(), roll: 0, hum: null };
-const IV = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], IM = new THREE.Matrix4(), IUP = new THREE.Vector3(0, 1, 0), IQ = new THREE.Quaternion(), IE = new THREE.Euler(0, 0, 0, 'YXZ');
+const INTRO = { on: false, t: 0, v: { c: null, s: 0, i: 0, dir: 1 }, env: null, titleAt: -1e9, warm: 0, force: null, seed: null, via: null, hum: null, ray: null };
+const IPS = .5, ipv = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z), IPUP = ipv(0, 1, 0), IPM = new THREE.Matrix4(), IPE = new THREE.Euler(0, 0, 0, 'YXZ');
+const IPQ = Array.from({ length: 5 }, () => new THREE.Quaternion()), IPV = Array.from({ length: 6 }, () => new THREE.Vector3()), IPC = new THREE.Color(), IPC2 = new THREE.Color();
+const ihf = (c, i) => Math.min(c.Hh[i] * .45, 2.6); // 在洞裡飛的高度（離地）
+const itp = (c, s) => { const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1); return ipv(c.X[i], c.Y[i] + ihf(c, i), c.Z[i]); };
+const ismo = x => { x = clamp(x, 0, 1); return x * x * x * (x * (x * 6 - 15) + 10); }; // smootherstep：頭尾的速度、加速度都是 0
+const ipLocked = c => !!((c.def.gate && !S.zones.includes(c.def.gate)) || (c.def.coat && !S.own.coat));
+const ipBack = (L, k = 3) => { const n = L.length, a = L[n - 1].p, b = L[Math.max(0, n - 1 - k)].p, d = a.clone().sub(b); return d.lengthSq() > 1e-8 ? d.normalize() : null; }; // 一段路最後的方向
+
+/* ---------- 路線的積木（全部在 introStart 時算好） ---------- */
+// 洞口：e＝0 平地那側、1 區域那側；o＝往洞外、nr＝橫向、tail＝洞口往裡 4 公尺（曲線在洞口和洞軸共線）
+function ipMouth(c, e) { const i = e ? c.n - 1 : 0, k = e ? 1 : -1, o = ipv(c.TX[i] * k, 0, c.TZ[i] * k).normalize(); return { i, m: itp(c, e ? c.L : 0), o, nr: ipv(-o.z, 0, o.x), tail: itp(c, e ? c.L - 4 : 4) }; }
+// 向心 Catmull-Rom（alpha 0.5：控制點忽遠忽近也不會打結）
+function ipCmr(a, b, c, d, u) {
+  const t1 = Math.sqrt(Math.max(1e-6, a.distanceTo(b))), t2 = t1 + Math.sqrt(Math.max(1e-6, b.distanceTo(c))), t3 = t2 + Math.sqrt(Math.max(1e-6, c.distanceTo(d))), t = t1 + (t2 - t1) * u;
+  const L = (p, q, ta, tb) => p.clone().multiplyScalar((tb - t) / (tb - ta)).addScaledVector(q, (t - ta) / (tb - ta)), A1 = L(a, b, 0, t1), A2 = L(b, c, t1, t2), A3 = L(c, d, t2, t3);
+  return L(L(A1, A2, 0, t2), L(A2, A3, t1, t3), t1, t2);
+}
+// 控制點 → 曲線 → 每 0.5 公尺重新取樣；head／tail 是頭尾的虛擬點，決定端點的切線
+function ipCR(ctrl, head, tail) {
+  const n = ctrl.length, Q = [head || ctrl[0].clone().multiplyScalar(2).sub(ctrl[1]), ...ctrl, tail || ctrl[n - 1].clone().multiplyScalar(2).sub(ctrl[n - 2])], raw = [];
+  for (let i = 1; i < Q.length - 2; i++) { const m = Math.max(4, Math.ceil(Q[i].distanceTo(Q[i + 1]) / .15)); for (let k = 0; k < m; k++) raw.push(ipCmr(Q[i - 1], Q[i], Q[i + 1], Q[i + 2], k / m)); }
+  raw.push(ctrl[n - 1].clone()); const out = [raw[0]]; let acc = 0, need = IPS;
+  for (let i = 1; i < raw.length; i++) { const a = raw[i - 1], b = raw[i], l = a.distanceTo(b); while (l > 1e-9 && acc + l >= need) { out.push(a.clone().lerp(b, (need - acc) / l)); need += IPS; } acc += l; }
+  const last = ctrl[n - 1]; if (out.length > 1 && out[out.length - 1].distanceTo(last) < .2) out[out.length - 1] = last.clone(); else out.push(last.clone()); return out;
+}
+// 地面（離地檢查用）：海面也算地面；大城市是平的
+const ipGround = (x, z) => x > 1500 ? 0 : x > 200 ? Math.max(H(x, z), -1.1) : H(x, z);
+// 洞口直段的走廊（地形在這裡挖空，H 是山體的高度）：離地檢查不算這裡
+function ipCorr(x, z) {
+  for (const c of CAVES) for (const e of c.ends) { if (Math.abs(x - e.x) > 14 || Math.abs(z - e.z) > 14) continue; const q = caveQ(c, x, z, e.i); if (Math.abs(q.l) < q.w && (e.s ? q.s > c.L - CAVE_L0 - 2 && q.s < c.L + 2 : q.s > -2 && q.s < CAVE_L0 + 2)) return true; }
+  return false;
+}
+let IPCLR = null; // 減少動態時空中段貼著地面飛（2 公尺），不要一出洞就爬高
+// 空中段：依地形墊高到 H＋9（LOW 7）公尺，離錨點 fa／fb 公尺內淡掉（最少離地 1 公尺）；先取「帳篷形」最大值再平均，讓高度提前慢慢升起
+function ipAir(pts, fa = 26, fb = 26) {
+  const n = pts.length, clr = IPCLR != null ? IPCLR : LOW ? 7 : 9, rise = new Float32Array(n), w = new Float32Array(n), tent = new Float32Array(n), R = 60, A = 24; fa = Math.max(.5, fa); fb = Math.max(.5, fb);
+  for (let i = 0; i < n; i++) { const p = pts[i]; w[i] = smooth(0, fa, i * IPS) * smooth(0, fb, (n - 1 - i) * IPS); if (p.x > 1500 || !ipCorr(p.x, p.z)) rise[i] = Math.max(0, ipGround(p.x, p.z) + Math.max(1, clr * w[i]) - p.y); }
+  for (let i = 0; i < n; i++) { let m = 0; for (let j = Math.max(0, i - R); j <= Math.min(n - 1, i + R); j++) m = Math.max(m, rise[j] * (1 - Math.abs(j - i) / (R + 1))); tent[i] = m; }
+  const long = n * IPS > 80; // 長的空中段、離地 12 公尺以上：飛快一點（34 m/s）
+  return pts.map((p, i) => { let s = 0, k = 0; for (let j = Math.max(0, i - A); j <= Math.min(n - 1, i + A); j++) { s += tent[j]; k++; } p.y += Math.max(s / k * w[i], rise[i]); return { p, c: null, s: 0, sd: 1, hi: long && p.x < 1500 && p.y - ipGround(p.x, p.z) > 12 }; });
+}
+// 洞壁實際的形狀：管子是低面數的（LOW 每圈只有 8 個點、2.4 公尺一圈），轉角的弦會切進標稱的斷面裡。
+// 從建好的管子網格取出這個 s 前後兩圈的頂點，內插成斷面多邊形；點離每一邊不到 mg 公尺（或在外面）就往斷面中心推
+function ipWall(c) {
+  if (c.wallQ) return c.wallQ; const N = LOW ? 8 : 14, segs = [];
+  c.g.children.forEach(m => { const rings = m.userData && m.userData.rings; if (rings && rings.length > 1 && m.geometry) segs.push({ rings, pos: m.geometry.attributes.position.array }); });
+  // 第 r 圈第 k 個點＝四邊形 (r,k) 第一個三角形的第一個頂點；最後一圈用前一圈四邊形的第二個頂點（caveTube 的頂點順序）
+  const vert = (g, r, k, out) => { const rr = Math.min(r, g.rings.length - 2), o = 2 * (rr * N + k) * 9 + (r > rr ? 3 : 0); return out.set(g.pos[o], g.pos[o + 1], g.pos[o + 2]); };
+  // 檢查：每一段第一圈的第 0 個點應該是那一圈的地面中心；對不上（管子的做法改了）就不用這個修正，只靠標稱斷面的夾限
+  const ok = segs.every(g => g.pos.length >= (g.rings.length - 1) * N * 18 && vert(g, 0, 0, IPV[0]).distanceTo(IPV[1].set(c.X[g.rings[0]], c.Y[g.rings[0]], c.Z[g.rings[0]])) < .6);
+  return (c.wallQ = { N, segs: ok ? segs : [], vert });
+}
+function ipPolyDist(P, x, y) { let inside = false, md = 1e9; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const xi = P[i][0], yi = P[i][1], xj = P[j][0], yj = P[j][1]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside; const ex = xi - xj, ey = yi - yj, L2 = ex * ex + ey * ey, t = L2 > 0 ? clamp(((x - xj) * ex + (y - yj) * ey) / L2, 0, 1) : 0; md = Math.min(md, Math.hypot(x - xj - ex * t, y - yj - ey * t)); } return inside ? md : -md; }
+function ipInside(c, s, p, mg = .4) {
+  const W2 = ipWall(c), i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), g = W2.segs.find(o => i >= o.rings[0] && i <= o.rings[o.rings.length - 1]); if (!g) return p;
+  const R = g.rings; let r = 0; while (r < R.length - 2 && R[r + 1] < i) r++; const f = clamp((i - R[r]) / Math.max(1, R[r + 1] - R[r]), 0, 1), N = W2.N, poly = [];
+  const cx = c.X[i], cz = c.Z[i], tx = c.TX[i], tz = c.TZ[i], nx = -tz, nz = tx, y0 = c.Y[i];
+  if (c.TX[R[r]] * tx + c.TZ[R[r]] * tz < .9 || c.TX[R[r + 1]] * tx + c.TZ[R[r + 1]] * tz < .9) return p; // 前後兩圈的方向差太多（曲線在這裡折回、管子扭到）：斷面不可信，不推
+  for (let k = 0; k < N; k++) { const a = W2.vert(g, r, k, IPV[0]), b = W2.vert(g, r + 1, k, IPV[1]); poly.push([(a.x + (b.x - a.x) * f - cx) * nx + (a.z + (b.z - a.z) * f - cz) * nz, a.y + (b.y - a.y) * f - y0]); }
+  const along = (p.x - cx) * tx + (p.z - cz) * tz; let lx = (p.x - cx) * nx + (p.z - cz) * nz, ly = p.y - y0; const cy = c.Hh[i] * .45;
+  for (let it = 0; it < 16 && ipPolyDist(poly, lx, ly) < mg; it++) { lx += (0 - lx) * .2; ly += (cy - ly) * .2; }
+  p.x = cx + nx * lx + tx * along; p.z = cz + nz * lx + tz * along; p.y = y0 + ly; return p;
+}
+// 洞裡：沿中心線（離地 ihf），±3 公尺移動平均把折角削圓；橫向不超過「半寬−0.7」，高度在地面＋0.6 到洞頂−0.4 之間，再確認離實際的洞壁 0.4 公尺以上
+function ipTube(c, s0, s1) {
+  const dir = s1 >= s0 ? 1 : -1, len = Math.abs(s1 - s0), n = Math.max(2, Math.ceil(len / IPS - 1e-6) + 1), ss = [], raw = [];
+  for (let k = 0; k < n; k++) { const s = s0 + dir * Math.min(k * IPS, len); ss.push(s); raw.push(itp(c, s)); }
+  const R = 6; return raw.map((p, k) => {
+    let x = 0, y = 0, z = 0, m = 0; for (let j = Math.max(0, k - R); j <= Math.min(n - 1, k + R); j++) { x += raw[j].x; y += raw[j].y; z += raw[j].z; m++; }
+    const q = ipv(x / m, y / m, z / m), e = Math.min(k, n - 1 - k) / R; if (e < 1) q.lerp(p, 1 - e);
+    const i = clamp(Math.round(ss[k] / CAVE_STEP), 0, c.n - 1), nx = -c.TZ[i], nz = c.TX[i], l = (q.x - c.X[i]) * nx + (q.z - c.Z[i]) * nz, lim = Math.max(0, c.Wd[i] - .7);
+    if (Math.abs(l) > lim) { const d = (Math.abs(l) - lim) * Math.sign(l); q.x -= nx * d; q.z -= nz * d; }
+    q.y = clamp(q.y, c.Y[i] + .6, c.Y[i] + c.Hh[i] - .4); ipInside(c, ss[k], q); return { p: q, c, s: ss[k], sd: dir };
+  });
+}
+// 洞裡的一段曲線（落地、繞湖）：每一筆都標上在哪個洞的哪裡（洞口外的算在洞外；死路的洞底那頭一律算在洞裡）；
+// 曲線轉彎時會往外鼓：在洞裡的點夾回離牆 0.45 公尺、離地 0.65 到洞頂 −0.45 之間（玩家站得到的地方本來就在這裡面）
+function ipInCave(c, pts, head, tail, sd) {
+  let i0 = null; const E = pts[pts.length - 1]; return ipCR(pts, head, tail).map(p => {
+    const q = caveQ(c, p.x, p.z, i0); i0 = q.i; const inside = q.s > 0 && (c.dead || q.s < c.L), s = Math.min(q.s, c.L);
+    if (inside) { const lim = Math.max(0, q.w - .45); if (Math.abs(q.l) > lim) { const d = (Math.abs(q.l) - lim) * Math.sign(q.l); p.x -= q.nx * d; p.z -= q.nz * d; } p.y = clamp(p.y, q.y + .65, q.y + q.h - .45); if (p.distanceTo(E) > 1.5 && s < c.L - .5) ipInside(c, s, p); } // 眼睛旁邊不動（玩家站得到的地方就是對的）
+    return { p, c: inside ? c : null, s, sd };
+  });
+}
+// 把幾段接起來（去掉重複的接點；換位置、迴轉的那一筆保留）
+function ipJoin(...legs) { const out = []; for (const L of legs) L.forEach((q, k) => { if (k === 0 && out.length && !q.cut && !q.piv && out[out.length - 1].p.distanceTo(q.p) < .3) return; out.push(q); }); return out; }
+// 標題的環繞鏡頭（上一格畫出來的樣子）
+function ipTitle() { const cam = W.cam, q = cam.quaternion.clone(), fwd = ipv(0, 0, -1).applyQuaternion(q).setY(0); if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1); return { p: cam.position.clone(), q, fwd: fwd.normalize(), fov: cam.fov }; }
+function ipRoof() { if (ipRoof.y == null) { try { ipRoof.y = W.cottage ? new THREE.Box3().setFromObject(W.cottage).max.y : 10; } catch (e) { ipRoof.y = 10; } if (!isFinite(ipRoof.y)) ipRoof.y = 10; } return ipRoof.y; }
+// 從標題起飛：先沿著原本的視線往工坊滑出去（不原地掉頭）；目標在身後（差超過 110°）就繞工坊飛一段弧，高度在屋頂上 6 公尺以上
+function ipTakeoff(st, to) {
+  const p1 = st.p.clone().addScaledVector(st.fwd, 7).add(ipv(0, 1.2, 0)), pts = [st.p.clone(), p1], dir = to.clone().sub(st.p).setY(0).normalize();
+  if (Math.acos(clamp(dir.dot(st.fwd), -1, 1)) > 1.92) {
+    const a0 = Math.atan2(p1.x, p1.z), a1 = Math.atan2(to.x, to.z); let da = a1 - a0; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI;
+    const m = Math.max(2, Math.ceil(Math.abs(da) / .8)), y = Math.max(p1.y, ipRoof() + 6); for (let k = 1; k < m; k++) { const a = a0 + da * k / m; pts.push(ipv(Math.sin(a) * 26, y, Math.cos(a) * 26)); }
+  }
+  return pts;
+}
+// 穿雲的爬升：從 p 沿水平方向 h 以約 30° 爬升，最後一點就是雲裡換位置的地方
+const ipClimb = (p, h, dy = 20) => [p.clone().addScaledVector(h, 10).add(ipv(0, dy * .2, 0)), p.clone().addScaledVector(h, 21).add(ipv(0, dy * .58, 0)), p.clone().addScaledVector(h, 31).add(ipv(0, dy, 0))];
+// 玩家的眼睛：E＝位置、Qp＝方向、d＝視線、f＝水平前方
+function ipEye() {
+  const yaw = P.yaw, pt = P.pitch, E = ipv(P.x, P.camY + P.eye, P.z), Qp = new THREE.Quaternion().setFromEuler(IPE.set(pt, yaw, 0, 'YXZ'));
+  return { E, Qp, d: ipv(-Math.sin(yaw) * Math.cos(pt), Math.sin(pt), -Math.cos(yaw) * Math.cos(pt)), f: ipv(-Math.sin(yaw), 0, -Math.cos(yaw)), yaw, pitch: pt };
+}
+// 落地：L2＝玩家背後 11 公尺、高 3 公尺 → L1＝沿視線往回 3.5 公尺 → 眼睛；迎面而來（轉角 > 120°）就先繞到背後。
+// rot：背後被擋住時把「背後」轉個角度；top：從正上方 6 公尺降下來
+function ipLandPts(from, eye, rot = 0, top = false) {
+  const { E, d, f } = eye, to = E.clone().sub(from).setY(0), th = to.lengthSq() > 1e-6 ? Math.acos(clamp(to.normalize().dot(f), -1, 1)) : 0, pts = [];
+  if (top) { pts.push(E.clone().addScaledVector(f, -2.5).add(ipv(0, 6, 0)), E.clone().addScaledVector(f, -.9).add(ipv(0, 1.8, 0)), E.clone()); return { pts, th, tan: E.clone().sub(pts[1]).normalize() }; }
+  const fb = f.clone().applyAxisAngle(IPUP, rot);
+  if (th > 2.094) { const nr = ipv(-f.z, 0, f.x), sd = Math.sign(nr.dot(from.clone().sub(E))) || 1; pts.push(E.clone().addScaledVector(fb, -17).addScaledVector(nr, 10 * sd).add(ipv(0, 6, 0))); }
+  pts.push(E.clone().addScaledVector(fb, -11).add(ipv(0, 3, 0)), E.clone().addScaledVector(d, -3.5), E.clone()); return { pts, th, tan: d.clone() };
+}
+// 從外面對準洞口飛進去：冷開場從洞口外上空俯衝；從標題直接飛過去；穿雲後從 sky 那點俯衝。最後 16 公尺和洞軸共線
+function ipGuideIn(c, e, from) {
+  const M = ipMouth(c, e), m = M.m, o = M.o, mn = c.dead, Q3 = m.clone().addScaledVector(o, 4).add(ipv(0, mn ? 0 : .2, 0)), Q2 = m.clone().addScaledVector(o, 16).add(ipv(0, mn ? 2.5 : 3.5, 0));
+  let pts, head = null, fa = 26;
+  if (from.sky) { pts = [from.sky, Q2, Q3, m]; head = from.sky.clone().addScaledVector(from.dir, -4); fa = 6; }
+  else if (from.title) { const Q1 = m.clone().addScaledVector(o, 30).add(ipv(0, mn ? 7 : 8, 0)); pts = [...ipTakeoff(from.title, Q1), Q1, Q2, Q3, m]; head = from.title.p.clone().addScaledVector(from.title.fwd, -4); fa = 10; }
+  else pts = [mn ? m.clone().addScaledVector(o, 36).add(ipv(0, 10, 0)) : m.clone().addScaledVector(o, 44).addScaledVector(M.nr, 8).add(ipv(0, 14, 0)), Q2, Q3, m];
+  const out = ipAir(ipCR(pts, head, M.tail), fa, 26); out[out.length - 1].mouth = 1; return out;
+}
+// 從洞口出來：洞口 → 外 6 公尺 → 外 15 公尺 → 落地
+function ipExit(c, e, eye, rot = 0, top = false) {
+  const M = ipMouth(c, e), m = M.m, o = M.o, X2 = m.clone().addScaledVector(o, 15).add(ipv(0, 2.5, 0)), L = ipLandPts(X2, eye, rot, top);
+  const air = ipAir(ipCR([m, m.clone().addScaledVector(o, 6).add(ipv(0, .3, 0)), X2, ...L.pts], M.tail, eye.E.clone().addScaledVector(L.tan, 4)), 20, 10);
+  return { air, th: L.th, tan: L.tan, X2 };
+}
+
+/* ---------- 落地前的障礙物（屋簷、樹、大城市的房子、朋友的頭像） ---------- */
+// 第 0 層、不透明、沒被遊戲藏起來的網格；道具區塊、地標、大城市這些「依鏡頭距離」藏起來的，不管現在藏不藏都算；地形另外用 H 算
+function ipObs(cx, cz, r) {
+  const out = [], keep = new Set([...W.chunks, W.city, ...(typeof LMS !== 'undefined' ? LMS.flatMap(L => L.near) : [])]), V = IPV[0], lay = INTRO.ray.layers, walk = o => {
+    if (o === W.sky || o === W.cam || (o.userData && o.userData.terrain)) return; if (!o.visible && !keep.has(o)) return;
+    if ((o.isMesh || o.isInstancedMesh) && o.layers.test(lay)) { const m = o.material; if (m && !Array.isArray(m) && m.visible !== false && !(m.transparent && m.opacity < .6) && !m.isShaderMaterial) {
+      const g = o.geometry; if (o.isInstancedMesh) { if (!o.boundingSphere) o.computeBoundingSphere(); } else if (g && !g.boundingSphere) g.computeBoundingSphere();
+      const bs = o.isInstancedMesh ? o.boundingSphere : g && g.boundingSphere; if (bs) { V.copy(bs.center).applyMatrix4(o.matrixWorld); const sc = o.matrixWorld.getMaxScaleOnAxis(); if (Math.hypot(V.x - cx, V.z - cz) < r + bs.radius * sc) out.push(o); } } }
+    for (const ch of o.children) walk(ch);
+  };
+  W.scene.updateMatrixWorld(); walk(W.scene); AV.forEach(a => { if (a.hb) out.push(a.hb); }); return out;
+}
+// 一串點之間有幾段被東西擋著（每 2.5 公尺打一條射線）；all＝全部數完，否則碰到第一段就停
+function ipBlocked(pts, i0, objs, all) {
+  if (!objs.length) return 0; const ray = INTRO.ray, V = IPV[1]; let n = 0;
+  for (let i = Math.max(0, i0); i < pts.length - 1; i += 5) { const a = pts[i], b = pts[Math.min(pts.length - 1, i + 5)], l = V.copy(b).sub(a).length(); if (l < 1e-3) continue; ray.set(a, V.divideScalar(l)); ray.near = 0; ray.far = l + .25; if (ray.intersectObjects(objs, false).length) { n++; if (!all) return n; } }
+  return n;
+}
+// 大城市的障礙物高度圖：合併過的大網格一條射線就要好幾毫秒，所以第一次用到時把三角形攤成每 1 公尺一格的「最高點」（屋簷、騎樓也算實心，寧可繞開）
+function ipCityHF() {
+  if (ipCityHF.m) return ipCityHF.m; const x0 = CITY.x - 96, z0 = CITY.z - 72, nx = 192, nz = 150, h = new Float32Array(nx * nz), A = IPV[0], B = IPV[1], C = IPV[2], M = new THREE.Matrix4(), lay = INTRO.ray.layers;
+  const tri = () => { const ax = Math.max(0, Math.floor(Math.min(A.x, B.x, C.x) - x0)), bx = Math.min(nx - 1, Math.floor(Math.max(A.x, B.x, C.x) - x0)), az = Math.max(0, Math.floor(Math.min(A.z, B.z, C.z) - z0)), bz = Math.min(nz - 1, Math.floor(Math.max(A.z, B.z, C.z) - z0)), y = Math.max(A.y, B.y, C.y); for (let j = az; j <= bz; j++) for (let i = ax; i <= bx; i++) if (h[j * nx + i] < y) h[j * nx + i] = y; };
+  W.city.updateMatrixWorld(true);
+  W.city.traverse(o => {
+    if (!(o.isMesh || o.isInstancedMesh) || !o.layers.test(lay)) return; const m = o.material; if (!m || Array.isArray(m) || m.visible === false || (m.transparent && m.opacity < .6) || m.isShaderMaterial) return;
+    const g = o.geometry, pa = g && g.attributes.position; if (!pa) return; const ix = g.index, nt = ix ? ix.count / 3 : pa.count / 3, cnt = o.isInstancedMesh ? o.count : 1;
+    for (let k = 0; k < cnt; k++) { if (o.isInstancedMesh) { o.getMatrixAt(k, M); M.premultiply(o.matrixWorld); } else M.copy(o.matrixWorld);
+      for (let t = 0; t < nt; t++) { const a = ix ? ix.getX(t * 3) : t * 3, b = ix ? ix.getX(t * 3 + 1) : t * 3 + 1, c = ix ? ix.getX(t * 3 + 2) : t * 3 + 2; A.fromBufferAttribute(pa, a).applyMatrix4(M); B.fromBufferAttribute(pa, b).applyMatrix4(M); C.fromBufferAttribute(pa, c).applyMatrix4(M); tri(); } }
+  });
+  return (ipCityHF.m = { x0, z0, nx, nz, h });
+}
+// 大城市的一段路有幾筆會撞到東西（眼睛旁邊 2.5 公尺內不算：玩家本來就站在那裡）
+function ipCityHits(L, E) { const m = ipCityHF(); let n = 0; for (const q of L) { const p = q.p; if (p.x < 1500 || Math.hypot(p.x - E.x, p.z - E.z) < 2.5) continue; const i = Math.floor(p.x - m.x0), j = Math.floor(p.z - m.z0); if (i >= 0 && j >= 0 && i < m.nx && j < m.nz && p.y < m.h[j * m.nx + i] + .7) n++; } return n; }
+// 幾個候選的落地段，挑第一個沒撞到東西的（大城市用高度圖、山谷用射線；whole＝整段都檢查，否則只看最後 20 公尺）；都撞到就取撞最少的
+function ipPick(cands, eye, whole) {
+  const city = eye.E.x > 1500, objs = city ? null : ipObs(eye.E.x, eye.E.z, 32); let best = null;
+  for (const mk of cands) { const L = mk(), pts = L.map(q => q.p), n = city ? ipCityHits(L, eye.E) : ipBlocked(pts, whole ? 0 : pts.length - 41, objs, true); if (!n) return L; if (!best || n < best.n) best = { L, n }; }
+  return best.L;
+}
+// 落地前最後 20 公尺：被擋住就依序改從 ±25°、±50° 的背後進來，再不行就從正上方降下來
+function ipSafeLand(build, eye, whole) { return ipPick([0, .44, -.44, .87, -.87].map(r => () => build(r, false)).concat([() => build(0, true)]), eye, whole); }
+
+/* ---------- 時間表 ---------- */
+// 目標速度 → 轉彎限速（4 rad/s ÷ 曲率）→ 接近停點限速（4＋0.7×距離）→ 加減速（前後兩趟）→ ±5 筆平滑 → 積分；
+// 停下來的最後幾公尺用三次 ease-out（最後一格速度、加速度都是 0）；迴轉後的那段從靜止用 smootherstep 起步再停下
+function ipTime(R, k) {
+  const S = R.pts, n = S.length, D = new Float32Array(n), v = new Float32Array(n), V = new Float32Array(n), Kc = new Float32Array(n), T = new Float32Array(n), segs = [];
+  for (let i = 1; i < n; i++) D[i] = D[i - 1] + (S[i].piv ? 1e-3 : S[i].cut ? IPS : Math.max(1e-3, S[i].p.distanceTo(S[i - 1].p)));
+  const brk = [0]; for (let i = 1; i < n; i++) if (S[i].cut || S[i].piv) brk.push(i); brk.push(n);
+  for (let r = 0; r + 1 < brk.length; r++) {
+    const a = brk[r], b = brk[r + 1] - 1, run = i => clamp(i, a, b);
+    // 水平曲率（有正負，左轉為正）：±4 公尺的方向差
+    for (let i = a; i <= b; i++) { const p0 = S[run(i - 8)].p, p1 = S[i].p, p2 = S[run(i + 8)].p, ux = p1.x - p0.x, uz = p1.z - p0.z, wx = p2.x - p1.x, wz = p2.z - p1.z, l1 = Math.hypot(ux, uz), l2 = Math.hypot(wx, wz); if (l1 > .3 && l2 > .3) Kc[i] = Math.atan2(uz * wx - ux * wz, ux * wx + uz * wz) / ((l1 + l2) / 2); }
+    if (S[a].piv) { // 迴轉：原地轉 180°，接著從靜止慢慢飛到眼睛
+      T[a] = T[a - 1] + R.pivT; segs.push({ kind: 'pivot', i0: a - 1, i1: a, t0: T[a - 1], dur: R.pivT });
+      const len = Math.max(.01, D[b] - D[a]), dur = R.goT; segs.push({ kind: 'go', i0: a, i1: b, t0: T[a], dur, D0: D[a], len, fin: 1 });
+      for (let i = a + 1; i <= b; i++) { const f = (D[i] - D[a]) / len; let lo = 0, hi = 1; for (let it = 0; it < 30; it++) { const mid = (lo + hi) / 2; if (ismo(mid) < f) lo = mid; else hi = mid; } const u = (lo + hi) / 2; T[i] = T[a] + dur * u; V[i] = len * 30 * u * u * (1 - u) * (1 - u) / dur; }
+      continue;
+    }
+    for (let i = a; i <= b; i++) {
+      const q = S[i]; let t;
+      if (q.c) { const j = clamp(Math.round(q.s / CAVE_STEP), 0, q.c.n - 1), w = q.c.Wd[j]; t = R.rm ? 8 : w > 3.5 ? 14 : w > 2.4 ? 23 : q.c.dead ? 20 : 28; }
+      else t = R.rm ? 10 : q.hi ? 34 : 30;
+      if (Kc[i]) t = Math.min(t, 4 / Math.abs(Kc[i])); t *= k; if (q.vmax) t = Math.min(t, q.vmax);
+      if (R.rm) { const p0 = S[run(i - 8)].p, p2 = S[run(i + 8)].p, hz = Math.hypot(p2.x - p0.x, p2.z - p0.z), dy = Math.abs(p2.y - p0.y); if (dy > .05) t = Math.min(t, Math.max(1.2, 2 * Math.max(hz, .5) / dy)); } // 減少動態：垂直速度 ≤ 2 m/s
+      v[i] = t;
+    }
+    const stop = R.stops.find(o => o.i === b);
+    if (stop) for (let i = a; i <= b; i++) v[i] = Math.min(v[i], (4 + .7 * (D[b] - D[i])) * k); // 接近停點：4＋0.7×距離（也是「非落地段的速度」，跟著 k）
+    v[a] = r === 0 ? R.v0 : (V[a - 1] || v[a]); // 起點速度：標題 1.2、冷開場 18；換位置不改速度
+    for (let i = a + 1; i <= b; i++) { const ac = R.title && D[i] < 11 ? 8 : 14; v[i] = Math.min(v[i], Math.sqrt(v[i - 1] * v[i - 1] + 2 * ac * (D[i] - D[i - 1]))); }
+    let iS = b;
+    if (stop) { while (iS > a && D[b] - D[iS] < stop.S) iS--; const Se = D[b] - D[iS]; v[iS] = Math.min(v[iS], 3 * Se / stop.min); for (let i = iS - 1; i >= a; i--) v[i] = Math.min(v[i], Math.sqrt(v[i + 1] * v[i + 1] + 2 * 12 * (D[i + 1] - D[i]))); }
+    for (let i = a; i <= iS; i++) { let s = 0, m = 0; for (let j = Math.max(a, i - 5); j <= Math.min(iS, i + 5); j++) { s += v[j]; m++; } V[i] = Math.min(v[i] * 1.15 + .5, s / m); }
+    V[a] = v[a]; if (stop) V[iS] = v[iS];
+    T[a] = r === 0 ? 0 : T[a - 1] + (S[a].cut.hold || .15);
+    for (let i = a + 1; i <= iS; i++) T[i] = T[i - 1] + (D[i] - D[i - 1]) / Math.max(.5, (V[i - 1] + V[i]) / 2);
+    if (stop && iS < b) { const Se = D[b] - D[iS], dur = clamp(3 * Se / Math.max(.3, V[iS]), stop.min, stop.max); segs.push({ kind: 'stop', i0: iS, i1: b, t0: T[iS], dur, D0: D[iS], len: Se, fin: stop.fin }); for (let i = iS + 1; i <= b; i++) { const u = 1 - Math.cbrt(Math.max(0, 1 - (D[i] - D[iS]) / Se)); T[i] = T[iS] + dur * u; V[i] = 3 * Se * (1 - u) * (1 - u) / dur; } }
+  }
+  return { D, V, K: Kc, T, segs, Tend: T[n - 1] };
+}
+// 算好時間表，總長超過上限（桌機 15 秒、LOW 13 秒、減少動態 7.5 秒）時把速度乘上 k 再算（最多 1.3 倍；從標題起飛又要繞到背後的長路線才放寬到 1.45）；再整理遮罩、事件
+function ipFinal(R) {
+  const lim = R.rm ? 7.5 : LOW ? 13 : 15; let k = 1, tm = ipTime(R, 1); for (let it = 0; it < 5 && tm.Tend > lim && k < 1.45; it++) { k = Math.min(it < 3 ? 1.3 : 1.45, k * (1 + (tm.Tend / lim - 1) * 1.6)); tm = ipTime(R, k); } R.k = k;
+  Object.assign(R, tm); const n = R.pts.length;
+  for (let i = 0; i < n; i++) { const p = R.pts[i].p; if (!isFinite(p.x + p.y + p.z + R.T[i] + R.V[i])) throw new Error('開場路線有 NaN'); }
+  // 每一段（被換位置、迴轉分開）的最後一筆：看前方的點超過時沿那裡的方向延伸
+  R.LE = new Int32Array(n); let e = n - 1; for (let i = n - 1; i >= 0; i--) { R.LE[i] = e; if ((R.pts[i].cut || R.pts[i].piv) && i > 0) e = i - 1; }
+  R.tanAt = i => { if (i === n - 1) return R.endTan.clone().normalize(); const a = R.pts[Math.max(0, i - 2)].p, b = R.pts[i].p, t = b.clone().sub(a); return t.lengthSq() > 1e-8 ? t.normalize() : ipv(0, 0, -1); };
+  const pre = R.segs.find(g => g.kind === 'stop' && !g.fin), fin = R.segs.find(g => g.kind === 'stop' && g.fin); R.tLand = pre ? pre.t0 : fin ? fin.t0 : R.Tend; // 落地段（迴轉的路線從減速停下開始算）
+  R.masks = []; R.cuts = [];
+  for (let i = 1; i < n; i++) { const q = R.pts[i]; if (!q.cut) continue; const c = q.cut, t0 = R.T[i - 1], t1 = R.T[i], ra = c.riseFrom != null ? R.T[c.riseFrom] : t0 - (c.rise || .55);
+    R.masks.push({ a: Math.min(ra, t0 - .05), b: t0, c: t1, d: t1 + (c.fall || .6), op: 1, col: c.col }); R.cuts.push({ tm: (t0 + t1) / 2, i, done: 0, reset: !!c.reset, col: c.col }); }
+  R.mk.forEach(m => { const t = m.i != null ? R.T[m.i] : m.t; R.masks.push({ a: t + m.a, b: t + m.b, c: t + m.c, d: t + m.d, op: m.op, col: m.col }); });
+  R.evs = []; R.pts.forEach((q, i) => { if (q.ev) R.evs.push({ t: R.T[i], k: q.ev }); }); R.evs.sort((a, b) => a.t - b.t);
+  R.cost = R.Tend; return R;
+}
+
+/* ---------- 規劃：人在哪、走哪條路 ---------- */
+// 人在不在某個洞裡（和 caveEnv 的掃描同一個條件）：回傳 { c, q }（q 是複本）或 null
+function caveAt(x, z, tol = .9) { for (const c of CAVES) { const q = caveQ(c, x, z, null); if (q.s > .3 && q.s < c.L - .3 && Math.abs(q.l) < q.w * tol) return { c, q: Object.assign({}, q) }; } return null; }
+// 判斷玩家在哪一類地方，並把玩家的山洞狀態（CV）、高度設好（人在洞裡時 P.y 用洞的地面，不是山體）
+function introResolve() {
+  let kind, moved = false;
+  if (inCity(P.x)) { const x = clamp(P.x, CITY.x - 70, CITY.x + 70), z = clamp(P.z, CITY.z - 30, CITY.z + 44); moved = x !== P.x || z !== P.z; P.x = x; P.z = z; CV.c = null; kind = 'city'; } // 舊存檔可能在可走範圍外
+  else {
+    let hit = caveAt(P.x, P.z);
+    if (!hit && CV.c) { const q = caveQ(CV.c, P.x, P.z, CV.i); if (q.s > -1.6 && q.s < CV.c.L + 1.6 && Math.abs(q.l) < q.w + 1) hit = { c: CV.c, q: Object.assign({}, q) }; } // 正站在洞口上：維持原本的狀態
+    if (!hit && caveRegion(P.x, P.z) === 'south') { hit = caveAt(P.x, P.z, 1.05); if (!hit || !hit.c.dead) { hit = null; P.x = 0; P.z = 16; P.yaw = 0; P.pitch = -.08; moved = true; } } // 南方山上（舊存檔）：回出生點
+    if (hit) { const { c, q } = hit; if (CV.c !== c) caveEnter(c, q.s < c.L / 2 ? 1 : -1); CV.i = q.i; CV.s = q.s; CV.l = q.l; kind = c.dead ? 'moon' : 'tube'; }
+    else { CV.c = null; kind = caveRegion(P.x, P.z); if (kind === 'south') kind = 'plain'; }
+  }
+  P.y = G(P.x, P.z); P.camY = P.y; P.vy = P.vx = P.vz = 0; P.dip = P.dipV = 0; P.roll = 0; P.eye = IN.sneak ? 1.18 : 1.62; if (moved) save();
+  return kind;
+}
+function introPlan() {
+  const I = INTRO, kind = introResolve(), rm = !!RM(), st = performance.now() - I.titleAt < 250 ? ipTitle() : null, eye = ipEye(), F = I.force || {}, rnd = I.seed != null ? seeded(I.seed) : Math.random;
+  const open = CAVES.filter(c => !c.dead), byId = k => typeof k === 'number' ? CAVES[k] : CAVES.find(c => c.id === k), C = [], hold = LOW ? .2 : .15, from = st ? { title: st } : { cold: 1 };
+  I.ray = I.ray || new THREE.Raycaster(); I.ray.camera = W.cam;
+  const route = o => Object.assign({ pts: [], stops: [], mk: [], endTan: eye.d.clone(), th: 0, via: null, v0: st ? 1.2 : rm ? 8 : 18, title: !!st, rm, pivT: 2.3, goT: 2.6, kind }, o);
+  const push = (R, pen = 0) => { if (!R) return; try { ipFinal(R); } catch (e) { console.warn(e); return; } R.cost += pen + (R.Tend > (rm ? 7.5 : LOW ? 13 : 15) + .5 ? 10 : 0); C.push(R); }; // 超過總長上限的路線盡量不選
+  const land = (pts, S = 8) => ({ i: pts.length - 1, S, fin: 1, min: rm ? 2.6 : 1.6, max: 5 });
+  // 開機直接開始：黑幕 0.6 秒淡掉；白天的月光洞窟：進裂縫前疊一層淡淡的白光（縫裡透出的光）
+  const finish = R => { if (!st) R.mk.push({ t: 0, a: 0, b: 0, c: 0, d: .6, op: 1, col: '#000' }); if (R.via && R.via.dead && DN.night < .5) { const i = R.pts.findIndex(q => q.mouth); if (i > 0) R.mk.push({ i, a: -.4, b: -.2, c: .1, d: .45, op: .15, col: '#ffffff' }); } return R; };
+  // 從標題到區域那側的洞口：起飛 → 爬升進雲裡（遮罩全滿）→ 換到那個洞口外上空 → 俯衝進洞
+  const cloudIn = c => {
+    const M = ipMouth(c, 1), h = M.o.clone().negate(), p1 = st.p.clone().addScaledVector(st.fwd, 8).add(ipv(0, 1.5, 0)), climb = ipAir(ipCR([st.p.clone(), p1, ...ipClimb(p1, h)], st.p.clone().addScaledVector(st.fwd, -4), null), 10, .5);
+    const dir = ipBack(climb), A2 = M.m.clone().addScaledVector(M.o, 16).add(ipv(0, 3.5, 0)), S0 = A2.clone().addScaledVector(h, -16).add(ipv(0, 7, 0)), g = ipGuideIn(c, 1, { sky: S0, dir });
+    g[0].cut = { hold, rise: .55, fall: .6, col: 'cloud' }; g[0].ev = 'cloud'; return { legs: [climb, g], turn0: Math.acos(clamp(h.dot(st.fwd), -1, 1)) };
+  };
+  // 出洞落地（挑沒被擋住的那一種）：選中的那段身上帶著它的轉角與終點切線（X）
+  const exitL = (c, e, whole) => ipSafeLand((rot, top) => { const x = ipExit(c, e, eye, rot, top); x.air.X = x; return x.air; }, eye, whole);
+  // 平地：從區域那側的洞口往裡飛（s：L→0），從平地那側出來、落在眼睛
+  const plainRoute = c => {
+    const ci = st ? cloudIn(c) : { legs: [ipGuideIn(c, 1, from)], turn0: 0 }, tube = ipTube(c, c.L, 0); tube[tube.length - 1].ev = 'flash';
+    const L = exitL(c, 0), X = L.X, pts = ipJoin(...ci.legs, tube, L);
+    const R = finish(route({ pts, via: c, th: X.th, endTan: X.tan, turn0: ci.turn0 })); R.stops.push(land(pts)); return R;
+  };
+  // 區域（洞外）：從平地那側的洞口往外飛（s：0→L）；出口離玩家太遠（> 150 公尺）就出洞後爬進雲裡、換到玩家附近上空
+  const regionRoute = c => {
+    const g = ipGuideIn(c, 0, from), tube = ipTube(c, 0, c.L), M = ipMouth(c, 1); tube[tube.length - 1].ev = 'flash';
+    const X2 = M.m.clone().addScaledVector(M.o, 15).add(ipv(0, 2.5, 0)), L2 = eye.E.clone().addScaledVector(eye.f, -11).add(ipv(0, 3, 0)); let pts, X = null;
+    if (X2.distanceTo(L2) > 150) {
+      const h = L2.clone().sub(M.m).setY(0).normalize(), hm = h.clone().add(M.o).normalize(), X1 = M.m.clone().addScaledVector(M.o, 6).add(ipv(0, .3, 0)), Xb = M.m.clone().addScaledVector(M.o, 14).add(ipv(0, 1.5, 0)), C1 = Xb.clone().addScaledVector(hm, 13).add(ipv(0, 6, 0));
+      const climb = ipAir(ipCR([M.m, X1, Xb, C1, C1.clone().addScaledVector(h, 14).add(ipv(0, 9, 0)), C1.clone().addScaledVector(h, 26).add(ipv(0, 18, 0))], M.tail, null), 20, .5);
+      const dir = ipBack(climb), S0 = L2.clone().addScaledVector(h, -40).add(ipv(0, 30, 0));
+      const leg2 = ipSafeLand((rot, top) => { const L = ipLandPts(S0, eye, rot, top), A = ipAir(ipCR([S0, ...L.pts], S0.clone().addScaledVector(dir, -4), eye.E.clone().addScaledVector(L.tan, 4)), 6, 10); A.X = L; return A; }, eye); X = leg2.X;
+      leg2[0].cut = { hold, rise: .55, fall: .6, col: 'cloud' }; leg2[0].ev = 'cloud'; pts = ipJoin(g, tube, climb, leg2);
+    } else { const L = exitL(c, 1); X = L.X; pts = ipJoin(g, tube, L); }
+    const R = finish(route({ pts, via: c, th: X.th, endTan: X.tan })); R.stops.push(land(pts)); return R;
+  };
+  // 洞裡落地：沿洞飛到玩家前 9 公尺，最後從中心線滑到眼睛（洞裡用 6 公尺停下）；dir＝飛行方向（s 增加為 +1）
+  const caveLand = (c, sp, dir, sFrom, inDir) => {
+    const s9 = clamp(sp - dir * 9, 0, c.L), i = clamp(Math.round(sp / CAVE_STEP), 0, c.n - 1), ax = ipv(c.TX[i] * dir, 0, c.TZ[i] * dir).normalize(), E = eye.E;
+    const tube = (dir > 0 ? s9 > sFrom + 1 : s9 < sFrom - 1) ? ipTube(c, sFrom, s9) : [], start = tube.length ? tube[tube.length - 1].p.clone() : itp(c, sFrom), s4 = sp - dir * 4, mid = [], last = E.clone().addScaledVector(ax, -1.5);
+    if (s4 > .5 && s4 < c.L - .5 && (s4 - (tube.length ? s9 : sFrom)) * dir > .8) { const p = itp(c, s4); p.y -= .4; mid.push(p); }
+    const pts = [start, ...mid]; if (last.distanceTo(start) > 1.2) pts.push(last); pts.push(E.clone());
+    const din = tube.length > 3 ? ipBack(tube) : inDir || ax, tail = ipInCave(c, pts, start.clone().addScaledVector(din, -4), E.clone().addScaledVector(ax, 4), dir);
+    return { legs: [tube, tail], ax };
+  };
+  // 洞裡：從背後那端進來（正常），或從前面那端進來、飛過頭 8 公尺、停下、原地轉 180°、再往前 8 公尺落地
+  const tubeRoutes = (c, sp, face) => {
+    const out = [];
+    if (!(c.dead && face < 0)) { // 死路看向洞口時，背後是洞底，沒有洞口可以進
+      const dir = face, e = dir > 0 ? 0 : 1, sE = dir > 0 ? 0 : c.L, ci = st && e === 1 ? cloudIn(c) : { legs: [ipGuideIn(c, e, from)] }, M = ipMouth(c, e);
+      const L = caveLand(c, sp, dir, sE, M.o.clone().negate()), pts = ipJoin(...ci.legs, ...L.legs), R = finish(route({ pts, via: c, endTan: L.ax })); R.stops.push(land(pts, 6)); out.push([R, 0]);
+    }
+    if (!c.dead || face < 0) {
+      const dir = c.dead ? 1 : -face, e = dir > 0 ? 0 : 1, sE = dir > 0 ? 0 : c.L, sPast = clamp(sp + dir * 8, 1, c.L - (c.dead ? 2 : 1));
+      if (Math.abs(sPast - sp) > 3 && !(st && e === 1)) {
+        const A = ipJoin(ipGuideIn(c, e, from), ipTube(c, sE, sPast)), Pp = A[A.length - 1].p.clone(), i = clamp(Math.round(sp / CAVE_STEP), 0, c.n - 1), ax = ipv(-c.TX[i] * dir, 0, -c.TZ[i] * dir).normalize(), p4 = itp(c, sp + dir * 4); p4.y -= .4;
+        const B = ipInCave(c, [Pp, ...(Math.abs(sPast - sp) > 6 ? [p4] : []), eye.E.clone().addScaledVector(ax, -1.5), eye.E.clone()], Pp.clone().addScaledVector(ax, -4), eye.E.clone().addScaledVector(ax, 4), -dir);
+        B[0].piv = 1; const pts = ipJoin(A, B), R = finish(route({ pts, via: c, endTan: ax })); R.stops.push({ i: A.length - 1, S: 6, min: 1.2, max: 5 });
+        R.pivSgn = Math.sign(ipv(c.TX[i] * dir, 0, c.TZ[i] * dir).cross(eye.f).y) || 1; out.push([R, 1]);
+      }
+    }
+    return out;
+  };
+  // 月光洞窟的大廳、看向洞口：繞著地下湖飛半圈（飛過湖面的月亮倒影）到玩家背後再落地
+  const lakeRoute = c => {
+    const lk = c.lake, hs = c.S[c.hallI], y0 = c.Y[c.hallI] + 3, E = eye.E, s0 = Math.max(c.sIn + 2, hs - lk.r - 5), tb = ipTube(c, 0, s0), A = ipJoin(ipGuideIn(c, 0, from), tb), P0 = A[A.length - 1].p;
+    const ang = (x, z) => Math.atan2(x - lk.x, z - lk.z), wrap = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+    const a0 = ang(P0.x, P0.z), B = E.clone().addScaledVector(eye.f, -5.5).add(ipv(0, 1.2, 0)); let da = wrap(ang(B.x, B.z) - a0); const dp = wrap(ang(E.x, E.z) - a0);
+    if (Math.sign(dp) === Math.sign(da) && Math.abs(dp) < Math.abs(da)) da -= Math.sign(da) * 2 * Math.PI; // 走不經過玩家的那一邊
+    const m = Math.max(2, Math.ceil(Math.abs(da) / .75)), pts = [P0.clone()];
+    for (let k = 1; k < m; k++) { const a = a0 + da * k / m, p = ipv(lk.x + Math.sin(a) * 6.2, y0, lk.z + Math.cos(a) * 6.2), q = caveQ(c, p.x, p.z, null); if (q.s > c.L - 1.5) continue; if (Math.abs(q.l) > q.w - 1) { const sc = (q.w - 1) / Math.abs(q.l); p.x = q.cx + q.nx * q.l * sc; p.z = q.cz + q.nz * q.l * sc; } pts.push(p); }
+    const qb = caveQ(c, B.x, B.z, null); if (qb.s < c.L - 1 && Math.abs(qb.l) < qb.w - .8) pts.push(B); pts.push(E.clone().addScaledVector(eye.d, -2.5), E.clone());
+    const L = ipInCave(c, pts, P0.clone().addScaledVector(ipBack(tb) || ipv(1, 0, 0), -4), E.clone().addScaledVector(eye.d, 4), 1), all = ipJoin(A, L), R = finish(route({ pts: all, via: c })); R.stops.push(land(all, 6)); return R;
+  };
+  // 大城市：從平地飛進一條洞往外，在區域那側出口的白光裡換到大城市主街上空，沿街降到玩家背後
+  const cityRoute = c => {
+    const g = ipGuideIn(c, 0, from), tube = ipTube(c, 0, c.L), M = ipMouth(c, 1), sg = M.o.x >= 0 ? 1 : -1, sd = ipv(sg, 0, 0); tube[tube.length - 1].ev = 'flash';
+    // 主街上空 22 公尺 → 被擋住就抬高到 30、改從廣場上空進來、換個角度從背後進來，最後才從玩家正上方降下來（取撞到最少的）
+    const leg2 = (alt, rot) => { const top = alt === 3, S0 = top ? ipv(eye.E.x, 34, eye.E.z).addScaledVector(eye.f, -8) : alt === 2 ? ipv(CITY.x, 26, CITY.z + 26) : ipv(clamp(eye.E.x - 50 * sg, CITY.x - 60, CITY.x + 60), alt ? 30 : 22, CITY.z + 2), L = ipLandPts(S0, eye, rot, top), ctrl = alt ? [S0, ...L.pts] : [S0, S0.clone().addScaledVector(sd, 22).add(ipv(0, -3, 0)), ...L.pts]; return { X: L, B: ipAir(ipCR(ctrl, top ? null : S0.clone().addScaledVector(sd, -4), eye.E.clone().addScaledVector(L.tan, 4)), 4, 6) }; };
+    let best = null; for (const [alt, rot] of [[0, 0], [1, 0], [2, 0], [0, .44], [0, -.44], [1, .87], [1, -.87], [3, 0]]) { const o = leg2(alt, rot); o.n = ipCityHits(o.B, eye.E); if (!best || o.n < best.n) best = o; if (!o.n) break; }
+    let B = best.B; const X = best.X;
+    B[0].cut = { hold, riseFrom: Math.max(0, g.length + tube.length - 2 - Math.round(14 / IPS)), fall: .7, col: 'city:' + c.def.to };
+    const pts = ipJoin(g, tube, B), R = finish(route({ pts, via: c, endTan: X.tan, city: 1 })); R.stops.push(land(pts)); return R;
+  };
+  // 減少動態：每一類只留最後「從洞口滑出來」那一段，空中貼著地面飛；從標題先淡到霧色、在起點淡入；
+  // 離玩家遠就在洞口再淡一次、從玩家背後 20 公尺開始；洞裡背後沒地方（死路的洞底）就沿著視線往回退一點直接滑進眼睛
+  const rmRoute = () => {
+    const lead = legs => { if (!st) return legs; const a = { p: st.p.clone(), c: null, s: 0, sd: 1, vmax: 1.2 }, b = { p: st.p.clone().addScaledVector(st.fwd, .7), c: null, s: 0, sd: 1, vmax: 1.2 }; legs[0][0].cut = { hold, rise: .45, fall: .5, col: 'fog', reset: 1 }; return [[a, b], ...legs]; };
+    const behind = () => { // 背後 20 公尺（被擋住就近一點、換個角度）
+      const L = ipPick([0, .44, -.44, .87, -.87].flatMap(rot => [20, 12].map(bk => () => { const fb = eye.f.clone().applyAxisAngle(IPUP, rot), P0 = eye.E.clone().addScaledVector(fb, -bk).add(ipv(0, 1, 0)); return ipAir(ipCR([P0, eye.E.clone().addScaledVector(fb, -bk * .45).add(ipv(0, .5, 0)), eye.E.clone().addScaledVector(eye.d, -2.5), eye.E.clone()], P0.clone().addScaledVector(fb, -4), eye.E.clone().addScaledVector(eye.d, 4)), 4, 4); })), eye, true);
+      L[0].cut = { hold, rise: .45, fall: .45, col: 'fog', reset: 1 }; return L;
+    };
+    if (kind === 'tube' || kind === 'moon') {
+      const c = CV.c, sp = CV.s, i = clamp(Math.round(sp / CAVE_STEP), 0, c.n - 1), face = (eye.f.x * c.TX[i] + eye.f.z * c.TZ[i]) >= 0 ? 1 : -1, s0 = clamp(sp - face * (c.dead ? 10 : 14), .5, c.L - (c.dead ? 1.5 : .5));
+      if ((sp - s0) * face >= 6) { const dir = face, L = caveLand(c, sp, dir, s0, ipv(c.TX[i] * dir, 0, c.TZ[i] * dir)), pts = ipJoin(...lead(L.legs.filter(l => l.length))), R = finish(route({ pts, via: c, endTan: L.ax })); R.stops.push(land(pts, 6)); return R; }
+      // 背後沒地方：沿著視線往回退（找退得最遠、整段都在洞裡的距離），直直滑進眼睛
+      const ok = b => { for (let k = 1; k <= 4; k++) { const p = eye.E.clone().addScaledVector(eye.d, -b * k / 4), q = caveQ(c, p.x, p.z, null); if (q.s < .5 || q.s > c.L - .5 || Math.abs(q.l) > q.w - .6 || p.y < q.y + .7 || p.y > q.y + q.h - .5) return false; } return true; };
+      const b = [8, 6, 4.5, 3.2, 2.2].find(ok) || 1.6, P0 = eye.E.clone().addScaledVector(eye.d, -b), L = ipInCave(c, [P0, eye.E.clone().addScaledVector(eye.d, -b / 2), eye.E.clone()], P0.clone().addScaledVector(eye.d, -4), eye.E.clone().addScaledVector(eye.d, 4), face);
+      const pts = ipJoin(...lead([L])), R = finish(route({ pts, via: c })); R.stops.push(land(pts, Math.min(6, b * .75))); return R;
+    }
+    if (kind === 'city') { const c = open[Math.floor(rnd() * open.length)], pts = ipJoin(...lead([ipTube(c, 14, 0), behind()])), R = finish(route({ pts, via: c, city: 1 })); R.stops.push(land(pts, 6)); return R; }
+    const e = kind === 'plain' ? 0 : 1, c = e ? open.find(o => o.def.to === kind) : open.map(o => { const m = ipMouth(o, 0).m; return [o, m.distanceTo(eye.E) + (m.clone().sub(eye.E).setY(0).normalize().dot(eye.f) > .3 ? 80 : 0)]; }).sort((a, b) => a[1] - b[1])[0][0];
+    const t = e ? ipTube(c, c.L - 14, c.L) : ipTube(c, 14, 0), M = ipMouth(c, e);
+    // 玩家就在洞口附近、高度也差不多才直接飛過去（整段檢查障礙物）；不然在洞口淡出、從背後 20 公尺開始（垂直速度有上限，下坡太陡會飛很久）
+    if (M.m.distanceTo(eye.E) > 32 || Math.abs(M.m.y - eye.E.y) > 4) { const pts = ipJoin(...lead([t, behind()])), R = finish(route({ pts, via: c })); R.stops.push(land(pts, 6)); return R; }
+    const L = exitL(c, e, true), pts = ipJoin(...lead([t, L])), R = finish(route({ pts, via: c, endTan: L.X.tan })); R.stops.push(land(pts, 6)); return R;
+  };
+  if (rm) { IPCLR = 2; try { push(rmRoute()); } finally { IPCLR = null; } }
+  else if (kind === 'plain') for (const c of (F.cave != null ? [byId(F.cave)] : open)) { const R = plainRoute(c); push(R, (R.th > 2.094 ? 3 : 0) + (ipLocked(c) ? 1.5 : 0) + (st ? 1.5 * R.turn0 / Math.PI : 0) + rnd() * 1.2); }
+  else if (kind === 'coast' || kind === 'volcano' || kind === 'snow') push(regionRoute(open.find(o => o.def.to === kind)));
+  else if (kind === 'tube' || kind === 'moon') {
+    const c = CV.c, sp = CV.s, i = clamp(Math.round(sp / CAVE_STEP), 0, c.n - 1), face = (eye.f.x * c.TX[i] + eye.f.z * c.TZ[i]) >= 0 ? 1 : -1;
+    if (c.dead && face < 0 && sp >= 40 && c.lake && F.entry == null) push(lakeRoute(c));
+    else tubeRoutes(c, sp, face).forEach(([R, piv]) => { if (F.entry != null && F.entry !== piv) return; push(R, piv ? 1 : 0); });
+  }
+  else if (kind === 'city') { const c = F.cave != null ? byId(F.cave) : st ? open.map(o => [o, ipMouth(o, 0).m.clone().sub(st.p).setY(0).normalize().dot(st.fwd)]).sort((a, b) => b[1] - a[1])[0][0] : open[Math.floor(rnd() * open.length)]; push(cityRoute(c)); }
+  if (!C.length) return null;
+  const R = C.reduce((a, b) => b.cost < a.cost ? b : a); R.eye = eye; R.st = st; return R;
+}
+
+/* ---------- 播放 ---------- */
+// 照時間查表：位置寫進 out；回傳 { i（取樣）, d（沿路線距離）, v（速度）, seg（正在哪一段解析式的區段） }
+const IPCUR = { i: 0, d: 0, v: 0, seg: null };
+function ipAt(R, t, out) {
+  const S = R.pts, T = R.T, D = R.D, n = S.length; let d = null, v = 0, seg = null;
+  for (const g of R.segs) if (t >= g.t0 && t <= g.t0 + g.dur) { const u = (t - g.t0) / g.dur; seg = g; if (g.kind === 'pivot') { d = D[g.i0]; v = 0; } else if (g.kind === 'stop') { d = g.D0 + g.len * (1 - (1 - u) ** 3); v = 3 * g.len * (1 - u) ** 2 / g.dur; } else { d = g.D0 + g.len * ismo(u); v = g.len * 30 * u * u * (1 - u) * (1 - u) / g.dur; } break; }
+  if (d != null) { let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D[m] <= d) lo = m; else hi = m; } const f = clamp((d - D[lo]) / Math.max(1e-6, D[hi] - D[lo]), 0, 1); out.copy(S[lo].p).lerp(S[hi].p, S[hi].cut ? 0 : f); IPCUR.i = f > .5 && !S[hi].cut && !S[hi].piv ? hi : lo; IPCUR.d = d; IPCUR.v = v; IPCUR.seg = seg; return IPCUR; }
+  if (t >= T[n - 1]) { out.copy(S[n - 1].p); IPCUR.i = n - 1; IPCUR.d = D[n - 1]; IPCUR.v = 0; IPCUR.seg = null; return IPCUR; }
+  let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= t) lo = m; else hi = m; }
+  // 兩筆之間速度線性變化（等加速度）：走過的距離用 v0·τ＋a·τ²/2，速度在每一筆之間都是連續的
+  const dt0 = Math.max(1e-6, T[hi] - T[lo]), tau = clamp(t - T[lo], 0, dt0), v0 = R.V[lo], v1 = R.V[hi], vs = v0 + v1, g = tau / dt0, f = vs > 1e-3 && !S[hi].cut ? clamp((v0 * tau + (v1 - v0) * tau * g / 2) / (vs * dt0 / 2), 0, 1) : g; v = v0 + (v1 - v0) * g;
+  if (S[hi].cut) { // 換位置：遮罩全滿的那段時間裡，前半沿著前一段的方向、後半沿著下一段的方向（看不到，但速度不斷）
+    const tm = (T[lo] + T[hi]) / 2; if (t < tm) out.copy(S[lo].p).addScaledVector(R.tanAt(lo), R.V[lo] * (t - T[lo])); else { const b = S[Math.min(n - 1, hi + 2)].p.clone().sub(S[hi].p); out.copy(S[hi].p).addScaledVector(b.lengthSq() > 1e-8 ? b.normalize() : b, -R.V[hi] * (T[hi] - t)); }
+    IPCUR.i = t < tm ? lo : hi; IPCUR.d = t < tm ? D[lo] : D[hi]; IPCUR.v = v; IPCUR.seg = null; return IPCUR;
+  }
+  out.copy(S[lo].p).lerp(S[hi].p, f); IPCUR.i = f > .5 ? hi : lo; IPCUR.d = D[lo] + (D[hi] - D[lo]) * f; IPCUR.v = v; IPCUR.seg = null; return IPCUR;
+}
+// 看前方的點：沿路線往前 la 公尺；超過這一段的盡頭就沿盡頭的方向延伸（不會看到雲另一頭、或迴轉之後的路）
+function ipLook(R, i, d, la, out) {
+  const S = R.pts, D = R.D, e = R.LE[i], dl = d + la;
+  if (dl >= D[e]) return out.copy(S[e].p).addScaledVector(R.tanAt(e), dl - D[e]);
+  let lo = i, hi = e; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (D[m] <= dl) lo = m; else hi = m; }
+  return out.copy(S[lo].p).lerp(S[hi].p, clamp((dl - D[lo]) / Math.max(1e-6, D[hi] - D[lo]), 0, 1));
+}
+// 四元數 → 旋轉向量（軸×角，取短的那一邊）
+function ipRotVec(q, out) { let x = q.x, y = q.y, z = q.z, w = q.w; if (w < 0) { x = -x; y = -y; z = -z; w = -w; } const s = Math.sqrt(x * x + y * y + z * z); if (s < 1e-9) return out.set(0, 0, 0); const a = 2 * Math.atan2(s, w); return out.set(x / s * a, y / s * a, z / s * a); }
+// 角速度限制：目標轉速＝目標本身的轉動（前饋）＋誤差／0.15 秒，限制在 wmax 以內；轉速的變化每秒最多 900°（不會急甩）
+function ipTurn(I, qt, dt, wmax) {
+  const fw = ipRotVec(IPQ[0].copy(qt).multiply(IPQ[1].copy(I.qt).invert()), IPV[2]).multiplyScalar(1 / Math.max(dt, 1e-3)), fl = fw.length(); if (fl > wmax * 1.5) fw.multiplyScalar(wmax * 1.5 / fl);
+  fw.addScaledVector(ipRotVec(IPQ[0].copy(qt).multiply(IPQ[1].copy(I.q).invert()), IPV[3]), 1 / .15); const wl = fw.length(); if (wl > wmax) fw.multiplyScalar(wmax / wl);
+  fw.sub(I.w); const al = fw.length(), am = 15.7 * dt; if (al > am) fw.multiplyScalar(am / al); I.w.add(fw);
+  const a = I.w.length() * dt; if (a > 1e-8) I.q.premultiply(IPQ[0].setFromAxisAngle(IPV[3].copy(I.w).normalize(), a)).normalize(); I.qt.copy(qt);
+}
+// 這一格的目標方向：看前方＋轉彎傾斜＋抖動；迴轉時原地轉；最後 2 秒轉成玩家的視線、最後 0.8 秒鎖定
+function ipTarget(I, dt, out) {
+  const R = I.R, t = I.t, cur = I.cur, v = cur.v, ff = I.rate > 1.01, T = R.Tend, pv = cur.seg && cur.seg.kind === 'pivot' ? cur.seg : null;
+  if (pv) out.copy(I.qPiv0).premultiply(IPQ[2].setFromAxisAngle(IPUP, Math.PI * ismo((t - pv.t0) / pv.dur) * (R.pivSgn || 1)));
+  else {
+    const la = clamp(.4 * v, 1, 12) * (ff ? 1 + .5 * (I.rate - 1) : 1), look = ipLook(R, cur.i, cur.d, la, IPV[4]);
+    if (look.distanceTo(I.pos) > .05) { IPM.lookAt(I.pos, look, IPUP); out.setFromRotationMatrix(IPM); } else out.copy(I.qLook);
+    I.qLook.copy(out); if (cur.seg && cur.seg.kind === 'stop' && !cur.seg.fin) I.qPiv0.copy(out);
+    const kb = R.rm ? 0 : (LOW ? .6 : 1) / (ff ? I.rate : 1), bank = clamp(.3 * (R.K[cur.i] || 0) * v, -.45, .45) * kb * (1 - smooth(T - 2, T - 1.2, t));
+    I.roll += (bank - I.roll) * Math.min(1, dt / .2);
+    const sh = R.rm || LOW || ff ? 0 : .006 * Math.min(1, v / 25) * (1 - smooth(T - 2.4, T - 1.5, t));
+    out.multiply(IPQ[2].setFromEuler(IPE.set(Math.sin(t * 31) * sh, Math.sin(t * 27 + 1) * sh, I.roll + Math.sin(t * 23) * sh * 1.5, 'YXZ')));
+  }
+  const w = ismo((t - (T - 2)) / 1.2); if (t >= T - .8) out.copy(I.Qp); else if (w > 0) out.slerp(I.Qp, w);
+  return out;
+}
+// 遮罩顏色：雲＝白混一點霧色（夜裡偏霧色）、大城市＝那一區的光色混白、霧＝目前的霧色
+function ipMaskCol(k) {
+  const f = W.scene.fog.color;
+  if (k === 'cloud') return IPC.set('#ffffff').lerp(f, .15 + .6 * DN.night);
+  if (k === 'fog') return IPC.copy(f);
+  if (k && k.startsWith('city:')) return IPC.set(PALETTE[k.slice(5)] ? PALETTE[k.slice(5)].light : '#ffffff').lerp(IPC2.set('#ffffff'), .5);
+  return IPC.set(k || '#ffffff');
+}
+function ipMask(op, col) { const el = document.getElementById('introFade'); if (!el) return; const o = op < .002 ? '0' : op.toFixed(3); if (el.style.opacity !== o) el.style.opacity = o; if (col && op > .002) { const c = col[0] === '#' ? col : '#' + ipMaskCol(col).getHexString(); if (el._c !== c) { el._c = c; el.style.background = c; } } }
+// 略過的快轉倍率：0.3 秒內升上去、進落地段前降回 1、路線轉得急時自動放慢（鏡頭轉速不超過 240°/s）
+function ipRate(I, dt) {
+  const f = I.ff; if (!f) return 1; f.rt += dt; const left = I.R.tLand - I.t; if (left <= 0) return 1;
+  let r = Math.min(1 + (f.r - 1) * smooth(0, .3, f.rt), 1 + (f.r - 1) * smooth(0, .3 * f.r, left)); const turn = Math.abs((I.R.K[I.cur.i] || 0) * (I.cur.v || 0));
+  if (turn > .01) r = Math.min(r, 4.19 / turn); return Math.max(1, r);
+}
+const ipKick = () => (INTRO.R && INTRO.R.rm) ? 0 : W.cam.aspect < 1 ? (LOW ? 8 : 12) : (LOW ? 12 : 22); // 高速時視野加寬多少（直式少一點）
+function ipFovT(I) { const T = I.R.Tend, f0 = W.fov0 || 72; return I.t >= T - 1.4 ? f0 : f0 + ipKick() * clamp(((I.cur.v || 0) - 6) / 20, 0, 1); }
+// 穿越機目前在哪個洞、地面投影（caveEnv、envStep 用）
+function ipEnv(I) {
+  const a = I.R.pts[I.cur.i], v = I.v;
+  if (a && a.c) { v.c = a.c; v.s = clamp(a.s, -2, a.c.L + 2); v.i = clamp(Math.round(v.s / CAVE_STEP), 0, a.c.n - 1); v.dir = a.sd || 1; } else v.c = null;
+  const e = I.env || (I.env = { x: 0, y: 0, z: 0, yaw: 0 }); e.x = I.pos.x; e.z = I.pos.z; e.y = v.c ? v.c.Y[v.i] : ipGround(I.pos.x, I.pos.z); IPV[5].set(0, 0, -1).applyQuaternion(W.cam.quaternion); e.yaw = Math.atan2(-IPV[5].x, -IPV[5].z);
+}
+
+/* ---------- 開場：開始、每格、略過、結束 ---------- */
 function introStart(done) {
-  const pool = CAVES.filter(c => !c.dead); if (!pool.length || !W.ready) return false;
-  const c = pool[Math.floor(Math.random() * pool.length)], n = c.n - 1, ox = c.TX[n], oz = c.TZ[n], nx = -oz, nz = ox, ex = c.X[n], ez = c.Z[n], ey = c.Y[n] + c.Hh[n] * .42;
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // 終點：玩家的眼睛（在大城市或離平地太遠時，最後用白光轉場）
-  const eye = new THREE.Vector3(P.x, (CV.c ? caveG(P.x, P.z) : G(P.x, P.z)) + (P.eye || 1.62), P.z), m0 = new THREE.Vector3(c.X[0], c.Y[0] + c.Hh[0] * .42, c.Z[0]), far = eye.distanceTo(m0) > 140;
-  const o0 = new THREE.Vector3(-c.TX[0], 0, -c.TZ[0]), toEye = far ? new THREE.Vector3(-m0.x, 0, -m0.z).normalize() : eye.clone().sub(m0).setY(0).normalize();
-  const C2 = m0.clone().addScaledVector(o0, 14).add(IV[0].set(0, 4.5, 0)), C3 = m0.clone().addScaledVector(o0, 24).addScaledVector(toEye, 12).add(IV[0].set(0, 11, 0));
-  const fin = far ? C3.clone().addScaledVector(toEye, 26).setY(C3.y - 4) : eye.clone();
-  Object.assign(INTRO, { on: true, t: 0, c, s: c.L, inCave: false, done, skip: false, far, reduce, roll: 0, flashDone: false,
-    A: [new THREE.Vector3(ex + ox * 46 + nx * 9, ey + 15, ez + oz * 46 + nz * 9), new THREE.Vector3(ex + ox * 18 + nx * 2, ey + 4, ez + oz * 18 + nz * 2), new THREE.Vector3(ex + ox * 4, ey + .4, ez + oz * 4), new THREE.Vector3(ex - ox * 3, ey, ez - oz * 3)],
-    C: [m0.clone(), C2, C3, fin], dA: reduce ? 1.2 : 2.3, dC: reduce ? 2 : 3.3, eye });
-  // B 段的時間：沿曲線積分速度（窄道快、大廳慢）
-  INTRO.sT = []; let acc = 0; for (let i = n; i >= 0; i--) { INTRO.sT[i] = acc; acc += CAVE_STEP / introSpeed(c, i); } INTRO.dB = acc;
-  document.body.classList.add('intro'); if (VM.g) VM.g.visible = false;
-  let el = document.getElementById('introSkip'); if (!el) { el = document.createElement('div'); el.id = 'introSkip'; document.body.appendChild(el); }
-  el.textContent = TOUCH ? '點一下略過' : '按任意鍵略過'; el.hidden = false;
-  INTRO.onKey = e => { if (INTRO.on && INTRO.t > .25) INTRO.skip = true; };
-  ['keydown', 'pointerdown', 'touchstart'].forEach(k => addEventListener(k, INTRO.onKey, { passive: true }));
-  // 開場會一路看到平常不同時出現的東西：先把著色器編譯好，第一次看到山洞時才不會卡一下（設計分析 13.2 第 6 點）
-  try { const m0 = W.cam.layers.mask; W.cam.layers.mask = 7; W.r.compile(W.scene, W.cam); W.cam.layers.mask = m0; } catch (e) { }
+  const I = INTRO; if (I.on) return true; if (!W.ready || !CAVES.length || !P) return false;
+  let R = null; try { R = introPlan(); } catch (e) { console.warn('開場路線算不出來，直接開始', e); R = null; }
+  if (!R) return false;
+  const st = R.st, cam = W.cam;
+  Object.assign(I, { on: true, R, t: 0, dt: 0, done, rate: 1, ff: null, fj: null, skip: false, skipped: false, adv: false, frame: 0, roll: 0, lastOp: st ? 0 : 1, cutNow: 0, evI: 0, outOn: false, hint: false, tk: 0, jump: false, cutJ: false,
+    yaw0: P.yaw, pitch0: P.pitch, Qp: R.eye.Qp.clone(), E: R.eye.E.clone(), via: R.via, pos: R.pts[0].p.clone(), w: ipv(), q: new THREE.Quaternion(), qt: new THREE.Quaternion(), qLook: new THREE.Quaternion(), qPiv0: new THREE.Quaternion(), cur: { i: 0, d: 0, v: R.v0, seg: null } });
+  ipEnv(I);
+  // 起點的方向：從標題接過來就是上一格的鏡頭；冷開場直接看著路線
+  ipTarget(I, 1 / 60, I.qt); I.q.copy(st ? st.q : I.qt); I.qLook.copy(I.qt); I.qPiv0.copy(I.qt);
+  I.fov = st ? st.fov : (W.fov0 || 72) + ipKick() * clamp((R.v0 - 6) / 20, 0, 1);
+  document.body.classList.remove('intro-out', 'intro-done'); document.body.classList.add('intro'); if (VM.g) VM.g.visible = false;
+  let el = document.getElementById('introSkip'); if (!el) { el = document.createElement('div'); el.id = 'introSkip'; document.body.appendChild(el); } el.textContent = TOUCH ? '點一下略過' : '按任意鍵略過'; el.hidden = true;
+  let fd = document.getElementById('introFade'); if (!fd) { fd = document.createElement('div'); fd.id = 'introFade'; document.body.appendChild(fd); } fd.classList.remove('on'); ipMask(I.lastOp, st ? null : '#000');
+  // 開場期間吃掉輸入：遊戲本身收不到（不會開選單、互動、聊天、鎖滑鼠、建搖桿）；彈窗與介面裡的照常
+  I.onKey = e => {
+    if (!I.on) return; const tg = e.target; if (tg && tg.closest && tg.closest('#modal, #gui, .rx')) return;
+    e.stopImmediatePropagation(); if (e.type === 'pointerdown') { try { audio(); } catch (_) { } }
+    if (e.type === 'touchstart' && tg && tg.id === 'worldCv' && e.cancelable) e.preventDefault();
+    if (e.type === 'keydown') { if (/^(Space|Tab|Arrow)/.test(e.code)) e.preventDefault(); if (e.repeat || /^(Shift|Control|Alt|Meta)/.test(e.code)) return; }
+    if (I.t >= .35 && !I.skipped) I.skip = true;
+  };
+  ['keydown', 'pointerdown', 'touchstart'].forEach(k => addEventListener(k, I.onKey, { capture: true, passive: false }));
+  // 開機直接開始、著色器還沒預熱：在黑幕底下同步編譯（兩種陰影狀態），第一次進洞深處才不會卡一下
+  if (!st && I.warm < 2) { const m0 = cam.layers.mask, sh = W.sun && W.sun.castShadow; try { cam.layers.mask = 7; W.r.compile(W.scene, cam); if (!LOW && sh) { W.sun.castShadow = false; W.r.compile(W.scene, cam); } } catch (e) { } if (W.sun) W.sun.castShadow = sh; cam.layers.mask = m0; I.warm = 2; }
   introSound(true); return true;
 }
-function introSpeed(c, i) { const w = c.Wd[i]; return w > 3.5 ? 12 : w > 2.4 ? 20 : 25; } // 公尺／秒
-const crV = (a, b, c2, d, t, out) => out.set(0, 0, 0).addScaledVector(b, 2).addScaledVector(IV[3].copy(c2).sub(a), t).addScaledVector(IV[3].copy(a).multiplyScalar(2).addScaledVector(b, -5).addScaledVector(c2, 4).sub(d), t * t).addScaledVector(IV[3].copy(b).multiplyScalar(3).sub(a).addScaledVector(c2, -3).add(d), t * t * t).multiplyScalar(.5);
-function introCurve(pts, t, out) { const n = pts.length - 1, f = clamp(t, 0, 1) * n, i = Math.min(n - 1, Math.floor(f)); return crV(pts[Math.max(0, i - 1)], pts[i], pts[i + 1], pts[Math.min(n, i + 2)], f - i, out); }
+// 這一格的時間與位置（caveEnv 一開始就先算，霧、圖層才會和這一格的位置一致）
+function introAdvance(dt) {
+  const I = INTRO; if (!I.on || I.adv) return; I.adv = true; I.frame++; if (I.frame <= 2) dt = Math.min(dt, 1 / 60); I.dt = dt;
+  if (I.skip) { I.skip = false; introSkipNow(); }
+  I.rate = ipRate(I, dt); let t = Math.min(I.R.Tend, I.t + dt * I.rate);
+  // 略過的淡跳：遮罩全滿、保持兩格之後才跳
+  const fj = I.fj; if (fj) { fj.rt += dt; if (!fj.done && fj.rt >= fj.up && I.lastOp >= .98 && ++fj.n >= 2) { fj.done = true; fj.rt2 = -2 / 60; t = Math.max(t, fj.to); I.R.cuts.forEach(g => { if (g.tm < t) g.done = 1; }); while (I.evI < I.R.evs.length && I.R.evs[I.evI].t < t) I.evI++; I.jump = true; I.cutNow = 2; } } // 跳過的那段：換位置、閃光、風切聲都不補放
+  // 換位置那一格前後都要被遮住：上一格的遮罩還沒滿就先停在切換前
+  for (const g of I.R.cuts) if (!g.done && t >= g.tm) { if (I.lastOp < .98) t = g.tm - 1e-4; else { g.done = 1; I.cutNow = 2; I.jump = I.jump || g.reset; I.cutJ = true; } break; }
+  I.t = t; Object.assign(I.cur, ipAt(I.R, t, I.pos)); ipEnv(I);
+  if (I.cutJ || I.jump) { cullChunks(I.pos); W.sky.position.copy(I.pos); }
+}
 function introStep(dt) {
-  const I = INTRO, c = I.c, cam = W.cam; if (I.skip && I.t < I.dA + I.dB) { I.t = I.dA + I.dB + I.dC * .55; I.skip = false; I.inCave = false; }
-  I.t += dt; DRS.skip = Math.max(DRS.skip || 0, 1); // 開場期間動態解析度不計時
-  const tA = I.dA, tB = tA + I.dB, tC = tB + I.dC; let look = IV[1], pos = I.pos, fov = 96, bank = 0;
-  if (I.t < tA) { // A：從洞口外俯衝進洞
-    const u = smooth(0, 1, I.t / tA) * .55 + I.t / tA * .45; introCurve(I.A, u, pos); introCurve(I.A, Math.min(1, u + .06), look); I.inCave = false;
-    if (I.t / tA > .8 && !I.inCave) { I.s = c.L; }
-  } else if (I.t < tB) { // B：在洞裡沿著曲線穿梭
-    const tt = I.t - tA; let i = c.n - 1; while (i > 0 && I.sT[i - 1] < tt) i--; const j = Math.max(0, i - 1), f = clamp((tt - I.sT[i]) / Math.max(1e-4, I.sT[j] - I.sT[i]), 0, 1);
-    const x = c.X[i] + (c.X[j] - c.X[i]) * f, z = c.Z[i] + (c.Z[j] - c.Z[i]) * f, y = c.Y[i] + (c.Y[j] - c.Y[i]) * f, h = c.Hh[i] + (c.Hh[j] - c.Hh[i]) * f, w = c.Wd[i];
-    const wv = Math.sin(I.t * 1.7) * Math.min(.35, w * .18); pos.set(x - c.TZ[i] * wv, y + Math.min(h * .45, 2.6) + Math.sin(I.t * 2.3) * .12, z + c.TX[i] * wv);
-    const k = Math.max(0, i - 16); look.set(c.X[k], c.Y[k] + Math.min(c.Hh[k] * .42, 2.4), c.Z[k]);
-    const k2 = Math.max(0, i - 8), turn = Math.atan2(c.TX[i] * c.TZ[k2] - c.TZ[i] * c.TX[k2], c.TX[i] * c.TX[k2] + c.TZ[i] * c.TZ[k2]); bank = clamp(-turn * 1.6, -.5, .5);
-    I.inCave = true; I.s = c.S[i] + (c.S[j] - c.S[i]) * f; I.i = i;
-  } else { // C：衝出洞口、拉高掠過樹梢，最後接回玩家的眼睛
-    if (I.inCave) { I.inCave = false; CV.flash = 1.1; introWhoosh(); }
-    const u = clamp((I.t - tB) / I.dC, 0, 1), e = u < .5 ? u * 1.15 : .575 + (u - .5) * .85; introCurve(I.C, e, pos); introCurve(I.C, Math.min(1, e + .07), look); fov = 96 - 24 * smooth(.45, 1, u);
-    if (u > .72 && !I.far) { IE.set(P.pitch, P.yaw, 0); IQ.setFromEuler(IE); }
+  const I = INTRO; if (!I.on) return; introAdvance(dt); dt = I.dt; I.adv = false;
+  const R = I.R, cam = W.cam, t = I.t, T = R.Tend;
+  P.yaw = I.yaw0; P.pitch = I.pitch0; // 開場期間滑鼠動了也不算：終點的視線不會跑掉
+  if (!isFinite(I.pos.x + I.pos.y + I.pos.z)) { console.warn('開場位置不是數字，直接結束'); return introEnd(); }
+  // 方向（換位置的那格維持原本的方向；減少動態與略過的淡跳在遮罩後直接對準新的路線）
+  ipTarget(I, dt, IPQ[3]);
+  if (I.jump) { I.q.copy(IPQ[3]); I.qt.copy(IPQ[3]); I.w.set(0, 0, 0); I.fov = ipFovT(I); }
+  else { // 角速度上限：平常 150°/s、從標題起飛的前 1.5 秒 90°/s、最後 3 秒 100°/s（中間平順過渡，不會突然煞住）、略過快轉時最多 240°/s、減少動態 45°/s
+    let wm = R.rm ? 45 : 150 - (R.title ? 60 * (1 - smooth(1.5, 1.9, t)) : 0) - 50 * smooth(T - 3.4, T - 3, t); if (!R.rm && I.rate > 1.01) wm += 90 * clamp((I.rate - 1) / .5, 0, 1); ipTurn(I, IPQ[3], dt, wm * Math.PI / 180);
   }
-  // 朝向：看著前方的點，加上轉彎傾斜與一點高頻抖動（穿越機的手感）
-  IM.lookAt(pos, look, IUP); const q = IV[2]; I.q.setFromRotationMatrix(IM); I.roll += (bank - I.roll) * Math.min(1, dt * 5);
-  const sh = I.reduce ? 0 : .006 * (I.t < tB ? 1 : .4); I.q.multiply(IQ.setFromEuler(IE.set(Math.sin(I.t * 31) * sh, Math.sin(I.t * 27 + 1) * sh, I.roll + Math.sin(I.t * 23) * sh * 1.5)));
-  const u = (I.t - tB) / I.dC;
-  if (I.t >= tB && u > .72 && !I.far) { IE.set(P.pitch, P.yaw, 0); IQ.setFromEuler(IE); I.q.slerp(IQ, smooth(.72, 1, u)); }
-  cam.position.copy(pos); cam.quaternion.copy(I.q); if (Math.abs(cam.fov - fov) > .05) { cam.fov = fov; cam.updateProjectionMatrix(); }
-  if (I.far && u > .82 && !I.flashDone) { I.flashDone = true; introFade(); }
-  if (I.hum) { const sp = I.t < tA ? 18 : I.t < tB ? 22 : 14; I.hum.f.frequency.value = 150 + sp * 4 + Math.sin(I.t * 9) * 6; I.hum.g.gain.value = .012 * (1 - smooth(.6, 1, Math.max(0, u))); }
-  if (I.t >= tC) introEnd();
+  I.jump = false; I.cutJ = false;
+  // 視野：跟著速度變寬，每秒最多變 40°，最後 1.4 秒回到平常
+  I.fov += clamp(ipFovT(I) - I.fov, -40 * dt, 40 * dt);
+  // 遮罩
+  let op = 0, col = null; for (const m of R.masks) { const o = m.op * (t < m.a ? 0 : t < m.b ? smooth(m.a, m.b, t) : t <= m.c ? 1 : t < m.d ? 1 - smooth(m.c, m.d, t) : 0); if (o > op) { op = o; col = m.col; } }
+  const fj = I.fj; if (fj) { let o; if (!fj.done) o = smooth(0, fj.up, fj.rt); else { fj.rt2 += dt; o = 1 - smooth(0, .35, fj.rt2); if (fj.rt2 > .36) I.fj = null; } if (o >= op) { op = o; col = 'fog'; } }
+  if (I.cutNow > 0) { op = 1; I.cutNow--; if (!col) col = 'fog'; }
+  ipMask(op, col); I.lastOp = op;
+  // 事件：出洞的閃光與風切聲、穿雲
+  while (I.evI < R.evs.length && R.evs[I.evI].t <= t) { const k = R.evs[I.evI++].k; if (k === 'flash') { CV.flash = 1.1; introWhoosh(1); } else if (k === 'cloud') { introWhoosh(.8); introWind(); } }
+  if (R.title && !I.tk && t > .3) { I.tk = 1; introWhoosh(.4); }
+  // 嗡嗡聲：速度越快音調越高，最後 1.6 秒淡掉
+  if (I.hum) { try { const ac = AC, va = Math.min(28, I.cur.v * I.rate), f0 = Math.min(260, 150 + 4 * va), g = .012 * smooth(0, .8, t) * (1 - smooth(T - 1.6, T, t)), h = I.hum; h.o1.frequency.setTargetAtTime(f0, ac.currentTime, .05); h.o2.frequency.setTargetAtTime(f0 * 1.016, ac.currentTime, .05); h.f.frequency.setTargetAtTime(230 + 10 * va, ac.currentTime, .05); h.g.gain.setTargetAtTime(g, ac.currentTime, .05); } catch (e) { } }
+  // 畫面元素：略過提示 0.6 秒後出現；最後 0.8 秒黑邊收回
+  if (!I.hint && t > .6 && !I.skipped) { I.hint = true; const el = document.getElementById('introSkip'); if (el) el.hidden = false; }
+  if (!I.outOn && t >= T - .8) { I.outOn = true; document.body.classList.add('intro-out'); }
+  DRS.skip = Math.max(DRS.skip || 0, 1); // 開場期間動態解析度不計時
+  // 寫進鏡頭（凍僵時最後 0.8 秒用和 cameraStep 一樣的發抖公式疊上去，接手時零誤差）
+  cam.position.copy(I.pos); cam.quaternion.copy(I.q);
+  if (S.frozen) { const k = smooth(T - .8, T, t); if (k > 0) { cam.position.x += Math.sin(W.t * 47) * .014 * k; cam.position.y += Math.cos(W.t * 53) * .014 * k; cam.quaternion.multiply(IPQ[4].setFromAxisAngle(IPV[5].set(0, 0, 1), Math.sin(W.t * 41) * .012 * k)); } }
+  if (Math.abs(cam.fov - I.fov) > .005) { cam.fov = I.fov; cam.updateProjectionMatrix(); }
+  if (t >= T) introEnd();
+}
+// 略過：剩下不多就快轉（同一條路線、完全連續），太遠、還有換位置沒發生、或減少動態就淡出→跳到落地前→淡入
+function introSkipNow() {
+  const I = INTRO, R = I.R; if (!I.on || I.skipped) return; I.skipped = true; const el = document.getElementById('introSkip'); if (el) el.hidden = true; introWhoosh(.5);
+  const left = R.tLand - I.t; if (left <= 0) return;
+  const pend = R.cuts.some(g => !g.done && g.tm > I.t), rs = clamp(left / .8, 1, 8); let est = 0;
+  if (!R.rm && !pend && left <= 6) { let tt = I.t, rt = 0; const p = IPV[0]; while (tt < R.tLand && est < 9) { const cur = ipAt(R, tt, p), turn = Math.abs((R.K[cur.i] || 0) * cur.v); let r = Math.min(1 + (rs - 1) * smooth(0, .3, rt), 1 + (rs - 1) * smooth(0, .3 * rs, R.tLand - tt)); if (turn > .01) r = Math.min(r, 4.19 / turn); tt += Math.max(1, r) / 60; rt += 1 / 60; est += 1 / 60; } }
+  if (R.rm || pend || left > 6 || est + (R.Tend - R.tLand) > 3.7) I.fj = { rt: 0, n: 0, done: false, up: R.rm ? .3 : .2, to: Math.max(I.t, R.rm ? R.Tend - 1.2 : R.tLand - .9) }; // 減少動態：0.3 秒淡到落地的最後 1.2 秒
+  else I.ff = { r: rs, rt: 0 };
 }
 function introEnd() {
-  const I = INTRO; if (!I.on) return; I.on = false; document.body.classList.remove('intro'); const el = document.getElementById('introSkip'); if (el) el.hidden = true;
-  ['keydown', 'pointerdown', 'touchstart'].forEach(k => removeEventListener(k, I.onKey));
-  introSound(false); CV.c = null; CV.scanNow = 1; W.cam.fov = W.fov0 || 72; W.cam.updateProjectionMatrix();
-  const done = I.done; I.done = null; if (done) done(); W.camAway = !I.far; // 從開場最後的位置平順回到玩家視角
+  const I = INTRO; if (!I.on) return; I.on = false;
+  I.res = I.E && I.q ? { dp: I.pos.distanceTo(I.E), deg: I.q.angleTo(I.Qp) * 180 / Math.PI } : null; // 收尾前的殘差（測試用：應該 < 0.1°）
+  const cam = W.cam; if (I.E && isFinite(I.E.x)) { cam.position.copy(I.E); cam.quaternion.copy(I.Qp); if (S.frozen) { cam.position.x += Math.sin(W.t * 47) * .014; cam.position.y += Math.cos(W.t * 53) * .014; cam.quaternion.multiply(IPQ[4].setFromAxisAngle(IPV[5].set(0, 0, 1), Math.sin(W.t * 41) * .012)); } }
+  cam.fov = W.fov0 || 72; cam.updateProjectionMatrix(); P.yaw = I.yaw0; P.pitch = I.pitch0;
+  ['keydown', 'pointerdown', 'touchstart'].forEach(k => removeEventListener(k, I.onKey, { capture: true }));
+  introSound(false); const el = document.getElementById('introSkip'); if (el) el.hidden = true; ipMask(0);
+  const b = document.body; b.classList.remove('intro', 'intro-out'); b.classList.add('intro-done'); clearTimeout(I.doneT); I.doneT = setTimeout(() => b.classList.remove('intro-done'), 650);
+  I.v.c = null; I.R = null; I.fj = I.ff = null; W.camAway = false; cullChunks(P); VM.swing = Math.max(VM.swing || 0, .3);
+  const done = I.done; I.done = null; if (done) done();
 }
-function introFade() { let el = document.getElementById('introFade'); if (!el) { el = document.createElement('div'); el.id = 'introFade'; document.body.appendChild(el); } el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); }
-// 聲音：小小的螺旋槳嗡嗡聲（速度越快音調越高）＋進出洞口的風切聲
+// 標題第一格先把著色器編好（compileAsync：不擋住畫面）：現在的陰影狀態＋洞深處關掉陰影的狀態；LOW 沒有陰影只要一種
+function introPrewarm() {
+  const I = INTRO; if (I.warm || !W.r || !W.r.compileAsync) return; I.warm = 1; const cam = W.cam;
+  const run = () => { const m0 = cam.layers.mask; try { cam.layers.mask = 7; return W.r.compileAsync(W.scene, cam); } catch (e) { return Promise.resolve(); } finally { cam.layers.mask = m0; } };
+  run().then(() => { const sh = W.sun && W.sun.castShadow; if (LOW || !sh || INTRO.on) return; W.sun.castShadow = false; try { return run(); } finally { W.sun.castShadow = sh; } }).then(() => { I.warm = 2; }, () => { I.warm = 2; });
+}
+// 聲音：小小的螺旋槳嗡嗡聲（速度越快音調越高）＋進出洞口的風切聲、穿雲的風聲
 function introSound(on) {
   try {
-    if (!S.sound) return; const ac = audio(); if (on && !INTRO.hum) { const o1 = ac.createOscillator(), o2 = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain(); o1.type = o2.type = 'sawtooth'; o1.frequency.value = 220; o2.frequency.value = 223.5; f.type = 'lowpass'; f.frequency.value = 230; f.Q.value = 2; g.gain.value = 0; o1.connect(f); o2.connect(f); f.connect(g); g.connect(master); o1.start(); o2.start(); INTRO.hum = { o1, o2, f, g }; introWhoosh(); }
+    if (!S.sound) return; const ac = audio(); if (on && !INTRO.hum) { const o1 = ac.createOscillator(), o2 = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain(); o1.type = o2.type = 'sawtooth'; o1.frequency.value = 150; o2.frequency.value = 152.4; f.type = 'lowpass'; f.frequency.value = 230; f.Q.value = 2; g.gain.value = 0; o1.connect(f); o2.connect(f); f.connect(g); g.connect(master); o1.start(); o2.start(); INTRO.hum = { o1, o2, f, g }; }
     else if (!on && INTRO.hum) { const h = INTRO.hum; INTRO.hum = null; h.g.gain.setTargetAtTime(0, ac.currentTime, .15); setTimeout(() => { try { h.o1.stop(); h.o2.stop(); h.g.disconnect(); } catch (e) { } }, 900); }
   } catch (e) { }
 }
-function introWhoosh() { try { if (!S.sound) return; const ac = audio(), t = ac.currentTime; noise(ac, t, .9, 700, .8, .05, 'bandpass', .8); noise(ac, t + .1, .6, 1800, 1.2, .025, 'bandpass', 1.3); } catch (e) { } }
+function introWhoosh(k = 1) { try { if (!S.sound) return; const ac = audio(), t = ac.currentTime; noise(ac, t, .9 * k + .2, 700, .8, .05 * k, 'bandpass', .8); noise(ac, t + .1, .6 * k + .1, 1800, 1.2, .025 * k, 'bandpass', 1.3); } catch (e) { } }
+function introWind() { try { if (!S.sound) return; const ac = audio(), t = ac.currentTime; noise(ac, t, 1.6, 420, .5, .035, 'lowpass', .5); } catch (e) { } }

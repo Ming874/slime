@@ -1655,7 +1655,7 @@ function buildLandmarks3() {
 }
 // 遠近切換：120 公尺外只畫剪影（顏色跟著霧與天色走，夜裡更暗）
 function landmarkStep() {
-  const c = W.cam.position, city = inCity(), fogC = W.scene.fog.color;
+  const c = W.cam.position, city = inCity(INTRO.on || TITLE.on ? c.x : undefined), fogC = W.scene.fog.color; // 標題與開場：看鏡頭在哪（存檔在大城市時，穿越山谷的那段地標照樣在）
   if (W.city) W.city.visible = city; if (W.mktOpen) { const o = mktOpenNow(); W.mktOpen.visible = o; W.mktShut.visible = !o; }
   for (const L of LMS) {
     const far = !city && Math.hypot(L.x - c.x, L.z - c.z) > 120; L.near.forEach(o => { o.visible = !city && !far; }); L.far.visible = far;
@@ -3737,7 +3737,7 @@ const KEYS = new Set(), IN = { joy: null, jx: 0, jy: 0, run: false, sneak: false
 const SENS = [.0016, .0025, .0038], SENS_N = ['低', '中', '高'];
 function initPlayer() {
   let sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
-  if (!inCity(sp.x) && (!regionOK(sp.x, sp.z) || coldBlocked(sp.x, sp.z))) sp = { x: 0, z: 16, yaw: 0 };
+  if (!inCity(sp.x) && !caveAt(sp.x, sp.z) && (!regionOK(sp.x, sp.z) || coldBlocked(sp.x, sp.z))) sp = { x: 0, z: 16, yaw: 0 }; // 存檔在山洞裡（山脊底下）：保留，開場時再放到洞的地面上
   P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, vx: 0, vz: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0, coy: 0, jb: 0, sneak: false, running: false, dip: 0, dipV: 0, roll: 0 };
 }
 // 腳下的地面材質（決定腳步聲）
@@ -7089,7 +7089,7 @@ const SUN_D = new THREE.Vector3(30, 55, 22).normalize(), SUN_R = new THREE.Vecto
 const SH_EXT = 34, SH_RES = 2048, shC = new THREE.Vector3();
 function envStep(dt) {
   if (W.bumpU && W.bumpU.value.z > 0) W.bumpU.value.z = Math.max(0, W.bumpU.value.z - dt * .9);
-  const w = biomeW(P.x, P.z), [fog, top, sun, hs, hg] = ENVC.map(c => c.setRGB(0, 0, 0));
+  const EP = (INTRO.on || TITLE.on) && INTRO.env || P, w = biomeW(EP.x, EP.z), [fog, top, sun, hs, hg] = ENVC.map(c => c.setRGB(0, 0, 0)); // 標題與開場：天色、陰影跟著鏡頭（caves.js 的 INTRO.env）
   BIOMES.forEach((b, i) => { const Z = ZONE3D[b]; fog.add(tmpC.set(Z.fog).multiplyScalar(w[i])); top.add(tmpC.set(Z.top).multiplyScalar(w[i])); sun.add(tmpC.set(Z.sun).multiplyScalar(w[i])); hs.add(tmpC.set(Z.hemiS).multiplyScalar(w[i])); hg.add(tmpC.set(Z.hemiG).multiplyScalar(w[i])); });
   dnUpdate(); const nN = DN.night;
   fog.lerp(DNC.duskFog, DN.dusk * .55).lerp(DNC.dawnFog, DN.dawn * .45).lerp(DNC.fog, nN * .9); top.lerp(DNC.duskTop, DN.dusk * .6).lerp(DNC.dawnTop, DN.dawn * .5).lerp(DNC.top, nN * .95);
@@ -7098,8 +7098,8 @@ function envStep(dt) {
   W.sun.color.lerp(sun, k); W.hemi.color.lerp(hs, k); W.hemi.groundColor.lerp(hg, k); W.sun.intensity = (2.6 - w[2] * .9) * (1 - .72 * DN.night) * (1 - .25 * (DN.dusk + DN.dawn)); W.hemi.intensity = .55 * (1 - .35 * DN.night); skyEnv(); nightLights();
   W.sky.position.copy(W.cam.position);
   // 陰影範圍往視線前方偏移（身後的陰影用不到），並對齊陰影貼圖的像素格：走動時陰影邊緣不再閃爍、游移
-  const fx = P.x - Math.sin(P.yaw) * 10, fz = P.z - Math.cos(P.yaw) * 10, tx = SH_EXT * 2 / SH_RES;
-  shC.set(fx, P.y, fz); const a = Math.round(shC.dot(SUN_R) / tx) * tx, b = Math.round(shC.dot(SUN_U) / tx) * tx, c = shC.dot(SUN_D);
+  const fx = EP.x - Math.sin(EP.yaw) * 10, fz = EP.z - Math.cos(EP.yaw) * 10, tx = SH_EXT * 2 / SH_RES;
+  shC.set(fx, EP.y, fz); const a = Math.round(shC.dot(SUN_R) / tx) * tx, b = Math.round(shC.dot(SUN_U) / tx) * tx, c = shC.dot(SUN_D);
   shC.copy(SUN_R).multiplyScalar(a).addScaledVector(SUN_U, b).addScaledVector(SUN_D, c);
   W.sun.target.position.copy(shC); W.sun.position.copy(shC).addScaledVector(SUN_D, 66);
   const zid = CV.c ? W.zoneNow : inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev && !W.quietZone) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); W.quietZone = false; if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
@@ -7154,7 +7154,7 @@ function qualityStep(dt) {
 }
 function worldStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
-  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on) playerStep(dt); warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數
+  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on) playerStep(dt); if (!INTRO.on) warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數；開場期間也不倒數
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   deliverStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
