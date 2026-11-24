@@ -2984,13 +2984,16 @@ function unlockMouse() { if (locked()) { W.unlockByUs = true; document.exitPoint
 function bindInput() {
   const cv = $('#worldCv');
   addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return;
-    const k = e.code; if (!$('#modal').hidden || TITLE.on) return;
+    const k = e.code, tg = e.target;
+    // 輸入框裡打字不觸發快捷鍵；Esc 例外：文字框先失焦，滑桿（音量）直接關介面，所以 Esc 再按一次一定關得掉選單
+    if (tg.tagName === 'INPUT') { if (k !== 'Escape' || !GUI.kind) return; if (tg.type !== 'range' && tg.type !== 'checkbox') { tg.blur(); return; } }
+    if (!$('#modal').hidden || TITLE.on) return;
     if (k === 'Escape') { if (GUI.kind) closeGui(); else openGui('pause'); return; }
     // Alt：暫時解鎖滑鼠但不暫停遊戲；再按一次 Alt 或點擊畫面就回到操控
     if (k === 'AltLeft' || k === 'AltRight') { e.preventDefault(); if (GUI.kind || TOUCH) return; if (locked()) { W.altFree = true; unlockMouse(); showFreeHint(); } else { W.altFree = false; lockMouse(); } return; }
     if ((k === 'KeyT' || k === 'Enter') && NET.on && !GUI.kind) { e.preventDefault(); openChat(); return; }
-    if (k === 'KeyI' || k === 'Tab') { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
+    // Tab 在暫停選單裡留給鍵盤在按鈕之間移動
+    if (k === 'KeyI' || (k === 'Tab' && GUI.kind !== 'pause')) { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
     if (GUI.kind) {
       if (GUI.kind === 'line' && M.active) { if (k === 'Space') { e.preventDefault(); if (!e.repeat) { makeAction('tap'); makeAction('hold', true); } } if (k === 'ArrowLeft' || k === 'KeyA') M.kdir = -1; if (k === 'ArrowRight' || k === 'KeyD') M.kdir = 1; }
       if (k === 'KeyE' && GUI.kind !== 'line' && !e.repeat) closeGui(); return;
@@ -3139,19 +3142,45 @@ function lineViewPose() {
   return { p, t: p.clone().add(new THREE.Vector3(0, -Math.sin(pitch), -Math.cos(pitch))) };
 }
 const camT = new THREE.Vector3(), camQ = new THREE.Quaternion(), camE = new THREE.Euler(0, 0, 0, 'YXZ'), UP = new THREE.Vector3(0, 1, 0);
-// 每個工作站鏡頭停的位置：d＝離工作站多遠、h＝比工作站高多少（桌面類往下看）
-const CAMF = { pc: { d: 1.15, h: .12 }, bench: { d: .85, h: .95 }, decor: { d: .85, h: .95 }, shop: { d: 1.7, h: .25 }, museum: { d: 2.3, h: .35 }, mapg: { d: 1.25, h: .7 }, riddle: { d: 1.6, h: .2 } };
-function focusPose(f, kind) {
-  const c = CAMF[kind]; if (!c) return null;
-  const ex = P.x, ez = P.z, dx = f.x - ex, dz = f.z - ez, dist = Math.hypot(dx, dz); if (dist < .05) return null;
-  const d = Math.min(c.d, dist), p = new THREE.Vector3(f.x - dx / dist * d, 0, f.z - dz / dist * d);
-  p.y = Math.max(f.y + c.h, G(p.x, p.z) + .7);
-  return { p, q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(p, f, UP)) };
+const ease3 = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, out3 = t => 1 - Math.pow(1 - t, 3), in3 = t => t * t * t;
+/* 工作站的「介面表面」：介面會貼在這個面上展開，鏡頭最後正對它（GX 的 face 模式）。
+   以點擊範圍（hitBox）的中心為原點：o＝表面中心、n＝表面朝外的方向、w×h＝大小（w:0＝用點擊範圍的寬）。
+   n 是 +y 的是桌面類：鏡頭從正上方俯看，畫面的「上」取最接近玩家面向的桌邊。沒列在這裡的工作站用點擊範圍面向玩家的那一面。 */
+const SURF = {
+  pc: { o: [0, .45, -.27], n: [0, 0, 1], w: 1.5, h: .9, cover: 1 }, // 螢幕（含邊框；介面整個蓋住 3D 螢幕，不露出邊縫）
+  bench: { o: [0, -.04, 0], n: [0, 1, 0], w: 2.2, h: 1.2 }, decor: { o: [0, .01, 0], n: [0, 1, 0], w: 2.6, h: 1.5 }, // 桌面
+  mapg: { o: [0, 1.045, 0], n: [0, 1, 0], w: 1.3, h: 1.3 }, // 石台上的地圖
+  board: { o: [0, .3, .31], n: [0, 0, -1], w: 4.4, h: 2 }, // 公告欄的板面
+  shop: { o: [0, .5, -1.3], n: [0, 0, 1], w: 0, h: 3 }, // 店門口的櫥窗
+};
+function surfOf(it, kind) {
+  const hit = it && it.hit; if (!hit || !hit.geometry) return null; hit.updateWorldMatrix(true, false);
+  const c = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); hit.matrixWorld.decompose(c, q, sc);
+  const geo = hit.geometry; if (!geo.boundingBox) geo.computeBoundingBox(); const sz = geo.boundingBox.getSize(new THREE.Vector3()).multiply(sc);
+  const ax = v => new THREE.Vector3(...v).applyQuaternion(q), lx = ax([1, 0, 0]), lz = ax([0, 0, 1]), toP = new THREE.Vector3(P.x - c.x, 0, P.z - c.z);
+  const d = SURF[kind]; let n, w, h, u;
+  if (d) { n = ax(d.n); c.add(ax(d.o)); w = d.w || sz.x; h = d.h; }
+  else { const fx = Math.abs(lx.dot(toP)) > Math.abs(lz.dot(toP)); n = (fx ? lx : lz).clone(); if (n.dot(toP) < 0) n.negate(); w = fx ? sz.z : sz.x; h = sz.y; c.addScaledVector(n, (fx ? sz.x : sz.z) / 2); }
+  if (Math.abs(n.y) > .7) { // 桌面：畫面的「上」＝離玩家最遠的那個桌邊方向
+    const fwd = new THREE.Vector3(-Math.sin(P.yaw), 0, -Math.cos(P.yaw)), useZ = Math.abs(lz.dot(fwd)) >= Math.abs(lx.dot(fwd));
+    u = (useZ ? lz : lx).clone(); if (u.dot(fwd) < 0) u.negate(); if (!useZ) [w, h] = [h, w];
+  } else u = UP.clone();
+  return { c, n, u, x: new THREE.Vector3().crossVectors(u, n), w, h, cover: d && d.cover };
+}
+// 取表面上和介面同比例的一塊（置中）：介面一開始等比例貼在上面，不會被拉扁；cover＝這一塊蓋住整個表面
+function fitSurf(S, R) { const a = R.w / R.h; if ((S.w / S.h > a) !== !!S.cover) S.w = S.h * a; else S.h = S.w / a; return S; }
+// 鏡頭最後停的位置：正對表面、表面（已裁成介面的比例）剛好等於介面矩形 R，並平移到讓表面中心對準 R 的中心
+function facePose(S, R) {
+  const cam = W.cam, th = Math.tan(cam.fov * Math.PI / 360), asp = cam.aspect, vw = innerWidth, vh = innerHeight;
+  const d = clamp(Math.max(S.w / (2 * th * asp * R.w / vw), S.h / (2 * th * R.h / vh)), .7, 3.2);
+  const ncx = (R.x + R.w / 2) / vw * 2 - 1, ncy = 1 - (R.y + R.h / 2) / vh * 2;
+  const p = S.c.clone().addScaledVector(S.n, d).addScaledVector(S.x, -ncx * d * th * asp).addScaledVector(S.u, -ncy * d * th);
+  return { p, q: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(S.x, S.u, S.n)) };
 }
 function cameraStep(dt) {
   const cam = W.cam;
-  const fp = GUI.kind && GUI.kind !== 'line' && GUI.focus ? focusPose(GUI.focus, GUI.kind) : null;
-  if (fp) { const k = Math.min(1, dt * 3.2); cam.position.lerp(fp.p, k); cam.quaternion.slerp(fp.q, k); W.camAway = true; return; }
+  // 推近工作站：在固定時間內從玩家視角轉到正對介面表面（和介面展開的進度同步，見 faceTrack）
+  if (GUI.kind && GX.mode === 'face' && GX.to) { const s = GX.dur ? ease3(clamp(gxE() / GX.dur, 0, 1)) : 1; cam.position.lerpVectors(GX.from.p, GX.to.p, s); cam.quaternion.slerpQuaternions(GX.from.q, GX.to.q, s); W.camAway = true; return; }
   if (W.cottage) W.cottage.visible = GUI.kind !== 'line';
   if (GUI.kind === 'line') {
     const v = lineViewPose(), q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(v.p, v.t, new THREE.Vector3(0, 1, 0)));
@@ -3165,8 +3194,10 @@ function cameraStep(dt) {
   const cy = Math.cos(P.yaw), sy = Math.sin(P.yaw), target = camT.set(P.x + cy * side, P.camY + P.eye + bob + P.dip, P.z - sy * side);
   const lat = P.vx * cy - P.vz * sy; P.roll += ((-lat * .0045 + Math.sin(P.bob) * .004 * mv) - P.roll) * Math.min(1, dt * 8);
   if (W.camAway) {
-    // 從工作站轉回來：位置與方向一起平順回到玩家視角
-    const k = Math.min(1, dt * 6); cam.position.lerp(target, k); camQ.setFromEuler(camE.set(P.pitch, P.yaw, P.roll, 'YXZ')); cam.quaternion.slerp(camQ, k);
+    // 從工作站轉回來：位置與方向一起平順回到玩家視角（剛關掉貼在表面上的介面時，和介面收回的進度同步）
+    camQ.setFromEuler(camE.set(P.pitch, P.yaw, P.roll, 'YXZ'));
+    if (GX.mode === 'face' && GX.dir < 0 && GX.from) { const s = ease3(clamp(gxE() / GX.dur, 0, 1)); cam.position.lerpVectors(GX.from.p, target, s); cam.quaternion.slerpQuaternions(GX.from.q, camQ, s); }
+    else { const k = Math.min(1, dt * 6); cam.position.lerp(target, k); cam.quaternion.slerp(camQ, k); }
     if (cam.position.distanceTo(target) < .05 && cam.quaternion.angleTo(camQ) < .02) W.camAway = false;
     return;
   }
@@ -3235,7 +3266,7 @@ function act() { if (GUI.kind || !W.ready) return; if (TARGET && TARGET.type ===
 function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
 function doAct(t) {
   if (!t) return;
-  FOCUS = (t.type === 'station' || t.type === 'puzzle') && t.it && t.it.wp ? t.it.wp.clone() : null;
+  FOCUS = (t.type === 'station' || t.type === 'puzzle') && t.it && t.it.hit ? t.it : null; // 打開介面時鏡頭推近這個物件（surfOf）
   try { doActAt(t); } finally { FOCUS = null; }
 }
 function doActAt(t) {
@@ -3413,32 +3444,119 @@ const GUIS = {
 const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單' };
 let tab = '';
 /* 沉浸式介面：每個工作站用一種「道具」呈現（components/StationLayer.tsx 加上外觀與動畫，app/stations.css 是樣式）。
-   打開時鏡頭推近工作站（cameraStep 的 GUI.focus），關閉時等收起動畫播完才藏起來。 */
-const PROP = { line: 'machine', bench: 'mat', decor: 'mat', inv: 'journal', pause: 'notebook', pc: 'monitor', live: 'phone', shop: 'catalog', mapg: 'parchment', riddle: 'tablet', museum: 'vitrine' };
+   開關的過場由下面的 GX 控制，#gui[data-mode] 決定是哪一種：
+   held＝手持道具（Esc 筆記本、直播手機、背包手帳）：第一人稱的手把 3D 道具拿到眼前，停在和 2D 介面完全重合的位置後 2D 才淡入接手；
+         關閉時 2D 先淡出、露出底下同位置的 3D 道具，再由手收回（heldStep）。
+   face＝固定在世界裡的工作站：鏡頭在固定時間內轉到正對物件表面，2D 介面一開始貼在那個表面上（CSS matrix3d），
+         隨鏡頭推近展開成可以操作的大小；關閉時反過來貼回表面再淡出（faceTrack）。
+   card＝其他（沒有對準物件就打開、或系統設定減少動態）：原地淡入。
+   介面開著時世界照樣在背後畫、照樣有聲音（loop 降頻），玩家不能移動、準心不互動。 */
+const PROP = { line: 'machine', bench: 'mat', decor: 'mat', inv: 'journal', pause: 'notebook', pc: 'monitor', live: 'phone', shop: 'catalog', mapg: 'parchment', riddle: 'tablet', museum: 'vitrine', board: 'cork' };
+const HELD = { pause: 1, live: 1, inv: 1 };
 const GUI_OUT_MS = 380;
-let guiHideT = 0, FOCUS = null;
+const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// 時間軸（毫秒）。拿起：舉起、封面翻開、2D 接手、手放下；收起：2D 淡出、手回來、闔上、放下
+const HT = { raise: 430, open0: 60, open1: 330, hand: 420, done: 540, end: 800 };
+const HC = { fade: 60, hide: 190, up: 150, close0: 250, close1: 420, down0: 130, end: 580 }; // 收起時先拉遠、再闔上、最後放下（近距離翻封面會蓋滿整個畫面）
+const GX = { mode: '', kind: '', dir: 0, t0: 0, st: 0, R: null, surf: null, from: null, to: null, dur: 0, fz: null };
+const gxE = () => GX.fz != null ? GX.fz : performance.now() - GX.t0; // 過場經過的毫秒；測試時可設 GX.fz 把畫面停在某一刻
+let guiHideT = 0, FOCUS = null, bgAcc = 0;
 function guiShow(kind) {
   clearTimeout(guiHideT); const g = $('#gui'), was = !g.hidden && !g.classList.contains('closing');
-  g.dataset.prop = PROP[kind] || 'card'; g.dataset.kind = kind; g.classList.remove('closing'); g.hidden = false;
+  g.dataset.prop = PROP[kind] || 'card'; g.dataset.kind = kind; g.classList.remove('closing', 'shown', 'dim'); g.hidden = false;
+  // 模式要在開場動畫開始前決定（CSS 依 data-mode 關掉會和 3D 過場打架的動畫）
+  g.dataset.mode = RM() || !W.ready ? 'card' : HELD[kind] ? 'held' : kind !== 'line' && GUI.focus && GUI.focus.hit ? 'face' : 'card';
   if (!was) { g.classList.remove('opening'); void g.offsetWidth; g.classList.add('opening'); }
   window.dispatchEvent(new CustomEvent('slime:gui', { detail: { open: true, kind, prop: g.dataset.prop } }));
+  return was;
 }
 function guiHide(now) {
-  const g = $('#gui'), done = () => { g.hidden = true; g.classList.remove('closing', 'opening'); if (!GUI.kind) $$('.panel').forEach(p => p.classList.remove('on')); };
+  const g = $('#gui'), done = () => { g.hidden = true; g.classList.remove('closing', 'opening'); gxClean(); if (!GUI.kind) $$('.panel').forEach(p => p.classList.remove('on')); };
   window.dispatchEvent(new CustomEvent('slime:gui', { detail: { open: false } }));
-  clearTimeout(guiHideT);
-  if (now || matchMedia('(prefers-reduced-motion: reduce)').matches) return done();
-  g.classList.remove('opening'); g.classList.add('closing'); guiHideT = setTimeout(done, GUI_OUT_MS);
+  clearTimeout(guiHideT); if (g.contains(document.activeElement)) document.activeElement.blur();
+  if (now || RM()) { GX.mode = ''; if (VM.prop) VM.prop.visible = false; return done(); }
+  g.classList.remove('opening'); g.classList.add('closing'); guiHideT = setTimeout(done, gxOut());
+}
+// 介面的版面位置（不含過場用的 transform）
+function gwinRect() { const w = $('#gwin'), t = w.style.transform; w.style.transform = 'none'; const r = w.getBoundingClientRect(); w.style.transform = t; return { x: r.left, y: r.top, w: r.width, h: r.height }; }
+function gxClean() { const w = $('#gwin'); w.style.transform = w.style.opacity = ''; $('#gui').classList.remove('shown', 'dim'); $('#game').classList.remove('gblur'); }
+// 打開（openGui 畫好內容之後呼叫，這時量得到介面的大小）
+function gxIn(kind, was) {
+  const g = $('#gui'), m = g.dataset.mode; gxClean(); Object.assign(GX, { mode: m === 'card' ? '' : m, kind, dir: 1, st: 0, t0: performance.now(), R: gwinRect(), last: null, c0: null });
+  g.style.setProperty('--night', (DN.night || 0).toFixed(2)); // 紙類介面夜裡跟著環境暗一點（stations.css）
+  if (m === 'held') { if (was) GX.t0 -= HT.end; } // 從別的介面切過來：道具已經在手上，直接顯示
+  else if (m === 'face' && (GX.surf = surfOf(GUI.focus, kind))) {
+    fitSurf(GX.surf, GX.R);
+    const cam = W.cam; GX.from = { p: cam.position.clone(), q: cam.quaternion.clone() }; GX.to = facePose(GX.surf, GX.R); GX.dur = was ? 0 : 640;
+    $('#gwin').style.opacity = 0; faceTrack(0);
+  } else { GX.mode = ''; g.dataset.mode = 'card'; g.classList.add('shown'); gxFocus(kind); }
+}
+// 關閉：開始收回的過場，回傳幾毫秒後藏起 #gui
+function gxOut() {
+  $('#gui').classList.remove('dim'); $('#game').classList.remove('gblur');
+  if (!GX.mode) return GUI_OUT_MS;
+  Object.assign(GX, { dir: -1, st: 0, t0: performance.now(), R: gwinRect() });
+  if (GX.mode === 'held') { GX.c0 = GX.st < 1 && GX.last ? [...GX.last, 1] : [1, 1, 1, 0]; return HC.hide; } // 還沒舉到眼前就關掉：從目前的位置收回，不跳到眼前
+  GX.from = { p: W.cam.position.clone(), q: W.cam.quaternion.clone() }; GX.dur = 460; $('#gui').classList.remove('shown'); return GX.dur;
+}
+// 過場進行中：世界要用全速重繪（loop）
+function gxBusy() { if (!GX.mode) return false; const e = gxE(); return GX.mode === 'held' ? e < (GX.dir > 0 ? HT.end : HC.end) + 30 : e < GX.dur + 30; }
+// 暫停選單出現時把焦點放在「回到遊戲」：鍵盤可以直接 Enter 回到遊戲、Tab 移到其他按鈕
+function gxFocus(kind) { const f = kind === 'pause' && $('#gwin .rx-resume'); if (f && !$('#gui').contains(document.activeElement)) f.focus({ preventScroll: true }); }
+// 每一格（loop，在世界畫完之後）：依時間軸切換 2D 介面的狀態、讓貼在表面上的介面跟著鏡頭
+function gxStep() {
+  if (!GX.mode) return; const e = gxE(), g = $('#gui');
+  if (GX.mode === 'face') return faceTrack(e);
+  if (GX.dir > 0) {
+    if (GX.st < 1 && e >= HT.hand) { GX.st = 1; g.classList.add('shown'); }
+    if (GX.st < 2 && e >= HT.done) {
+      GX.st = 2; g.classList.add('dim'); $('#game').classList.toggle('gblur', !LOW && GX.kind !== 'live'); // 手機：看得到後面的世界，不模糊
+      gxFocus(GX.kind);
+    }
+  } else {
+    if (GX.st < 1 && e >= HC.fade) { GX.st = 1; g.classList.remove('shown'); }
+    if (e >= HC.end) GX.mode = '';
+  }
+}
+/* 貼在工作站表面上的介面：四個角從「物件表面投影在畫面上的位置」漸變到最後的介面矩形（homography → CSS matrix3d） */
+function faceTrack(e) {
+  const w = $('#gwin'), R = GX.R, s = GX.dur ? clamp(e / GX.dur, 0, 1) : 1, op = GX.dir > 0;
+  if (s >= 1) { if (op) { if (GX.st < 1) { GX.st = 1; w.style.transform = w.style.opacity = ''; $('#gui').classList.add('shown'); } } else GX.mode = ''; return; }
+  const m = op ? ease3(smooth(.12, 1, s)) : 1 - ease3(smooth(0, .8, s)), a = op ? smooth(0, .28, s) : 1 - smooth(.55, 1, s), Q = surfQuad(GX.surf, R);
+  w.style.opacity = a.toFixed(3);
+  w.style.transform = Q ? quadCSS(R, Q.map(([x, y], i) => [x + ((i % 3 ? R.w : 0) - x) * m, y + ((i > 1 ? R.h : 0) - y) * m])) : '';
+}
+// 表面四個角（左上、右上、右下、左下）投影到畫面上、相對於介面左上角的像素位置；有角跑到鏡頭後面就放棄貼附
+function surfQuad(S, R) {
+  const cam = W.cam, vw = innerWidth, vh = innerHeight, out = [], v = new THREE.Vector3(), vc = new THREE.Vector3(); cam.updateMatrixWorld();
+  for (const [a, b] of [[-1, 1], [1, 1], [1, -1], [-1, -1]]) {
+    v.copy(S.c).addScaledVector(S.x, a * S.w / 2).addScaledVector(S.u, b * S.h / 2);
+    if (vc.copy(v).applyMatrix4(cam.matrixWorldInverse).z > -cam.near * 2) return null;
+    v.project(cam); out.push([(v.x + 1) / 2 * vw - R.x, (1 - v.y) / 2 * vh - R.y]);
+  }
+  return out;
+}
+// 單位正方形 → 四邊形的投影轉換（Heckbert），再縮放成介面的寬高
+function quadCSS(R, Q) {
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = Q, sx = x0 - x1 + x2 - x3, sy = y0 - y1 + y2 - y3;
+  let a = x1 - x0, b = x3 - x0, d = y1 - y0, e = y3 - y0, g = 0, h = 0;
+  if (Math.abs(sx) > 1e-6 || Math.abs(sy) > 1e-6) {
+    const dx1 = x1 - x2, dx2 = x3 - x2, dy1 = y1 - y2, dy2 = y3 - y2, den = dx1 * dy2 - dx2 * dy1; if (Math.abs(den) < 1e-9) return '';
+    g = (sx * dy2 - dx2 * sy) / den; h = (dx1 * sy - sx * dy1) / den; a = x1 - x0 + g * x1; b = x3 - x0 + h * x3; d = y1 - y0 + g * y1; e = y3 - y0 + h * y3;
+  }
+  const W_ = R.w, H_ = R.h;
+  return `matrix3d(${[a / W_, d / W_, 0, g / W_, b / H_, e / H_, 0, h / H_, 0, 0, 1, 0, x0, y0, 0, 1].map(n => +n.toFixed(6)).join(',')})`;
 }
 function openGui(kind, sec) {
   const g = GUIS[kind]; if (!g) return; unlockMouse(); GUI.kind = kind; sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now();
+  if (P) P.vx = P.vz = 0; // 停下腳步再拿東西：鏡頭的晃動與側傾回正，手上的道具才對得準 2D 介面
   const it = held();
   if (kind === 'line' && it && it.t === 'gel' && !M.active) { M.sp = it.sp; M.last = null; }
   if (kind === 'line' && !M.sp) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || {}).id || null;
   if (kind === 'decor' && it && it.t === 'prod') D.id = it.p.id;
   if (kind === 'live' && it && it.t === 'prod' && !stockById(L.stageId)) L.stageId = it.p.id;
-  GUI.focus = FOCUS; FOCUS = null; guiShow(kind); $('#gui').classList.toggle('sheet', kind === 'line'); $('#gtitle').textContent = g.t; $('#startHint').hidden = true;
-  showSec(sec || g.tabs[0]);
+  GUI.focus = FOCUS; FOCUS = null; const was = guiShow(kind); $('#gui').classList.toggle('sheet', kind === 'line'); $('#gtitle').textContent = g.t; $('#startHint').hidden = true;
+  showSec(sec || g.tabs[0]); gxIn(kind, was);
 }
 function guiTabs() { const g = GUIS[GUI.kind]; return g.tabs.filter(t => (t !== 'branch' || S.branch || branchReady()) && (t !== 'arms' || armsOpen()) && (t !== 'visit' || NET.on)); }
 function renderGuiTabs() { const tabs = guiTabs(); $('#gtabs').innerHTML = tabs.length > 1 ? tabs.map(t => `<button class="${t === tab ? 'on' : ''}" data-act="sec" data-sec="${t}">${TABN[t]}${t === 'branch' && !S.branch ? ' ●' : ''}</button>`).join('') : ''; }
@@ -5114,6 +5232,7 @@ const VM_POSE = {
   prod: { x: 0, y: .005, z: 0, rx: .14, ry: .18, rz: -.12, c: 1.25, t: .95, sp: 0 },
   reach: { x: -.03, y: .04, z: -.08, rx: -.62, ry: .3, rz: -.3, c: .1, t: .08, sp: .16 },
   squeeze: { x: -.035, y: .03, z: -.12, rx: -.5, ry: .3, rz: -.3, c: 1.32, t: 1.05, sp: 0 },
+  hold: { x: 0, y: 0, z: 0, rx: .1, ry: .1, rz: -.1, c: .9, t: .7, sp: .02 }, // 托著筆記本、手機、手帳的下緣
 };
 function initViewModel() {
   if (W.cam.parent !== W.scene) W.scene.add(W.cam);
@@ -5173,8 +5292,140 @@ function upgradeFx(dt) {
   if (S.show.length) S.fans += dt * S.show.reduce((a, p) => a + effCrisp(p), 0) * .004;
   if (W.upG) W.upG.children.forEach(o => { if (o.userData.bob != null) o.scale.y = 1 + Math.sin(W.t * 1.6 + o.userData.bob) * .06; });
 }
+// 手指、拇指、手腕依手勢參數擺好
+function vmPose(p) {
+  VM.fingers.forEach((f, i) => { const c = p.c * (1 + (i - 1.5) * .05); f.k1.rotation.x = c * .95; f.k2.rotation.x = c * 1.15; f.k1.rotation.y = (f.x * 8) * p.sp; });
+  VM.thumb.tk.rotation.x = p.t * .5; VM.thumb.tk.rotation.y = p.t * .55; VM.thumb.tk2.rotation.x = p.t * .9;
+  VM.arm.position.set(p.x, p.y, p.z); VM.hand.rotation.set(p.rx, p.ry, p.rz);
+}
+/* ---------- 手持道具：Esc 的筆記本、直播的手機、背包的手帳（GX 的 held 模式） ----------
+   以 2D 介面的像素為單位建模、整組再縮放成公尺：停在眼前時投影剛好和 2D 介面（#gwin）重合，2D 才淡入接手。
+   面向鏡頭的那一面用不受光的材質畫成和 2D 一樣的顏色（拿到眼前的過程中從環境亮度漸漸亮到原色），交接時看不出接縫。 */
+const hv1 = new THREE.Vector3(), hv2 = new THREE.Vector3();
+const NBP = { head: 70, line0: 99, gap: 28, margin: 52 }; // 筆記本內頁：頁首線、第一條橫線、行距、紅色邊線（窄螢幕 30）；和 stations.css 的筆記本 .gwin 對齊
+function rrShape(w, h, r) { const s = new THREE.Shape(), x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s; }
+function heldModel(kind, R) {
+  const w = Math.round(R.w), h = Math.round(R.h), two = kind === 'inv' && innerWidth > 760, key = kind + w + 'x' + h + (two ? 'd' : '');
+  if (VM.pm && VM.pm.key === key) return VM.pm;
+  if (!VM.prop) { VM.prop = new THREE.Group(); W.cam.add(VM.prop); }
+  if (VM.pm) { VM.prop.remove(VM.pm.root); VM.pm.root.traverse(o => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach(m => { if (m.map) m.map.dispose(); m.dispose(); }); } }); }
+  const root = new THREE.Group(), lit = [], fade = [], mx = LOW ? 760 : 1150;
+  // 用 2D 介面的像素座標畫貼圖（畫布依解析度上限縮放）
+  const tex = (draw, cw = w, ch = h) => { const f = Math.min(1.5, mx / Math.max(cw, ch)); return artTex(Math.round(cw * f), Math.round(ch * f), g => { g.save(); g.scale(f, f); draw(g, cw, ch); g.restore(); }); };
+  const face = (map, o) => { const m = new THREE.MeshBasicMaterial(Object.assign({ map, fog: false, toneMapped: false }, o)); lit.push(m); return m; };
+  const mat = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .8, fog: false }, o));
+  const rr = (g, x, y, ww, hh, r) => { g.beginPath(); if (g.roundRect) g.roundRect(x, y, ww, hh, r); else g.rect(x, y, ww, hh); };
+  const pm = { key, kind, root, D: .42, grip: [w * .3, -h / 2 - 4, 8], hs: 1.5, open: () => { } };
+  if (kind === 'pause') {
+    // 筆記本：上方線圈，青綠色封面往上翻開；內頁的橫線、紅色邊線和 app/stations.css 的 .gwin 一致
+    const page = tex((g, w, h) => {
+      g.fillStyle = '#fffdf6'; g.fillRect(0, 0, w, h);
+      g.fillStyle = 'rgba(122,160,204,.3)'; for (let y = NBP.line0; y < h - 6; y += NBP.gap) g.fillRect(0, y, w, 1);
+      g.fillStyle = 'rgba(239,68,68,.32)'; g.fillRect(innerWidth <= 600 ? 30 : NBP.margin, 0, 2, h); g.fillStyle = 'rgba(239,68,68,.2)'; g.fillRect(0, NBP.head, w, 2);
+    });
+    const cover = tex((g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, '#2f8f8f'); gr.addColorStop(1, '#1d6670'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      g.globalAlpha = .07; g.fillStyle = '#fff'; for (let i = 0; i < 120; i++) g.fillRect((i * 137) % w, (i * 71) % h, 1 + i % 2, 30 + (i % 7) * 14); g.globalAlpha = 1;
+      const lw = Math.min(w * .6, 400), lh = Math.min(h * .28, 150), lx = (w - lw) / 2, ly = h * .28;
+      g.fillStyle = '#fffaf0'; rr(g, lx, ly, lw, lh, 14); g.fill(); g.strokeStyle = '#d6c49b'; g.lineWidth = 3; g.stroke();
+      g.fillStyle = '#e8b4a0'; g.fillRect(lx + 22, ly + lh * .66, lw - 44, 2);
+      g.fillStyle = '#2b2118'; g.font = `700 ${Math.round(lh * .34)}px ${ART_FONT}`; g.fillText('史萊姆工坊', w / 2, ly + lh * .55);
+      g.fillStyle = '#7b6a52'; g.font = `700 ${Math.round(lh * .16)}px ${ART_FONT}`; g.fillText('月光谷', w / 2, ly + lh * .88);
+      const r = Math.min(w, h) * .085, cx = w - r * 2.4, cy = h - r * 2.2; // 史萊姆貼紙
+      g.fillStyle = '#fff'; g.beginPath(); g.ellipse(cx, cy, r * 1.25, r * 1.12, 0, 0, PI2); g.fill();
+      g.fillStyle = '#6ee7b7'; g.beginPath(); g.ellipse(cx, cy + r * .08, r, r * .86, 0, 0, PI2); g.fill();
+      g.fillStyle = '#1f2937'; [-1, 1].forEach(sd => { g.beginPath(); g.ellipse(cx + sd * r * .32, cy - r * .02, r * .1, r * .14, 0, 0, PI2); g.fill(); });
+      g.strokeStyle = '#1f2937'; g.lineWidth = r * .07; g.beginPath(); g.arc(cx, cy + r * .18, r * .2, .2, Math.PI - .2); g.stroke();
+      g.save(); g.translate(w * .16, h * .09); g.rotate(-.32); g.fillStyle = 'rgba(251,191,36,.78)'; g.fillRect(-70, -15, 140, 30); g.restore(); // 紙膠帶
+    });
+    const edge = mat('#efe6cf'), cm = [mat('#1d6670'), face(cover, { transparent: true }), mat('#e9dfc6', { transparent: true })];
+    mesh(new THREE.BoxGeometry(w, h, 14), [edge, edge, edge, edge, face(page), mat('#c9b48a')], 0, 0, -7, root);
+    const ring = new THREE.TorusGeometry(8, 1.9, 6, 18), rm = new THREE.MeshBasicMaterial({ color: '#9aa3b2', fog: false, toneMapped: false }); // 線圈和 2D 的 .st-rings 同色
+    for (let i = 0; i < 12; i++) { const m = mesh(ring, rm, -w / 2 + 26.5 + i * (w - 53) / 11, h / 2 + 1, -5, root); m.rotation.y = Math.PI / 2; m.scale.set(1, 1.4, 1); }
+    const pv = new THREE.Group(); pv.position.set(0, h / 2 + 3, 3); root.add(pv);
+    mesh(new THREE.BoxGeometry(w + 6, h + 6, 3), [cm[0], cm[0], cm[0], cm[0], cm[1], cm[2]], 0, -(h + 6) / 2, -1.5, pv);
+    fade.push(cm[1], cm[2]); cm[0].transparent = true; fade.push(cm[0]);
+    pm.open = o => { pv.rotation.x = -o * Math.PI * 1.02; const a = 1 - smooth(.42, .78, o); fade.forEach(m => m.opacity = a); pv.visible = a > .01; }; // 封面翻過頭頂就淡掉
+  } else if (kind === 'live') {
+    // 手機：黑色邊框＋金屬側框（同 2D 的 border 與 box-shadow），螢幕亮起時是直播 app 的啟動畫面
+    pm.D = .4; pm.grip = [w * .2, -h / 2 - 6, 8]; pm.hs = 2;
+    const body = new THREE.Mesh(new THREE.ExtrudeGeometry(rrShape(w + 8, h + 8, 52), { depth: 16, bevelEnabled: false, curveSegments: 8 }), [mat('#0a0c10', { roughness: .4, metalness: .2 }), mat('#3b404c', { metalness: .75, roughness: .3 })]);
+    body.position.z = -16; root.add(body);
+    const sw = w - 22, sh = h - 22, sg = new THREE.ShapeGeometry(rrShape(sw, sh, 37), 8), uv = sg.attributes.uv, ps = sg.attributes.position;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, (ps.getX(i) + sw / 2) / sw, (ps.getY(i) + sh / 2) / sh);
+    const scr = new THREE.MeshBasicMaterial({ fog: false, toneMapped: false, map: tex((g, w, h) => {
+      g.fillStyle = '#0c1018'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#f1f5f9'; g.font = '700 13.5px Inter,system-ui,sans-serif'; g.textAlign = 'left'; const d = new Date(); g.fillText(`${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`, 24, 29);
+      g.fillStyle = '#000'; rr(g, w / 2 - 54, 8, 108, 30, 15); g.fill();
+      g.fillStyle = '#e2e8f0'; [4, 6, 8, 11].forEach((hh, i) => g.fillRect(w - 66 + i * 5, 30 - hh, 3, hh)); g.strokeStyle = '#e2e8f0'; g.lineWidth = 1.5; g.strokeRect(w - 44, 19.5, 22, 10); g.fillRect(w - 42, 21.5, 13, 6);
+      const cx = w / 2, cy = h * .42, r = Math.min(w, h) * .13, gr = g.createLinearGradient(cx - r, cy - r, cx + r, cy + r); gr.addColorStop(0, '#f472b6'); gr.addColorStop(1, '#fbbf24');
+      g.fillStyle = gr; g.beginPath(); g.arc(cx, cy, r, 0, PI2); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(cx - r * .28, cy - r * .4); g.lineTo(cx + r * .45, cy); g.lineTo(cx - r * .28, cy + r * .4); g.fill();
+      g.textAlign = 'center'; g.fillStyle = '#f8fafc'; g.font = `900 ${Math.round(r * .42)}px Inter,system-ui,sans-serif`; g.fillText('SQUISH LIVE', cx, cy + r * 1.75);
+    }, sw, sh) });
+    mesh(sg, scr, 0, 0, .6, root);
+    const bm = mat('#2d323c', { metalness: .6, roughness: .4 });
+    [[-1, 120, 34], [-1, 170, 58], [1, 150, 80]].forEach(([sd, t, l]) => mesh(new THREE.BoxGeometry(5, l, 8), bm, sd * (w / 2 + 6), h / 2 - t - l / 2, -8, root));
+    pm.open = o => scr.color.setScalar(o * o); // 螢幕亮起
+  } else {
+    // 工坊手帳：皮革書皮的書本，封面繞書脊往左翻開，內側就是左頁（手機直向只有一頁，封面翻到畫面外）
+    pm.D = .44; const pw = two ? w / 2 : w, sp = two ? 0 : -w / 2; pm.grip = [sp + pw * .62, -h / 2 - 14, 8]; pm.hs = 1.45;
+    // 紙：和 2D 手帳的 .gwin 一樣的徑向漸層，兩頁時中間有書脊陰影；皮革邊：同 2D 的 box-shadow（#6b3f22 9px＋深色細邊）
+    const spread = g => {
+      g.save(); g.translate(w * .3, h * .15); g.scale(w * 1.2, h * .9); const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1); gr.addColorStop(0, '#fffcf2'); gr.addColorStop(.65, '#f5ead0'); gr.addColorStop(1, '#ead9b3'); g.fillStyle = gr; g.fillRect(-1, -1, 2, 2); g.restore();
+      if (two) { const s = g.createLinearGradient(w / 2 - 34, 0, w / 2 + 34, 0); s.addColorStop(0, 'rgba(92,61,26,0)'); s.addColorStop(.35, 'rgba(92,61,26,.08)'); s.addColorStop(.5, 'rgba(92,61,26,.25)'); s.addColorStop(.65, 'rgba(92,61,26,.08)'); s.addColorStop(1, 'rgba(92,61,26,0)'); g.fillStyle = s; g.fillRect(w / 2 - 34, 0, 68, h); }
+    };
+    const hide = (g, W2, H2) => { g.fillStyle = '#6b3f22'; g.fillRect(0, 0, W2, H2); g.strokeStyle = '#3a1f0e'; g.lineWidth = 4; g.strokeRect(2, 2, W2 - 4, H2 - 4); };
+    const cov = tex((g, w, h) => {
+      g.save(); g.translate(w * .4, h * .3); g.scale(w * .9, h * .7); const gr = g.createRadialGradient(0, 0, 0, 0, 0, 1.25); gr.addColorStop(0, '#8a5530'); gr.addColorStop(.56, '#5e361b'); gr.addColorStop(1, '#43240f'); g.fillStyle = gr; g.fillRect(-2, -2, 4, 4); g.restore();
+      g.strokeStyle = 'rgba(214,167,100,.35)'; g.lineWidth = 1.5; g.strokeRect(7, 7, w - 14, h - 14);
+      g.fillStyle = '#e8c58a'; g.font = '800 26px "Noto Serif TC","Songti TC",serif'; if ('letterSpacing' in g) g.letterSpacing = '8px'; g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowOffsetY = 1; g.fillText('工坊手帳', w / 2 + 4, h / 2 + 9);
+    }, pw + 12, h + 24);
+    // 封面內側＝左頁（外緣與上下留皮革邊）；右頁＝書本身；封底在右頁後面、四邊多出 12px 皮革
+    const innerT = tex((g, W2, H2) => { hide(g, W2, H2); g.save(); g.beginPath(); g.rect(12, 12, pw, h); g.clip(); g.translate(12, 12); spread(g); g.restore(); }, pw + 12, h + 24);
+    const pageT = tex(g => { g.translate(two ? -pw : 0, 0); spread(g); }, pw, h), backT = tex(hide, pw + 12, h + 24);
+    const leather = mat('#5e361b', { roughness: .7 }), edge = mat('#efe2c2'), inner = face(innerT, { transparent: !two }), outer = face(cov, { transparent: !two }), lth = two ? leather : mat('#5e361b', { roughness: .7, transparent: true });
+    mesh(new THREE.BoxGeometry(pw, h, 16), [edge, edge, edge, edge, face(pageT), leather], sp + pw / 2, 0, -8, root);
+    mesh(new THREE.BoxGeometry(pw + 12, h + 24, 4), [leather, leather, leather, leather, face(backT), leather], sp + pw / 2 + 6, 0, -3, root); // 封底（貼近頁面，透視縮小才不會吃掉皮革邊）
+    mesh(new THREE.BoxGeometry(14, 52, 1), new THREE.MeshBasicMaterial({ color: '#b91c1c', fog: false, toneMapped: false }), sp + 53, -h / 2 - 32, -21, root); // 書籤緞帶（同 2D 的 .st-ribbon）
+    const pv = new THREE.Group(); pv.position.x = sp; root.add(pv);
+    mesh(new THREE.BoxGeometry(pw + 12, h + 24, 4), [lth, lth, lth, lth, outer, inner], pw / 2 + 6, 0, 0, pv);
+    pm.open = o => { pv.rotation.y = -o * Math.PI; pv.position.z = 2 - 4 * o; if (!two) { const a = 1 - smooth(.6, .95, o); [inner, outer, lth].forEach(m => m.opacity = a); pv.visible = a > .01; } };
+  }
+  root.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = o.receiveShadow = false; } });
+  VM.prop.add(root); const op = pm.open;
+  pm.open = (o, s) => { op(o); const a = 1 - .45 * (DN.night || 0), c = a + (1 - a) * s; lit.forEach(m => m.color.setScalar(c)); };
+  return VM.pm = pm;
+}
+function heldStep(dt) {
+  if (GX.mode !== 'held' || TITLE.on || !GX.R || !HELD[GX.kind]) { if (VM.prop) VM.prop.visible = false; return false; }
+  const e = gxE(), op = GX.dir > 0, R = GX.R, cam = W.cam, pm = heldModel(GX.kind, R);
+  // o＝封面翻開／螢幕亮起、hk＝手托著道具（0＝放到畫面外）
+  let s, z, o, hk, vis; // s＝畫面上的位置（1＝介面的位置）、z＝距離（1＝停在眼前）
+  if (op) { const t = clamp(e / HT.raise, 0, 1); s = out3(t); z = ease3(t); o = ease3(clamp((e - HT.open0) / (HT.open1 - HT.open0), 0, 1)); vis = e < HT.done + 30; hk = 1 - ease3(clamp((e - HT.done) / (HT.end - HT.done), 0, 1)); }
+  else { const u = clamp((e - HC.down0) / (HC.end - HC.down0), 0, 1), c = GX.c0 || [1, 1, 1, 0]; s = c[0] * (1 - in3(u)); z = c[1] * (1 - out3(u)); o = c[2] * (1 - ease3(clamp((e - HC.close0) / (HC.close1 - HC.close0), 0, 1))); vis = e < HC.end; hk = c[3] ? 1 : ease3(clamp(e / HC.up, 0, 1)); }
+  if (op) GX.last = [s, z, o]; VM.prop.visible = vis;
+  // 最後的位置：平面正對鏡頭、離眼睛 D 公尺，投影剛好是介面矩形 R。
+  // 起點：遠一點、在畫面右下方、斜躺在手上（看得到手拿著它）；先舉到畫面中間，再拉近到眼前
+  const th = Math.tan(cam.fov * Math.PI / 360), vw = innerWidth, vh = innerHeight, D = pm.D, k = 2 * D * th / vh, hh = D * th, hw = hh * cam.aspect;
+  const r = 1 - s, d = D * (2.1 - 1.1 * z); // 拿起時畫面上的位置先到、距離後到；收起時先拉遠再放下
+  const nx = .42 + ((R.x + R.w / 2) / vw * 2 - 1 - .42) * s, ny = -.62 + (1 - (R.y + R.h / 2) / vh * 2 + .62) * s;
+  pm.root.scale.setScalar(k); pm.root.position.set(nx * d * th * cam.aspect, ny * d * th + Math.sin(s * Math.PI) * hh * .06, -d);
+  pm.root.rotation.set(-.95 * r, -.5 * r, .22 * r);
+  pm.open(o, z);
+  VM.g.visible = hk > .01; if (!VM.g.visible) return true;
+  // 手：托住道具的下緣（跟道具一起轉），每一格反算手臂的位置讓手掌剛好在握點上；2D 接手後往下放到畫面外
+  const T = VM_POSE.hold, kk = 1 - Math.exp(-dt * 24); for (const n in T) VM.p[n] += (T[n] - VM.p[n]) * kk; vmPose(VM.p);
+  VM.holdK = 0; VM.hold.scale.setScalar(.001); VM.J.group.visible = VM.gel.visible = false; VM.key = '';
+  VM.g.scale.setScalar(clamp(R.h * k * pm.hs, .3, 1.1)); VM.g.quaternion.copy(pm.root.quaternion); VM.g.position.set(0, 0, 0);
+  VM.g.updateMatrix(); VM.arm.updateMatrix(); VM.hand.updateMatrix(); VM.palm.updateMatrix();
+  hv1.set(0, 0, 0).applyMatrix4(VM.palm.matrix).applyMatrix4(VM.hand.matrix).applyMatrix4(VM.arm.matrix).applyMatrix4(VM.g.matrix);
+  hv2.set(...pm.grip).multiplyScalar(k).applyQuaternion(pm.root.quaternion).add(pm.root.position);
+  VM.g.position.copy(hv2).sub(hv1); VM.g.position.y -= (1 - hk) * hh * 1.3;
+  return true;
+}
 function viewModelStep(dt) {
   if (!VM.g) initViewModel();
+  if (heldStep(dt)) return; // 正在拿起／收回手持道具：手跟著道具走
   const show = !GUI.kind && !TITLE.on && !W.camAway && !INTRO.on; VM.g.visible = show; if (!show) { VM.key = ''; return; }
   const it = held(), key = it ? (it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp) : '';
   if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') { jellyColors(VM.J, sp); jellyCut(VM.J, it.p); } else VM.gel.material.color.set(sp.color); } }
@@ -5185,9 +5436,7 @@ function viewModelStep(dt) {
   // 伸手或擠壓時，手上的東西先收進掌心（縮小），避免手指張開時穿模
   const keep = it && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
   VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
-  VM.fingers.forEach((f, i) => { const c = p.c * (1 + (i - 1.5) * .05); f.k1.rotation.x = c * .95; f.k2.rotation.x = c * 1.15; f.k1.rotation.y = (f.x * 8) * p.sp; });
-  VM.thumb.tk.rotation.x = p.t * .5; VM.thumb.tk.rotation.y = p.t * .55; VM.thumb.tk2.rotation.x = p.t * .9;
-  VM.arm.position.set(p.x, p.y, p.z); VM.hand.rotation.set(p.rx, p.ry, p.rz);
+  vmPose(p);
   VM.gad.visible = S.up.net > 0; VM.gadL.forEach((m, i) => m.visible = i < S.up.net);
   // 依畫面比例固定在右下角；直向手機放大並移到下方偏右
   const d = .78, hh = Math.tan(W.cam.fov * Math.PI / 360) * d, hw = hh * W.cam.aspect, port = W.cam.aspect < .9;
@@ -5300,7 +5549,7 @@ function qualityStep(dt) {
 }
 function worldStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
-  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on) playerStep(dt); warmStep(dt);
+  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on) playerStep(dt); warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   deliverStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
@@ -5329,7 +5578,13 @@ function loop(now) {
     const g = GUI.kind;
     if (W.lost) { /* 顯示資源遺失期間暫停繪製，恢復後自動繼續 */ }
     else if (W.ready && TITLE.on) { titleStep(dt); drsStep(dt); }
-    else if (W.ready && (!g || g === 'line')) { worldStep(dt); renderCompass(); drsStep(dt); }
+    else if (W.ready && (!g || g === 'line' || gxBusy())) { worldStep(dt); renderCompass(); drsStep(dt); bgAcc = 0; }
+    else if (W.ready) {
+      // 介面開著：世界照樣在背後動、照樣有聲音，只是降低重繪頻率省電（玩家不能移動、準心不互動由 worldStep 依 GUI.kind 判斷）。
+      // 降頻時不讓畫質自動調整與動態解析度把它誤判成掉幀
+      bgAcc += dt; if (bgAcc >= (LOW ? .05 : .033)) { worldStep(Math.min(bgAcc, .1)); bgAcc = 0; QL.frames = QL.acc = 0; } DRS.acc = DRS.n = 0;
+    }
+    gxStep();
     if (W.ready) waypointStep();
     else DRS.acc = DRS.n = 0;
     if (M.active) makeTick(dt);

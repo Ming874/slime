@@ -565,6 +565,8 @@ function caveEnv(dt) {
     if (W.sun && !LOW) W.sun.castShadow = mode !== 'deep';
     W.cam.children.forEach(ch => ch.traverse(o => { o.layers.mask = 7; })); if (W.goo && W.goo.im) W.goo.im.layers.mask = 7;
   }
+  // 手上的東西（第一人稱的手、拿出來的筆記本／手機／手帳）是之後才建的：在洞裡每隔幾格補上圖層，洞深處也看得到
+  if (mode !== 'out' && (CV.lyN = (CV.lyN || 0) + 1) % 12 === 0) W.cam.children.forEach(ch => ch.traverse(o => { o.layers.mask = 7; }));
   const T = c ? c.T : CV.lastT;
   if (k > .001 && T) {
     CV.lastT = T; const f = W.scene.fog; if (!CV.f0) CV.f0 = [f.near, f.far];
