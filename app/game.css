@@ -1,3 +1,5 @@
+/* 告示牌的藝術字：霞鶩文楷 TC（LXGW WenKai TC，SIL Open Font License 1.1）的子集，只含木頭告示牌用到的字；改告示牌文字後要重新產生 public/fonts/signs.woff2 */
+@font-face{font-family:"LXGW WenKai TC";font-weight:700;font-style:normal;font-display:swap;src:url(/fonts/signs.woff2) format("woff2")}
 :root{
   --bg:#0a0e14;--bg2:#10161f;--card:#151d29;--line:#263243;--tx:#e6edf5;--sub:#8b9bb0;
   --acc:#22d3ee;--acc2:#818cf8;--good:#34d399;--warn:#fbbf24;--red:#fb7185;
@@ -483,3 +485,41 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 .rx-qual button{flex:1;padding:5px 0;border-radius:8px;border:1px solid var(--line);background:transparent}
 .rx-qual button.on{border-color:var(--acc);color:var(--acc);background:#22d3ee1a}
 .rx-credits{font-size:11px;color:var(--sub)}
+
+/* 存檔選擇：卡片 */
+.sv-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.sv-card{position:relative;display:flex;align-items:stretch;border-radius:14px;border:1px solid var(--line);background:var(--card);overflow:hidden;transition:border-color .15s,transform .15s}
+.sv-card.cur{border-color:color-mix(in srgb,var(--acc) 55%,var(--line));background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 10%,var(--card)),var(--card))}
+.sv-card:hover{border-color:var(--acc);transform:translateY(-1px)}
+.sv-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;padding:12px 14px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.sv-av{flex:none;width:54px;height:54px;padding:4px;border-radius:14px;background:radial-gradient(circle at 50% 35%,#fff,#dbeafe 75%)}
+.sv-av svg{display:block;width:100%;height:100%}
+.sv-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.sv-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sv-hd b{font-size:16px;color:var(--tx);max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-lv{padding:1px 8px;border-radius:999px;background:#818cf833;color:#c7d2fe;font-size:12px;font-weight:700}
+.sv-tag{padding:1px 8px;border-radius:999px;background:#ffffff12;color:var(--sub);font-size:11.5px}
+.sv-tag.cur{background:color-mix(in srgb,var(--acc) 20%,transparent);color:var(--acc)}
+.sv-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.sv-stats>span{display:flex;flex-direction:column;gap:1px}
+.sv-stats em{font-style:normal;font-size:10.5px;letter-spacing:1px;color:var(--sub)}
+.sv-stats b{font-size:14px;color:var(--tx);font-variant-numeric:tabular-nums}
+.sv-stats b.gold{color:var(--gold)}
+.sv-ft{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#a5b4c8}
+.sv-ft i{font-style:normal;color:var(--sub)}
+.sv-go{flex:none;align-self:center;padding:7px 14px;border-radius:10px;background:var(--acc);color:#04131a;font-weight:800;font-size:14px}
+.sv-card:not(.cur) .sv-go{background:#ffffff14;color:var(--tx)}
+.sv-del{flex:none;width:52px;border:0;border-left:1px solid var(--line);background:#fb71850f;color:var(--red);font:inherit;font-size:12.5px;cursor:pointer}
+.sv-del:hover{background:#fb718526}
+@media (max-width:520px){.sv-go{display:none}.sv-av{width:44px;height:44px}.sv-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* 城市居民的對話 */
+.npc-talk .npc-hd{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.npc-ic{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;color:#0b1020;font-weight:900;font-size:19px;box-shadow:inset 0 -3px 0 #0002,0 0 0 2px #ffffff22}
+.npc-hd b{display:block;font-size:18px}
+.npc-hd small{color:var(--sub);font-size:12.5px}
+.npc-say{margin:0;padding:14px 16px;border-radius:12px;background:#0b0f17;border:1px solid var(--line);font-size:16px;line-height:1.8;position:relative}
+.npc-say::before{content:"";position:absolute;left:18px;top:-7px;width:12px;height:12px;background:#0b0f17;border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg)}
+/* 快捷列：造型切的捏捏圖示（星形／愛心） */
+.ico.shape{background:none!important;box-shadow:none;border-radius:0;transform:rotate(-8deg);filter:drop-shadow(0 2px 2px #0006)}
+.ico.shape svg{display:block;width:100%;height:100%;fill:initial;stroke:initial}

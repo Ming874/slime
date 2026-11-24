@@ -10,7 +10,7 @@ export type Review = { s: number; who: string; t: string; sp: string };
 export type State = {
   money: number; fans: number; earned: number; xp: number; gel: Record<string, number>; stock: Product[]; web: Product[]; show: Product[];
   zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number }>;
-  reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number; vol?: { music: number; sfx: number }; quality?: string;
+  reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number; vol?: { music: number; sfx: number }; quality?: string; avatar?: string;
 };
 type Up = { name: string; desc: string; max: number; mach?: number; need?: string };
 type Own = { name: string; cost: number; shop: string; desc: string };
@@ -33,6 +33,7 @@ export type Game = {
   nextQuest: () => string | null; questReady: (k: string) => boolean; madeIn: (zone: string) => number;
   pillarClues: (pil: number[]) => { ok: boolean }[]; pSp: (v: number) => Species; pillarExtra: () => string; hintBlock: (k: string) => string;
   DN?: { phase: string; night: number; p: number }; DN_PHASE?: Record<string, string>; creditsHTML?: () => string;
+  AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string;
   tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
 };
 

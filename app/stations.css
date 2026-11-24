@@ -99,7 +99,7 @@
 /* =====================================================================
    筆記本（暫停選單）：上方線圈，往上翻開
    ===================================================================== */
-#gui[data-prop="notebook"] .gwin{width:min(440px,100%);overflow:visible;border:0;border-radius:6px 6px 10px 10px;padding-top:20px;transform-origin:50% 0;
+#gui[data-prop="notebook"] .gwin{width:min(880px,100%);overflow:visible;border:0;border-radius:6px 6px 10px 10px;padding-top:20px;transform-origin:50% 0;
   background:repeating-linear-gradient(180deg,#0000 0 29px,#7aa7d433 29px 30px) 0 66px,#fffdf5;
   box-shadow:5px 6px 0 -1px #efe6d0,10px 12px 0 -2px #ddd1b4,0 34px 60px -18px #000}
 #gui[data-prop="notebook"] .ghead{background:transparent;border-bottom:2px solid #f43f5e33;padding:8px 14px 8px 58px}

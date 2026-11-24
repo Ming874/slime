@@ -84,7 +84,7 @@ export default function Title() {
         )}
 
         <footer className="rx-title-foot">
-          {user && <span className="rx-who"><span className="rx-avatar sm">{[...user.name][0]}</span>{user.name}</span>}
+          {user && <span className="rx-who"><span className="rx-avatar sm slime" dangerouslySetInnerHTML={{ __html: g.avatarSVG?.(g.S.avatar || 'mint') || '' }} />{user.name}</span>}
           <a href="/privacy" target="_blank" rel="noopener">隱私權政策</a>
           <span>月光谷 · 史萊姆捏捏工坊</span>
         </footer>
@@ -99,7 +99,7 @@ function SaveCard() {
   const owned = Object.keys(S.own || {}).filter((k) => S.own[k]).length, ownMax = Object.keys(g.OWN).length;
   return (
     <section className="rx-save" aria-label="目前存檔">
-      <span className="rx-avatar">{[...name][0]}</span>
+      <span className="rx-avatar slime" dangerouslySetInnerHTML={{ __html: g.avatarSVG?.(S.avatar || 'mint') || '' }} />
       <div className="rx-save-main">
         <div className="rx-save-hd"><b>{name}</b><span className="rx-lvl">Lv {lv}</span><small>{ago(S.last)}</small></div>
         <div className="rx-save-stats">

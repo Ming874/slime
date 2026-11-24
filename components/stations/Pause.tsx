@@ -2,12 +2,14 @@
 /* 暫停選單（筆記本）：大大的「回到遊戲」、帳號與雲端存檔狀態、功能格（儲存、說明、回中央平地、音效、靈敏度）、
    多人房間、回主選單。按鈕帶 data-act 由 game.js 處理；暱稱輸入框 #acctName 給 game.js 讀。 */
 import Icon from '@/components/admin/Icon';
+import { useState } from 'react';
 import { G } from './game';
 
 export default function Pause() {
   const g = G(), S = g.S, C = window.SlimeCloud, user = C?.user, status = C?.status() || '';
   const sync = /失敗|連不上|失效/.test(status) ? 'err' : /上傳|秒內|等待/.test(status) ? 'wait' : 'ok';
   const net = g.NET as typeof g.NET & { room?: string; host?: boolean };
+  const [pick, setPick] = useState(false), av = g.AVATARS?.find((a) => a.id === S.avatar) || g.AVATARS?.[0];
 
   return (
     <div className="rx-pause">
@@ -15,15 +17,31 @@ export default function Pause() {
         <Icon name="play" /><b>回到遊戲</b><kbd>Esc</kbd>
       </button>
 
+      <div className="rx-pcol">
       {user && (
         <section className="rx-acct">
-          <span className="rx-avatar">{[...user.name][0]}</span>
+          <button type="button" className={`rx-avatar slime${pick ? ' on' : ''}`} onClick={() => setPick(!pick)} aria-label="更換頭像" title="點一下更換頭像">
+            <span dangerouslySetInnerHTML={{ __html: g.avatarSVG?.(S.avatar || 'mint') || '' }} /><i className="rx-av-edit" aria-hidden="true">換</i>
+          </button>
           <div className="rx-acct-main">
             <div className="rx-name-edit">
               <input id="acctName" key={user.name} defaultValue={user.name} maxLength={12} aria-label="暱稱" autoComplete="off" />
               <button type="button" className="btn sm ghost" data-act="acctName">改暱稱</button>
             </div>
             <div className={`rx-sync ${sync}`}><Icon name={sync === 'err' ? 'cloudOff' : 'cloud'} />{status}</div>
+          </div>
+        </section>
+      )}
+
+      {user && pick && g.AVATARS && (
+        <section className="rx-avpick" aria-label="選擇頭像">
+          <div className="rx-avpick-hd"><b>選擇你的史萊姆頭像</b><small>目前：{av?.n}史萊姆</small></div>
+          <div className="rx-avpick-grid">
+            {g.AVATARS.map((a) => (
+              <button key={a.id} type="button" data-act="avatar" data-k={a.id} className={a.id === (S.avatar || 'mint') ? 'on' : ''} aria-label={a.n + '史萊姆'}>
+                <span dangerouslySetInnerHTML={{ __html: g.avatarSVG?.(a.id) || "" }} /><small>{a.n}</small>
+              </button>
+            ))}
           </div>
         </section>
       )}
@@ -41,6 +59,9 @@ export default function Pause() {
         </section>
       )}
 
+      </div>
+
+      <div className="rx-pcol">
       <div className="rx-grid">
         <button type="button" data-act="saveNow"><Icon name="save" /><b>儲存遊戲</b><small>上次 {g.fmtTime(S.last)}</small></button>
         <button type="button" data-act="help"><Icon name="keyboard" /><b>操作說明</b><small>鍵盤與觸控</small></button>
@@ -74,6 +95,9 @@ export default function Pause() {
         </section>
       )}
 
+      </div>
+
+      <footer className="rx-pfoot">
       <button type="button" className="rx-quit" data-act="toTitle"><Icon name="exit" />儲存並回到主選單</button>
       <div className="rx-pause-links">
         <span>按 Esc、切換畫面、開關介面時都會自動儲存</span>
@@ -82,6 +106,7 @@ export default function Pause() {
           <a href="/privacy" target="_blank" rel="noopener">隱私權政策</a>
         </span>
       </div>
+      </footer>
     </div>
   );
 }

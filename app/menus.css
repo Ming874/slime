@@ -177,3 +177,34 @@ body.touch .hk,body.touch .hfree{display:none}
 .cmk.pin.lm i{width:7px;height:7px;border-radius:2px;transform:rotate(45deg);background:var(--pc,#e2e8f0)}
 .cmk.pin.lm b{font-size:10px;color:var(--pc,#e2e8f0);font-weight:600}
 .cmk.pin.lm.unk{opacity:.55}
+
+/* 史萊姆頭像（暫停選單、主選單、存檔卡） */
+.rx-avatar.slime{position:relative;padding:3px;background:radial-gradient(circle at 50% 35%,#ffffff,#e0f2fe 70%);border:none;cursor:default;overflow:visible}
+button.rx-avatar.slime{cursor:pointer;transition:transform .15s,box-shadow .15s}
+button.rx-avatar.slime:hover,button.rx-avatar.slime.on{transform:translateY(-1px);box-shadow:0 0 0 2px var(--acc),inset 0 -3px 0 #0001}
+.rx-avatar.slime>span,.rx-avatar.slime svg{display:block;width:100%;height:100%}
+.rx-av-edit{position:absolute;right:-6px;bottom:-6px;padding:1px 5px;border-radius:999px;background:#0f766e;color:#fff;font-size:10px;line-height:1.4;font-weight:700;font-style:normal;box-shadow:0 1px 3px #0004}
+.rx-avpick{padding:12px;border-radius:12px;border:1px dashed var(--line);background:color-mix(in srgb,var(--card) 70%,transparent)}
+.rx-avpick-hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}
+.rx-avpick-hd small{color:var(--sub);font-size:12px}
+.rx-avpick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.rx-avpick-grid button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px 6px;border-radius:12px;border:2px solid transparent;background:#ffffff0d;cursor:pointer;transition:transform .12s,border-color .12s,background .12s}
+.rx-avpick-grid button>span{display:block;width:46px;height:46px}
+.rx-avpick-grid button small{font-size:11.5px;color:var(--sub)}
+.rx-avpick-grid button:hover{transform:translateY(-2px);background:#ffffff1a}
+.rx-avpick-grid button.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent)}
+.rx-avpick-grid button.on small{color:inherit;font-weight:700}
+.rx-avpick-grid button>span svg,.rx-avatar.slime svg,.sv-av svg{width:100%!important;height:100%!important;stroke:none!important;fill-rule:nonzero}
+
+/* 暫停選單：寬螢幕兩欄（左：帳號、頭像、多人房間；右：功能、音量與畫質），上方回到遊戲、下方回主選單與連結 */
+.rx-pcol{display:grid;gap:12px;align-content:start;min-width:0}
+.rx-pcol:empty{display:none}
+.rx-pfoot{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
+.rx-pfoot .rx-quit{flex:none;margin:0}
+.rx-pfoot .rx-pause-links{flex:1;min-width:220px}
+@media (min-width:780px){
+  .rx-pause{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  .rx-pause>.rx-resume,.rx-pause>.rx-pfoot{grid-column:1/-1}
+  .rx-pause>.rx-pcol:only-of-type{grid-column:1/-1}
+}
+.rx-pfoot .rx-quit{width:auto;padding:10px 18px}

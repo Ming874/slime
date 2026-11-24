@@ -9,7 +9,7 @@ import { Pips, SlimeArt } from './Art';
 type MakeState = {
   sp: string | null; active: boolean; step: number; phase: string; cut: string | null; steps: number[];
   scores: (number | null)[]; coop: { name: string } | null; last: Product | null;
-  g: { marks: number[]; hit: (number | null)[]; combo?: number; lastQ?: number; cuts?: number; lo: number; hi: number } | null;
+  g: { marks: number[]; hit: (number | null)[]; combo?: number; lastQ?: number; cuts?: number; lo: number; hi: number; v?: number } | null;
 };
 type MakeGame = { M: MakeState; MG: { name: string; how: string; key: string }[]; STEPS: string[]; MKEY: string[]; ownAny: () => boolean; TOUCH: boolean };
 
@@ -131,7 +131,7 @@ function Running() {
 
       {step === 1 && (
         <div className="rx-coat">
-          <div className="gauge rx-gauge"><div className="gz" style={{ left: `${mg.lo * 100}%`, width: `${(mg.hi - mg.lo) * 100}%` }} /><i className="needle" id="mgNeedle" style={{ left: 0 }} /></div>
+          <div className="gauge rx-gauge"><div className="gz" style={{ left: `${mg.lo * 100}%`, width: `${(mg.hi - mg.lo) * 100}%` }} /><i className="needle" id="mgNeedle" style={{ left: `${(mg.v ?? .5) * 100}%` }} /></div>
           <div className="tbar rx-tbar"><i id="mgTime" /></div>
           {M.coop
             ? <p className="rx-note-line"><b>{M.coop.name}</b> 正在幫你裹糖，看著滾筒轉吧！</p>
