@@ -2530,12 +2530,13 @@ function mergeStatic(group, skip = new Set()) {
     list.forEach(m => { group.remove(m); m.geometry.dispose(); });
   });
 }
-const ART_FONT = '"LXGW WenKai TC","Kaiti TC","DFKai-SB","BiauKai","Noto Serif TC",serif';
+const ART_FONT = '"LXGW WenKai TC","Slime Hand","Kaiti TC","DFKai-SB","BiauKai","Noto Serif TC",serif'; // 粗體子集沒有的字由完整的手寫子集補上
 // 先用備用字型畫，字型載入後再重畫一次（CanvasTexture 標記更新）
 function artTex(w, h, draw) {
   const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const g = cv.getContext('2d'), tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 4;
   const paint = () => { g.clearRect(0, 0, w, h); g.textAlign = 'center'; g.textBaseline = 'alphabetic'; draw(g, w, h); tx.needsUpdate = true; }; paint();
-  try { if (document.fonts && !document.fonts.check('700 32px "LXGW WenKai TC"', '月')) document.fonts.load('700 32px "LXGW WenKai TC"', '月').then(paint, () => { }); } catch (e) { }
+  // 兩個字型（粗體子集、完整的手寫子集）都載入後再畫一次，告示牌上的字才不會停在系統字型
+  try { if (document.fonts) { const need = ['700 32px "LXGW WenKai TC"', '400 32px "Slime Hand"'].filter(f => !document.fonts.check(f, '月')); if (need.length) Promise.all(need.map(f => document.fonts.load(f, '月'))).then(paint, () => { }); } } catch (e) { }
   return tx;
 }
 // 木板底紋：直條木紋、邊框、釘子

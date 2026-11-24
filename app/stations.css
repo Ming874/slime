@@ -127,7 +127,7 @@
    手寫字型：Latin／數字用系統的手寫體，中文用各平台內建的手寫／楷書（macOS 手札體、翩翩體、楷體，Windows 標楷體…），都沒有就退回明體；
    --hand-lx 只給全部字都在 public/fonts/signs.woff2（霞鶩文楷子集）裡的裝飾文字用，不然一行裡會混兩種字型
    ===================================================================== */
-#gui[data-prop="notebook"]{--hand:"Noteworthy","Bradley Hand","Segoe Print","Ink Free","Hannotate TC","HanziPen TC","Kaiti TC","BiauKai","STKaiti","DFKai-SB","標楷體","KaiTi","楷体","AR PL UKai TW","TW-Kai",serif;
+#gui[data-prop="notebook"]{--hand:"Slime Hand","Noteworthy","Bradley Hand","Segoe Print","Ink Free","Hannotate TC","HanziPen TC","Kaiti TC","BiauKai","STKaiti","DFKai-SB","標楷體","KaiTi","楷体","AR PL UKai TW","TW-Kai",serif;
   --hand-lx:"LXGW WenKai TC",var(--hand);--ink:#22314f;--ink2:#5d6880;--pen:#c2410c;--nb-m:52px}
 #gui[data-prop="notebook"] .gwin{width:min(900px,100%);height:min(660px,calc(100% - 28px));overflow:visible;border:0;border-radius:3px 3px 8px 8px;
   background:linear-gradient(90deg,#0000 var(--nb-m),#ef444452 var(--nb-m) calc(var(--nb-m) + 2px),#0000 calc(var(--nb-m) + 2px)),linear-gradient(#0000 70px,#ef444433 70px 72px,#0000 72px),
