@@ -523,3 +523,23 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 /* 快捷列：造型切的捏捏圖示（星形／愛心） */
 .ico.shape{background:none!important;box-shadow:none;border-radius:0;transform:rotate(-8deg);filter:drop-shadow(0 2px 2px #0006)}
 .ico.shape svg{display:block;width:100%;height:100%;fill:initial;stroke:initial}
+
+/* 第 4 堂：第一次走出山洞時，區名大字浮現（caves.js 的 caveReveal） */
+#zoneTitle { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; opacity: 0; z-index: 6; color: #fff; text-shadow: 0 2px 18px rgba(0, 0, 0, .45), 0 0 2px rgba(0, 0, 0, .5); }
+#zoneTitle small { display: block; font-size: 14px; letter-spacing: .4em; opacity: .85; margin-bottom: 6px; }
+#zoneTitle b { display: block; font: 700 clamp(44px, 8vw, 88px)/1.1 "LXGW WenKai TC", "Kaiti TC", "BiauKai", serif; letter-spacing: .12em; }
+#zoneTitle span { display: block; margin-top: 10px; font-size: clamp(14px, 2vw, 18px); opacity: .92; }
+#zoneTitle.on { animation: zoneTitle 4.2s ease forwards; }
+@keyframes zoneTitle { 0% { opacity: 0; transform: translate(-50%, -42%); letter-spacing: .3em; } 18% { opacity: 1; transform: translate(-50%, -50%); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -54%); } }
+@media (prefers-reduced-motion: reduce) { #zoneTitle.on { animation: zoneTitleR 4.2s linear forwards; } @keyframes zoneTitleR { 0%, 100% { opacity: 0; } 12%, 80% { opacity: 1; } } }
+
+/* 第 4 堂：開場的穿越機鏡頭——HUD 先收起來、上下一點黑邊、右下角「略過」提示 */
+body.intro #hud > *:not(#vig) { opacity: 0 !important; transition: opacity .3s; pointer-events: none; }
+body.intro #game::before, body.intro #game::after { content: ''; position: fixed; left: 0; right: 0; height: 7vh; background: #000; z-index: 5; pointer-events: none; animation: introBar .5s ease both; }
+body.intro #game::before { top: 0; } body.intro #game::after { bottom: 0; }
+@keyframes introBar { from { height: 0; } }
+#introSkip { position: fixed; right: 22px; bottom: calc(7vh + 14px); z-index: 7; color: rgba(255, 255, 255, .78); font-size: 13px; letter-spacing: .08em; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); animation: introHint 2.4s ease-in-out infinite; }
+@keyframes introHint { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+#introFade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 8; }
+#introFade.on { animation: introFade 1.1s ease forwards; }
+@keyframes introFade { 0% { opacity: 0; } 35% { opacity: 1; } 100% { opacity: 0; } }

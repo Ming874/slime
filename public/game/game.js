@@ -50,6 +50,12 @@ const SPECIES = [
   { id: 'glowgrass', name: '螢光青草史萊姆', zone: 'forest', color: '#a3f7b5', rar: 3, price: 42, w: 3, night: true, look: 'grass' },
   { id: 'nightcoral', name: '夜光珊瑚史萊姆', zone: 'coast', color: '#c4b5fd', rar: 3, price: 46, w: 2, night: true, look: 'coral' },
   { id: 'ember', name: '餘燼熔岩史萊姆', zone: 'volcano', color: '#ff7a59', rar: 3, price: 52, w: 2, night: true, look: 'lava' },
+  // 洞穴史萊姆（第 4 堂 06）：只住在山洞的暗處，每個洞同時最多 3 隻；不會在野外出現（w: 0）。價格在各區普通與稀有種之間
+  { id: 'saltc', name: '鹽晶史萊姆', zone: 'coast', color: '#d9f1fb', rar: 3, price: 26, w: 0, cave: 'sea', look: 'salt' },
+  { id: 'charc', name: '炭火史萊姆', zone: 'volcano', color: '#6b4438', rar: 3, price: 39, w: 0, cave: 'lava', look: 'lava' },
+  { id: 'frostb', name: '霜鈴史萊姆', zone: 'snow', color: '#e3f1ff', rar: 3, price: 48, w: 0, cave: 'ice', look: 'ice' },
+  // 月光史萊姆：只在夜晚的月光洞窟湖邊出現，身體半透明、跟著月光明暗；做成的捏捏帶柔和的光（夜行種，直播加成）
+  { id: 'moonl', name: '月光史萊姆', zone: 'forest', color: '#e4dcff', color2: '#a5b4fc', rar: 4, price: 44, w: 0, cave: 'moon', night: true, look: 'aurora' },
 ];
 const SP = Object.fromEntries(SPECIES.map(s => [s.id, s]));
 const HOSPITAL_FEE = 20; // 醫院診療費
@@ -127,7 +133,7 @@ function fresh() {
     zones: ['forest'], packs: ['base'], up: Object.fromEntries(Object.keys(UPS).map(k => [k, 0])),
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, tier: { live: {}, web: {} }, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
-    pos: null, hb: 0, sens: 1, q: null, own: {}, photos: [], cafe: { d: 0, done: false }, mkt: { w: 0, got: [] }, liveBest: 0, vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] }, npc: {}, avatar: 'mint',
+    pos: null, hb: 0, sens: 1, q: null, own: {}, photos: [], cafe: { d: 0, done: false }, mkt: { w: 0, got: [] }, liveBest: 0, vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] }, npc: {}, avatar: 'mint', cave: { seen: {}, mural: {}, moss: { d: 0, n: {} }, mossN: 0 },
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -179,6 +185,7 @@ function sanitize(o) {
   s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade; if (!CUTS[s.cut]) s.cut = 'thick'; s.cutN = Math.max(0, Math.floor(+s.cutN) || 0);
   s.farmT = Math.max(0, +s.farmT || 0); if (s.farmT > Date.now()) s.farmT = Date.now();
   if (s.mk && !(SP[s.mk.sp] && s.mk.step >= 0 && s.mk.step < 3 && Array.isArray(s.mk.prec) && s.mk.prec.length === s.mk.step)) s.mk = null;
+  s.cave = caveSan(o.cave); // 山洞：走過哪些洞、拍過的壁畫、苔蘚（caves.js）
   return s;
 }
 function load() {
@@ -272,7 +279,7 @@ function musicStep(dt) {
   if (master) master.gain.value = .9 * (S.vol ? S.vol.sfx : .9) / .9;
   const want = musicWant(); MUS.want = want;
   MUS.duck += ((L.on ? .3 : GUI.kind === 'line' ? .55 : 1) - MUS.duck) * Math.min(1, dt * 2); // 直播時音樂自動降低，讓捏捏聲更清楚
-  const vol = (S.vol ? S.vol.music : .6) * MUS.duck;
+  const vol = (S.vol ? S.vol.music : .6) * MUS.duck * caveMusic(); // 進山洞時配樂淡出（第 4 堂 2.2）
   if (want && !MUS.els[want]) { try { musicEl(want); } catch (e) { MUS.list[want] = null; } }
   // 走到別區附近時先開始下載那一區的曲子（串流，不必整首下載完）
   if (MUS.list && !TITLE.on && P && (W.preT = (W.preT || 0) - dt) <= 0) { W.preT = 2; const w = biomeW(P.x, P.z); BIOMES.forEach((b, i) => { const k = b === 'forest' ? 'base' : b; if (w[i] > .12 && MUS.list[k] && MUS.list[k].src && !MUS.els[k]) { try { const el = musicEl(k); el.preload = 'auto'; el.load(); } catch (e) { } } }); }
@@ -409,7 +416,7 @@ function swell(t, dur, f, q, vol, type = 'lowpass') {
 const AMB = { t: 1 };
 function ambStep(dt) {
   if (!AC || AC.state !== 'running' || !S.sound || TITLE.on || !P || GUI.kind === 'live') return;
-  if ((AMB.t -= dt) > 0) return; const t = AC.currentTime, z = W.zoneNow || 'forest', nite = DN.night > .5;
+  if ((AMB.t -= dt) > 0) return; if (caveAmb()) return; const t = AC.currentTime, z = W.zoneNow || 'forest', nite = DN.night > .5;
   if (z === 'forest') {
     if (!nite) { const f = rnd(2400, 3600); for (let i = 0, n = 2 + Math.floor(rnd(0, 3)); i < n; i++) sweep(f * rnd(.9, 1.1), f * rnd(1.2, 1.5), t + i * .13, .09, .012); AMB.t = rnd(2.5, 6); }
     else { for (let i = 0; i < 6; i++) tone(4300, t + i * .055, .03, .006, 'triangle'); AMB.t = rnd(.7, 1.6); }
@@ -441,6 +448,8 @@ const sfx = {
     if (!S.sound) return; const ac = audio(), t = ac.currentTime;
     if (kind === 'snow') { for (let i = 0; i < 3; i++) noise(ac, t + i * .018, .05, rnd(900, 1800), 1.2, .045 * v, 'bandpass'); noise(ac, t, .09, 400, .8, .04 * v, 'lowpass'); }
     else if (kind === 'sand') noise(ac, t, .13, rnd(1200, 1800), .6, .05 * v, 'bandpass', .7);
+    else if (kind === 'ice') { noise(ac, t, .035, rnd(3200, 4200), 3, .05 * v, 'bandpass'); tone(rnd(1800, 2400), t, .05, .01 * v, 'triangle'); noise(ac, t, .05, 220, 1, .04 * v, 'lowpass'); }
+    else if (kind === 'splash') { noise(ac, t, .16, rnd(900, 1500), .7, .08 * v, 'bandpass', 1.2); noise(ac, t + .03, .1, 3000, 1.2, .03 * v, 'highpass'); }
     else if (kind === 'rock' || kind === 'city') { noise(ac, t, .04, kind === 'city' ? 2600 : 1400, 2.5, .07 * v, 'bandpass'); noise(ac, t, .06, 180, 1, .06 * v, 'lowpass'); }
     else if (kind === 'dirt') { noise(ac, t, .07, rnd(500, 800), .9, .07 * v, 'lowpass'); noise(ac, t + .01, .04, 2200, 1.5, .02 * v, 'bandpass'); }
     else { noise(ac, t, .06, rnd(300, 600), 1, .05 * v, 'lowpass'); noise(ac, t, .08, rnd(3000, 5000), 1.2, .016 * v, 'bandpass'); }
@@ -774,8 +783,8 @@ function makeStage(cv, mode) {
 
 /* ============================================================
    開放世界：地形
-   中央森林（工坊所在）被一圈山脊環繞，東／北／西各有一個隘口，
-   隘口被能量門封住，需解開前一區的謎題才能通過。
+   中央森林（工坊所在）被一圈山脊環繞。第 4 堂起山脊不再留筆直的隘口：東／北／西各有一條山洞穿過山脊（public/game/caves.js），
+   能量門移到內側洞口，需解開前一區的謎題才能通過；南方山壁有一道只在夜裡開放的裂縫（月光洞窟）。
    ============================================================ */
 const DAY_LEN = 600, DN = { t: 0, night: 0, dusk: 0, dawn: 0, phase: 'day', p: 0 };
 const DN_PHASE = { day: '白天', dusk: '黃昏', night: '夜晚', dawn: '黎明' };
@@ -835,9 +844,8 @@ function H0(x, z) {
   const ax = Math.abs(x), az = Math.abs(z), r = Math.max(ax, az);
   let h = (fbm(x * .045, z * .045, 3) - .45) * 3.2 + (vnoise(x * .2, z * .2, 11) - .5) * .35;
   const fl = 1 - smooth(16, 26, Math.hypot(x, z)); h = h * (1 - fl) + .25 * fl;
-  let ridge = Math.exp(-((r - 54) ** 2) / 34) * (13 + fbm(x * .07, z * .07, 5) * 9);
-  const pass = ax > az ? Math.exp(-(z * z) / 16) : (z < 0 ? Math.exp(-(x * x) / 16) : 0);
-  ridge *= 1 - pass * .97; h += ridge;
+  // 山脊是完整的一圈（第 4 堂：隘口改成山洞，從中央平地再也看不穿到下一區）
+  const ridge = Math.exp(-((r - 54) ** 2) / 34) * (13 + fbm(x * .07, z * .07, 5) * 9); h += ridge;
   h += smooth(160, 182, r) * (18 + fbm(x * .03, z * .03, 8) * 24);
   // 各區之間的分隔山脈（沿對角線），讓海岸、火山、雪原各自獨立
   const outer = smooth(56, 68, r), dg = (ax - az) / 1.4142;
@@ -850,10 +858,12 @@ function H0(x, z) {
   const vn = smooth(62, 84, -z), vd = Math.hypot(x, z + 130); h += Math.max(0, 34 * (1 - vd / 36)) * vn; if (vd < 5) h -= (5 - vd) * 2.4 * vn;
   // 雪原：起伏更大的丘陵
   h += smooth(62, 84, -x) * fbm(x * .05, z * .05, 21) * 10;
+  // 山洞口：洞口前整平成小平台、洞口後方墊高成山壁（caves.js 的 caveShape）
+  if (typeof caveShape === 'function') h = caveShape(x, z, h);
   return h;
 }
 const WS_R = 16, WS_Y = .4;
-function G(x, z) { return H(x, z); }
+function G(x, z) { return CV.c ? caveG(x, z) : H(x, z); } // 玩家腳下：在山洞裡用山洞自己的地面
 
 /* 天空環境光（IBL）：用和天空相同的漸層＋太陽烘焙成 PMREM。
    原本開放世界用的是攝影棚式的暗色環境圖，金屬、水面、史萊姆反射出的是一片深藍黑色，與晴朗的天空不符。
@@ -903,17 +913,21 @@ function initWorld() {
     vertexShader: 'varying vec3 vd; void main(){ vd = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform float night; varying vec3 vd; float h3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); } void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); vec3 sc = mix(vec3(1.0, 0.93, 0.78), vec3(0.78, 0.84, 1.0), night); c += sc * (pow(s, 700.0) * 3.5 * (1.0 - night * 0.3) + pow(s, 48.0) * 0.28 * (1.0 - night * 0.5) + pow(s, 6.0) * 0.07 * (1.0 - night)) * smoothstep(-0.05, 0.05, d.y); float st = step(0.9965, h3(floor(d * 230.0))) * night * smoothstep(0.03, 0.3, d.y); c += vec3(0.85, 0.9, 1.0) * st; c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
-  buildTerrain(); buildWater(); buildProps(); buildLandmarks(); buildFauna(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
+  buildTerrain(); buildCaves(); buildWater(); buildProps(); buildLandmarks(); buildFauna(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
   W.goo = makeGoo(sc); skyEnv(true);
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); W.ready = true; return true;
 }
 /* ---------- 小徑：烘焙成遮罩（地表著色、道具避讓、腳步聲共用） ---------- */
 const MAP_SIZE = 370 * K, PMR = 512, PMASK = new Float32Array(PMR * PMR); let PATH_TEX = null;
+// 0、1、3 是中央平地通往三個山洞內側洞口的路（路標沿著這三條立）；其餘是洞口外側通往各區的路
 const PATH_LINES = [
-  [[11, 0], [20, 2.5], [32, -1.5], [44, 1], [54, 0], [64, 2], [76, -2.5], [92, 0], [104, 3]],
-  [[0, -11], [-2.5, -22], [2, -34], [-1, -46], [0, -54], [-1, -60], [-6, -63.5]],
-  [[-1, -60], [4, -72], [-2, -86]],
-  [[-11, 0], [-21, -2.5], [-33, 2], [-45, -1], [-54, 0], [-65, 2], [-78, -2], [-94, 1]],
+  [[11, 0], [20, 2.5], [32, -1.5], [40, .6], [44.6, 0]],
+  [[0, -11], [-2.5, -22], [2, -34], [-.6, -41], [0, -44.6]],
+  [[-2.4, -64.6], [0, -72], [-2, -86]],
+  [[-11, 0], [-21, -2.5], [-33, 2], [-40, -.6], [-44.6, 0]],
+  [[64.6, 2.4], [70, 1.5], [78, -2.5], [92, 0], [104, 3]],
+  [[-64.6, -2.4], [-70, -1], [-78, -2], [-94, 1]],
+  [[-2.4, -64.6], [-8, -64.8], [-12.5, -63.8]],
 ].map(l => l.map(kk));
 const GIANT = kk([30, 22]), RUINS = kk([-28, -28]);
 function crPts(pts, n = 6) {
@@ -967,10 +981,14 @@ function terrainMat() {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 });
   if (!LOW) m.defines = { T_HQ: '' };
   m.onBeforeCompile = sh => {
-    sh.uniforms.uPath = { value: PATH_TEX }; sh.uniforms.uTime = W.wind;
+    sh.uniforms.uPath = { value: PATH_TEX }; sh.uniforms.uTime = W.wind; sh.uniforms.uCvA = { value: CAVE_UA }; sh.uniforms.uCvB = { value: CAVE_UB };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 dirt;\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt; vWP = position; vWN = normal;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        // 山洞口：在洞口直段的斷面裡不畫地形（uCvA＝洞口地面中心＋直段長度、uCvB＝往洞裡的方向＋半寬＋高度；斷面形狀同 caves.js 的 caveProfile）
+        for (int ci = 0; ci < 8; ci++) { vec4 ca = uCvA[ci]; if (ca.w <= 0.0) continue; vec4 cb = uCvB[ci]; vec2 cr = vWP.xz - ca.xz; float ct = dot(cr, cb.xy); if (ct < 0.0 || ct > ca.w) continue;
+          float cl = abs(dot(cr, vec2(-cb.y, cb.x))), cy = (vWP.y - ca.y) / cb.w; if (cy < -0.03 || cy > 0.985) continue;
+          float cf = cy < 0.12 ? 0.86 + cy / 0.12 * 0.14 : cy < 0.4 ? 1.0 : sqrt(max(0.0, 1.0 - pow((cy - 0.4) / 0.6, 2.0))); if (cl < cb.z * cf * 0.97) discard; }
         vec2 wp = vWP.xz; float n1 = tN(wp * 0.85), n2 = tN(wp * 3.3), n3 = tN(wp * 0.11 + 7.0), n4 = tN(wp * 11.0);
         float tDist = distance(vWP, cameraPosition), tNear = 1.0 - smoothstep(28.0, 70.0, tDist);
         vec4 tB = tBiome(wp); float rockK = smoothstep(0.17, 0.42, 1.0 - clamp(normalize(vWN).y, 0.0, 1.0)), soil = 1.0 - rockK;
@@ -1033,7 +1051,7 @@ function terrainMat() {
         #endif`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += tGlow;');
   };
-  m.customProgramCacheKey = () => 'terrain3'; return m;
+  m.customProgramCacheKey = () => 'terrain4'; return m;
 }
 /* 風：草、花、蕨類、樹冠依高度擺動（每株相位不同） */
 /* 遠處縮小淡出：草、花、碎石這類小物件在 fade[0]～fade[1] 公尺之間縮進地面，
@@ -1219,8 +1237,9 @@ function buildProps() {
   const rd = seeded(77), rc = seeded(991), lists = {}, push = (k, o) => (lists[k] = lists[k] || []).push(o);
   const avoid = (x, z) => {
     if (Math.hypot(x, z) < 26) return true;
-    if (Math.abs(z) < 10 * K && Math.abs(Math.abs(x) - 54 * K) < 9 * K) return true;
-    if (Math.abs(x) < 10 * K && Math.abs(z + 54 * K) < 9 * K) return true;
+    if (Math.abs(z) < 10 * K && Math.abs(Math.abs(x) - 54 * K) < 14 * K) return true;
+    if (Math.abs(x) < 10 * K && Math.abs(z + 54 * K) < 14 * K) return true;
+    if (Math.abs(x - 7 * K) < 8 * K && Math.abs(z - 46 * K) < 8 * K) return true; // 月光洞窟的裂縫
     if (onPath(x, z) > .12) return true;
     if (Math.hypot(x - GIANT[0], z - GIANT[1]) < 9 || Math.hypot(x - RUINS[0], z - RUINS[1]) < 9) return true;
     return PUZ_SPOTS.some(([px, pz]) => Math.hypot(x - px, z - pz) < 4.5);
@@ -1382,7 +1401,7 @@ function buildLandmarks() {
 }
 function buildSignposts() {
   const sc = W.scene, wood = woodMat('#8b6544'), post = std('#6b4d33', { roughness: .9 }), lampM = new THREE.MeshStandardMaterial({ color: '#fff3c4', emissive: '#ffd27a', emissiveIntensity: .4 }); (W.lampMats = W.lampMats || []).push(lampM);
-  const ends = { 0: ['海岸', '#7dd3fc', [54 * K, 0]], 1: ['火山', '#fdba74', [0, -54 * K]], 3: ['雪原', '#e0f2fe', [-54 * K, 0]] };
+  const ends = { 0: ['海蝕洞', '#7dd3fc', [45 * K, 0]], 1: ['熔岩隧道', '#fdba74', [0, -45 * K]], 3: ['冰洞', '#e0f2fe', [-45 * K, 0]] };
   Object.keys(ends).forEach(li => {
     const [name, col, goal] = ends[li], pts = crPts(PATH_LINES[li], 10); let acc = 0, next = 26;
     for (let i = 1; i < pts.length; i++) {
@@ -2063,7 +2082,7 @@ function lineStep(dt) {
 /* ============================================================
    能量門與探索謎題
    ============================================================ */
-const GATES = { coast: { x: 54 * K, z: 0, ax: 'x', title: '破碎的古地圖' }, volcano: { x: 0, z: -54 * K, ax: 'z', title: '潮汐石陣' } };
+const GATES = { coast: { x: 45 * K, z: 0, ex: 64 * K, ez: 2.4 * K, title: '破碎的古地圖' }, volcano: { x: 0, z: -45 * K, ex: -2.4 * K, ez: -64 * K, title: '潮汐石陣' } }; // 能量門立在山洞的內側洞口（第 4 堂）
 const QUEST = {
   coast: { from: 'forest', title: '破碎的古地圖', need: 2, hint: '森林各處藏著 5 片古地圖碎片，只有靠近時才會微微發光。集齊後，到東方能量門前的古地圖石台，把地圖拼回原狀。' },
   volcano: { from: 'coast', title: '潮汐石陣', need: 4, hint: '海灘上散落著 3 張被撕碎的紙條。拼湊出完整的謎語後，依序點亮六顆潮汐石中的四顆，順序錯了會重來。' },
@@ -2155,16 +2174,17 @@ function buildGates() {
     for (let i = 0; i <= 128; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i - 64, 128); g.stroke(); g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 64, 128); g.stroke(); }
     gateTex = new THREE.CanvasTexture(c); gateTex.wrapS = gateTex.wrapT = THREE.RepeatWrapping; gateTex.repeat.set(4, 2);
   }
+  // 能量門立在山洞的內側洞口裡（第 4 堂）：擋路由 caves.js 的 caveBlock 處理，這裡只有外觀與互動
   Object.keys(GATES).forEach(k => {
-    if (S.zones.includes(k)) return; const d = GATES[k], g = new THREE.Group(), y = H(d.x, d.z); g.position.set(d.x, y, d.z); g.scale.setScalar(K); if (d.ax === 'z') g.rotation.y = Math.PI / 2; W.scene.add(g);
+    if (S.zones.includes(k)) return; const c = CAVES.find(o => o.def.gate === k); if (!c) return;
+    const w = c.Wd[0], h = c.Hh[0], g = new THREE.Group(); g.position.set(c.X[0] + c.TX[0] * 1.4, c.y0, c.Z[0] + c.TZ[0] * 1.4); g.rotation.y = Math.atan2(c.TX[0], c.TZ[0]); W.scene.add(g);
     const rockM = std('#475569', { flatShading: true, roughness: .9 });
-    [-7.5, 7.5].forEach(o => { const r = mesh(jit(new THREE.CylinderGeometry(1, 1.4, 9, 7, 3), .25, o + 3), rockM, 0, 4, o, g); r.castShadow = !LOW; });
+    [-1, 1].forEach(o => { const r = mesh(jit(new THREE.CylinderGeometry(.32, .48, h * .95, 7, 3), .25, o + 3), rockM, o * w * .9, h * .47, 0, g); r.castShadow = !LOW; });
     const mat = new THREE.MeshBasicMaterial({ color: '#a78bfa', map: gateTex, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
-    const wall = mesh(new THREE.PlaneGeometry(14, 8), mat, 0, 4, 0, g); wall.rotation.y = Math.PI / 2;
-    const run = textSprite('能量門', '#c4b5fd', '需解開：' + d.title); run.position.set(0, 9.2, 0); g.add(run);
-    const col = addCol({ gate: k, box: d.ax === 'x' ? [d.x - K, -8 * K, d.x + K, 8 * K] : [-8 * K, d.z - K, 8 * K, d.z + K] });
-    const it = addInter(hitBox(1, 8, 14, 0, 4, 0, g), 'gate', k, '能量門');
-    W.gates[k] = { g, mat, col, it, fade: 0 };
+    mesh(new THREE.PlaneGeometry(w * 1.85, h * .94), mat, 0, h * .47, 0, g);
+    const run = textSprite('能量門', '#c4b5fd', '需解開：' + GATES[k].title); run.position.set(0, h + 1.8, -2.6); g.add(run);
+    const it = addInter(hitBox(w * 1.85, h, .6, 0, h / 2, 0, g), 'gate', k, '能量門');
+    caveSetLayers(g, 1); W.gates[k] = { g, mat, col: null, it, fade: 0 };
   });
   buildColdWall();
   W.anim.push((dt, t) => { if (gateTex) gateTex.offset.y = t * .3; Object.keys(W.gates).forEach(k => { const gt = W.gates[k]; if (gt.fade > 0) { gt.fade -= dt; gt.mat.opacity = .55 * Math.max(0, gt.fade); if (gt.fade <= 0) { dropObj(gt.g); delete W.gates[k]; } } else gt.mat.opacity = .45 + Math.sin(t * 2) * .1; }); });
@@ -2177,9 +2197,9 @@ function openGate(k) {
 function discoverZone(k) {
   if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   const z = ZONES.find(z => z.id === k), dir = { coast: '東', volcano: '北', snow: '西' }[k];
-  const txt = { coast: '古地圖重新拼合，石台發出光芒，東方山脊的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方山脊的能量門隨之消散。', snow: '穿上厚實的保暖衣，西方山脊吹來的冰冷寒風不再擋住你的去路，雪原的入口出現了。' }[k];
-  const lmk = { coast: '燈塔', volcano: '冒煙的火山口', snow: '冰晶塔' }[k];
-  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${lmk ? `<p>抬頭找<b>${lmk}</b>：往它的方向走就對了（指南針上也有標示）。</p>` : ''}${k === 'snow' ? `<p>往西走出月光谷就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>付 ¥20 看醫生才會痊癒。</p>` : `<p>${dir}方的能量門已經開啟，新的史萊姆正在等你。指南針上的黃色標記會指引方向。</p>`}`, [{ t: '出發' }]);
+  const txt = { coast: '古地圖重新拼合，石台發出光芒，東方海蝕洞口的能量門應聲碎裂。', volcano: '四顆潮汐石依序亮起，海面退潮，北方熔岩隧道口的能量門隨之消散。', snow: '穿上厚實的保暖衣，從冰洞裡吹出來的刺骨寒氣不再擋住你的去路。' }[k];
+  const lmk = { coast: '燈塔', volcano: '冒煙的火山口', snow: '冰晶塔' }[k], cvn = { coast: '海蝕洞', volcano: '熔岩隧道', snow: '冰洞' }[k];
+  modal(`<h2>發現新區域：${z.name}</h2><p>${txt}</p>${lmk ? `<p>抬頭找<b>${lmk}</b>：往它的方向走就對了（指南針上也有標示）。</p>` : ''}${k === 'snow' ? `<p>往西走進<b>冰洞</b>，穿過去就是雪原，新的史萊姆正在等你。</p><p><b>雪原極度寒冷：</b>每次進入只有 <b>10 分鐘</b>的體溫（畫面左側的體溫條），歸零就會凍僵——身體發抖、行動變慢。要回<b>大城市的醫院</b>付 ¥20 看醫生才會痊癒。</p>` : `<p>${dir}方的<b>${cvn}</b>已經開啟：穿過山洞就是${z.name}，新的史萊姆正在等你。洞裡地上有一道發光的痕跡會帶你走到出口。</p>`}`, [{ t: '出發' }]);
   toast(`發現新區域：${z.name}`); renderQuest();
 }
 function buildPuzzles() {
@@ -2675,7 +2695,7 @@ function emoTex(k) {
 }
 function emote(s, k, dur = 1.7) {
   let e = s.emo;
-  if (!e) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: emoTex(k), transparent: true, depthWrite: false, fog: false })); sp.renderOrder = 3; s.m.add(sp); e = s.emo = { sp, t: 0, dur: 0, k }; }
+  if (!e) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: emoTex(k), transparent: true, depthWrite: false, fog: false })); sp.renderOrder = 3; if (s.cave) sp.layers.mask = 3; s.m.add(sp); e = s.emo = { sp, t: 0, dur: 0, k }; }
   if (e.k !== k) { e.sp.material.map = emoTex(k); e.k = k; }
   e.t = 0; e.dur = dur; e.sp.visible = true;
 }
@@ -2757,7 +2777,7 @@ function spawnSlime(zid, home) {
   m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); return sl;
 }
 function spawnZone(zid) { if (W.spawned.has(zid)) return; W.spawned.add(zid); const n = LOW ? 18 : 28; for (let i = 0; i < n; i++) spawnSlime(zid); }
-function spawnAllSlimes() { S.zones.forEach(spawnZone); spawnStarter(); }
+function spawnAllSlimes() { S.zones.forEach(spawnZone); spawnStarter(); caveSpawnSlimes(); }
 const STARTER = [0, 10.4];
 function spawnStarter() {
   if (W.starter && W.slimes.includes(W.starter)) return;
@@ -2777,6 +2797,7 @@ function slimeGround(x, z, zid) {
   return domBiome(x, z) === zid;
 }
 function moveSlime(s, dx, dz) {
+  if (s.cave) return caveSlimeMove(s, dx, dz); // 洞穴史萊姆只在洞裡走
   const nx = s.x + dx, nz = s.z + dz, nh = H(nx, nz);
   if (nh > -.1 && Math.abs(nh - H(s.x, s.z)) < .5 && Math.hypot(nx, nz) > WS_R + 1 && (s.tut || s.giant || slimeGround(nx, nz, s.zid) || !slimeGround(s.x, s.z, s.zid))) { s.x = nx; s.z = nz; return true; }
   s.turn = 0; s.wa += Math.PI * rnd(.6, 1.4); s.hvx *= -.25; s.hvz *= -.25; return false;
@@ -2788,8 +2809,9 @@ function slimeStep(dt, t) {
   W.slimes.forEach(s => {
     if (!s.mirror) { s.cool = Math.max(0, s.cool - dt); if (s.hits > 0 && (s.since = (s.since || 0) + dt) > 10) { s.hits = 0; s.perf = 0; } }
     s.sq = Math.max(0, s.sq - dt * 3); s.happy = Math.max(0, s.happy - dt);
-    const dx = s.x - P.x, dz = s.z - P.z, dist = Math.hypot(dx, dz); s.m.visible = dist < 62 && !(s.sp.night && DN.night < .5);
+    const dx = s.x - P.x, dz = s.z - P.z, dist = Math.hypot(dx, dz); s.m.visible = dist < 62 && !(s.sp.night && DN.night < .5) && (!s.cave || CV.c === s.cave);
     if (!s.m.visible) { s.noticed = false; s.flee = 0; return; }
+    if (s.cave) caveSlimeStep(s, dt, dist); // 被視線正對著會慢慢縮起來（第 4 堂 6.2）
     const cool = s.cool > 0, ud = s.m.userData, U = s.U;
     let wx = 0, wz = 0, spd = 0;
     // ---- 注意到玩家（潛行時很難被發現；奔跑時很遠就會被發現） ----
@@ -2858,7 +2880,7 @@ function slimeStep(dt, t) {
     // ---- 表情 ----
     s.sur = Math.max(0, s.sur - dt * 2); s.hap = Math.max(0, s.hap - dt); s.slp += ((cool ? 1 : 0) - s.slp) * Math.min(1, dt * 3);
     s.blink -= dt; const bl = s.blink < .13 ? 1 - Math.abs(s.blink - .065) / .065 : 0; if (s.blink < 0) s.blink = Math.random() < .2 ? .2 : rnd(1.8, 5);
-    const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), gy = G(s.x, s.z), by = s.air / s.sc - .03;
+    const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), gy = s.cave ? caveSlimeY(s) : G(s.x, s.z), by = s.air / s.sc - .03;
     const vx = cam.x - s.x, vz = cam.z - s.z, vl = Math.hypot(vx, vz) || 1, lxL = c * vx - sn * vz;
     s.lookT -= dt;
     if ((s.noticed || dist < 6) && !cool) { s.lkx = clamp(lxL / vl * 1.6, -1, 1); s.lky = clamp((cam.y - gy - (.65 + by) * s.sc) / vl * 1.2, -1, 1); }
@@ -2886,6 +2908,7 @@ function slimeStep(dt, t) {
 /* ---------- 受擊 ---------- */
 function slimeHitCore(sl, who) {
   if (sl.cool > 0) return { res: 'shy' };
+  if (sl.cave && sl.shrink > .7) return { res: 'curl' }; // 洞穴史萊姆縮成一團時捏不到
   if (sl.giant) { // 1.5 秒內要有兩位不同的玩家捏到，才算一下
     const now = performance.now(); (sl.gh = sl.gh || new Map()).set(who || NET.me || 'me', now); sl.sq = 1; sl.since = 0;
     if ([...sl.gh.values()].filter(t => now - t < 1500).length < 2) return { res: 'need2' };
@@ -2915,6 +2938,7 @@ function applyHit(sl, r, local, pt, remote) {
   const top = sl.m.position.clone().setY(sl.m.position.y + (SL_H + .35) * sl.sc);
   if (r.res === 'need2') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, '巨型史萊姆要兩個人一起捏！（1.5 秒內）', '#fbbf24'); sfx.squish(.7, .6); return; }
   if (r.res === 'giant') { if (!remote) slimeReact(sl, local, 'harvest'); splashAt(sl, pt, 20); fx3(top, '合力捏開了！', '#f0abfc', 'big'); sfx.perfect(); return; }
+  if (r.res === 'curl') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, '縮成一團了……別一直盯著牠，從側面慢慢靠近', '#c4b5fd'); sfx.squish(.3, slPitch(sl) * 1.1); return; }
   if (r.res === 'shy') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, `休息中，${Math.max(1, Math.ceil(sl.cool || 0))} 秒後恢復`, '#93c5fd'); sfx.squish(.35, slPitch(sl) * .9); ringPulse('cool'); return; }
   if (!remote) { slimeReact(sl, local, r.res); splashAt(sl, pt, r.res === 'harvest' ? 12 : 7); sfx.squish(.85, slPitch(sl)); }
   if (navigator.vibrate) navigator.vibrate(r.res === 'harvest' ? [10, 30, 14] : 8);
@@ -2944,6 +2968,7 @@ function initPlayer() {
 }
 // 腳下的地面材質（決定腳步聲）
 function surfaceAt(x, z) {
+  if (CV.c) { const k = caveSurface(); if (k) return k; }
   if (inCity(x)) return 'city'; if (onPath(x, z) > .5) return 'dirt';
   const b = domBiome(x, z); if (b === 'snow') return 'snow'; if (b === 'volcano') return 'rock'; if (b === 'coast' && H(x, z) < 1.5 * K) return 'sand'; return 'grass';
 }
@@ -3026,18 +3051,19 @@ function regionOK(x, z) {
   const ox = x / K, oz = z / K, ax = Math.abs(ox), az = Math.abs(oz), r = Math.max(ax, az);
   if (Math.hypot(ox, oz + 130) < 5.3) return false;
   if (r < 49) return true;
-  const ew = ax >= az, side = ew ? (ox > 0 ? 'coast' : 'snow') : (oz < 0 ? 'volcano' : null), lateral = ew ? az : ax;
-  if (r <= 58) return !!side && lateral < 7;
+  const ew = ax >= az, side = ew ? (ox > 0 ? 'coast' : 'snow') : (oz < 0 ? 'volcano' : null);
+  if (r <= 60) return false; // 山脊：要走山洞（caves.js），山洞裡不經過這裡的檢查
   if (Math.abs(ax - az) < 9) return false;
   return !!side && S.zones.includes(side);
 }
-/* 雪原的刺骨寒氣：越過西側能量門外側，沒有保暖衣就走不進去 */
-const coldBlocked = (x, z) => !S.own.coat && x < -55.5 * K && !inCity(x);
+/* 雪原的刺骨寒氣：第 4 堂起改在冰洞入口擋（caves.js 的 caveBlock），這裡只剩洞口的寒氣外觀 */
+const coldBlocked = () => false;
 function refreshCold() { if (W.coldWall) W.coldWall.visible = !S.own.coat; }
 function buildColdWall() {
-  const w = new THREE.Group(); w.position.set(-55.5 * K, H(-55.5 * K, 0), 0); w.rotation.y = Math.PI / 2; W.scene.add(w); W.coldWall = w;
-  mesh(new THREE.PlaneGeometry(14 * K, 9 * K), new THREE.MeshBasicMaterial({ color: '#bae6fd', map: gateTex, transparent: true, opacity: .3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), 0, 4.5 * K, 0, w);
-  const lb = textSprite('刺骨寒氣', '#bae6fd', '需要保暖衣才能進入'); lb.position.set(0, 7.5, 0); lb.scale.set(4.4, 1.38, 1); w.add(lb); refreshCold();
+  const c = CAVES.find(o => o.id === 'ice'); if (!c) return; const wd = c.Wd[0], ht = c.Hh[0], w = new THREE.Group();
+  w.position.set(c.X[0] + c.TX[0] * 1.2, c.y0, c.Z[0] + c.TZ[0] * 1.2); w.rotation.y = Math.atan2(c.TX[0], c.TZ[0]); W.scene.add(w); W.coldWall = w;
+  mesh(new THREE.PlaneGeometry(wd * 1.9, ht * .95), new THREE.MeshBasicMaterial({ color: '#bae6fd', map: gateTex, transparent: true, opacity: .3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), 0, ht * .48, 0, w);
+  const lb = textSprite('刺骨寒氣', '#bae6fd', '需要保暖衣才能進入'); lb.position.set(0, ht + 1.6, -2.4); lb.scale.set(3.6, 1.12, 1); w.add(lb); caveSetLayers(w, 1); refreshCold();
 }
 function barrierMsg(msg) { const now = performance.now(); W.barT = W.barT || {}; if (now - (W.barT[msg] || 0) < 4000) return; W.barT[msg] = now; toast(msg); }
 function barrierWhy(x, z) {
@@ -3045,7 +3071,7 @@ function barrierWhy(x, z) {
   if (Math.hypot(ox, oz + 130) < 5.3) return '火山口裡是滾燙的岩漿，太危險了，靠近不了。';
   const ew = ax >= az, side = ew ? (ox > 0 ? 'coast' : 'snow') : (oz < 0 ? 'volcano' : null);
   if (!side && r > 49) return '南方是陡峭的高山，一層層岩階爬不上去。';
-  if (r <= 58 || Math.abs(ax - az) < 9) return '山脊太陡了，爬不上去。沿著小徑走隘口（指南針上有地標）。';
+  if (r <= 60 || Math.abs(ax - az) < 9) return '山脊太陡了，爬不上去。沿著小徑走到山洞口（路標會告訴你還有多遠）。';
   if (side && !S.zones.includes(side)) return side === 'snow' ? '刺骨的寒氣：穿上保暖衣才能進雪原（大城市武器店）。' : { coast: '東方能量門還封著：解開「破碎的古地圖」才能前往海岸。', volcano: '北方能量門還封著：解開「潮汐石陣」才能前往火山。' }[side];
   return '前面過不去了。';
 }
@@ -3056,10 +3082,11 @@ function bumpTree(c) {
   if (S.sound) { const ac = audio(); noise(ac, ac.currentTime, .35, 2600, .6, .05, 'bandpass'); noise(ac, ac.currentTime + .08, .25, 1800, .6, .035, 'bandpass'); }
 }
 function tryMove(dx, dz) {
+  { const cm = caveMove(dx, dz); if (cm !== undefined) return cm; } // 在山洞裡（或剛走進洞口）：地面與牆壁用山洞的曲線算
   let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z), h1 = G(nx, nz), d = Math.hypot(dx, dz) || 1e-6;
   if (h1 < -2.2) return false;
   const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7);
-  if ((ha - h0) / .7 > 1.1) { const rr = Math.max(Math.abs(nx), Math.abs(nz)) / K; if (!inCity(nx) && rr > 44 && rr < 60) barrierMsg('山脊太陡了，爬不上去。沿著小徑走隘口（指南針上有地標）。'); return false; }
+  if ((ha - h0) / .7 > 1.1) { const rr = Math.max(Math.abs(nx), Math.abs(nz)) / K; if (!inCity(nx) && rr > 44 && rr < 60) barrierMsg('山脊太陡了，爬不上去。沿著小徑走到山洞口（路標會告訴你還有多遠）。'); return false; }
   if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) { if ((ha - h0) / .7 < .8) barrierMsg(barrierWhy(nx, nz)); return false; }
   if (coldBlocked(nx, nz) && !coldBlocked(P.x, P.z)) { const nw = performance.now(); if (!W.coldT || nw - W.coldT > 4000) { W.coldT = nw; toast('刺骨的寒氣擋住了去路……沒有保暖衣無法進入雪原。' + (armsOpen() ? '到大城市的武器店買一件吧。' : '升到 Lv ' + ARMS_LV + ' 後，大城市會開設武器店。')); } return false; }
   for (const c of colsNear(nx, nz)) {
@@ -3083,10 +3110,10 @@ function playerStep(dt) {
   // 潛行（按住 C／觸控潛行鍵）：較慢、視角降低、腳步輕，怕生的史萊姆不容易察覺
   P.sneak = !GUI.kind && (KEYS.has('KeyC') || IN.sneak);
   const run = !P.sneak && (KEYS.has('ShiftLeft') || KEYS.has('ShiftRight') || IN.run) && !!(f || s); P.running = run;
-  const spd = (P.sneak ? 2.2 : run ? 7.5 : 4.3) * (1 + .1 * S.up.boots) * (S.frozen ? .5 : 1);
+  const spd = (P.sneak ? 2.2 : run ? 7.5 : 4.3) * (1 + .1 * S.up.boots) * (S.frozen ? .5 : 1) * caveSpeed(run);
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw), wx = (-sy * f + cy * s) * spd, wz = (-cy * f - sy * s) * spd;
   // 加速度與摩擦：起步與停下都有一點慣性，空中轉向較弱
-  const acc = (P.ground ? ((f || s) ? 34 : 26) : 7) * dt; let ex = wx - P.vx, ez = wz - P.vz; const el = Math.hypot(ex, ez); if (el > acc && el > 1e-6) { ex *= acc / el; ez *= acc / el; }
+  const acc = (P.ground ? ((f || s) ? 34 : 26 * caveSlip()) : 7) * dt; let ex = wx - P.vx, ez = wz - P.vz; const el = Math.hypot(ex, ez); if (el > acc && el > 1e-6) { ex *= acc / el; ez *= acc / el; }
   P.vx += ex; P.vz += ez; if (Math.abs(P.vx) < 1e-3) P.vx = 0; if (Math.abs(P.vz) < 1e-3) P.vz = 0;
   if (P.vx && !tryMove(P.vx * dt, 0)) P.vx = 0; if (P.vz && !tryMove(0, P.vz * dt)) P.vz = 0;
   P.jb = Math.max(0, P.jb - dt); P.coy = P.ground ? .12 : Math.max(0, P.coy - dt);
@@ -3095,7 +3122,7 @@ function playerStep(dt) {
   if (P.y <= g) { if (!P.ground && vy0 < -3.5) { const k = clamp((-vy0 - 3.5) / 10, 0, 1); P.dipV -= 1.4 + k * 3.2; sfx.land(k, surfaceAt(P.x, P.z)); } P.y = g; P.vy = 0; P.ground = true; }
   else if (P.y - g > .25) P.ground = false;
   const hsp = Math.hypot(P.vx, P.vz), moving = hsp > .6 && P.ground; P.bob += moving ? dt * hsp * 2.1 : 0;
-  if (moving) { P.stepT -= dt * hsp / 4.3; if (P.stepT < 0) { P.stepT = .42; sfx.step(surfaceAt(P.x, P.z), P.sneak ? .35 : run ? 1.2 : 1); } }
+  if (moving) { P.stepT -= dt * hsp / 4.3; if (P.stepT < 0) { P.stepT = .42; const kd = surfaceAt(P.x, P.z), vv = P.sneak ? .35 : run ? 1.2 : 1; sfx.step(kd, vv); if (CV.k > .4) caveEcho(kd, vv); } }
   P.eye += ((P.sneak ? 1.18 : 1.62) - P.eye) * Math.min(1, dt * 10);
   P.dipV += (-P.dip * 160 - P.dipV * 14) * dt; P.dip = clamp(P.dip + P.dipV * dt, -.35, .2);
   P.camY += (P.y - P.camY) * Math.min(1, dt * 18);
@@ -3167,13 +3194,15 @@ function targetLabel(t) {
     const s = t.sl, sneakKey = TOUCH ? '潛行鍵' : '按住 C';
     const st = s.cool > 0 ? ` · 休息中 ${Math.ceil(s.cool)} 秒` : s.flee > 0 ? ` · <span style="color:#7dd3fc">逃跑中！${sneakKey}潛行靠近</span>` : ` · 採集 ${s.hits}/3`;
     const tip = s.cool <= 0 && !s.flee && s.pers === 'shy' && !P.sneak ? ` · <span style="color:#7dd3fc">怕生</span>` : s.cool <= 0 && s.pers === 'curious' && s.noticed ? ' · <span style="color:#f9a8d4">好奇</span>' : '';
-    return `${key}${s.sp.name} <span style="color:${RAR[s.sp.rar].c}">${RAR[s.sp.rar].n}</span>${st}${tip}`;
+    const cav = s.cave && s.cool <= 0 ? (s.shrink > .5 ? ' · <span style="color:#c4b5fd">縮成一團了，轉開視線等牠放鬆</span>' : ' · <span style="color:#c4b5fd">怕被盯著看，從側面靠近</span>') : '';
+    return `${key}${s.sp.name} <span style="color:${RAR[s.sp.rar].c}">${RAR[s.sp.rar].n}</span>${st}${tip}${cav}`;
   }
   if (t.type === 'avatar') { const pl = NET.players.get(t.id), h = held(); if (!pl) return ''; return h && h.t === 'gel' ? `${key}送 1 份${short(h.sp)}凝膠給 ${esc(pl.name)}` : `${esc(pl.name)}　<span style="color:var(--sub)">拿著凝膠可以送給對方</span>`; }
   if (t.type === 'npc') return `${key}跟 ${esc(t.n.d.name)} 聊天　<span style="color:var(--sub)">${esc(t.n.d.role)}</span>`;
   if (t.type === 'station' && t.it.id.startsWith('info:')) return `${key}閱讀「${INFO[t.it.id.slice(5)].t}」的介紹`;
   if (t.type === 'station') { const h = held(); if (t.it.id === 'shelf' && h && h.t === 'prod') return `${key}把手上的${short(h.p.sp)}捏捏上架`; return `${key}使用${t.it.name}`; }
   if (t.type === 'gate') return `能量門 · 需解開「${GATES[t.it.id].title}」`;
+  if (t.type === 'cave') return caveLabel(t, key);
   if (t.type === 'puzzle') return `${key}${t.it.name}`;
   return '';
 }
@@ -3213,6 +3242,7 @@ function doActAt(t) {
   else if (t.type === 'npc') npcTalk(t.n);
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
+  else if (t.type === 'cave') caveAct(t.it);
 }
 
 /* ============================================================
@@ -3270,6 +3300,7 @@ let objSig = '';
 function renderObjective() {
   let o = objective(); let tx = o.x, tz = o.z;
   if (o.track === 'slime') { let bd = 1e9; W.slimes.forEach(sl => { if (sl.cool > 0) return; const d = Math.hypot(sl.x - P.x, sl.z - P.z); if (d < bd) { bd = d; tx = sl.x; tz = sl.z; } }); }
+  else { const rt = caveRoute(tx, tz); if (rt) { o = Object.assign({}, o, { x: rt.x, z: rt.z, n: rt.n, d: o.d + `（先穿過${rt.cave.def.name}）`, here: `走進${rt.cave.def.name}，沿著地上的發光痕跡走到出口。` }); tx = rt.x; tz = rt.z; } }
   const key = o.t + '|' + (o.n || o.track || ''), same = tx != null && inCity(tx) === inCity(), dist = same ? Math.hypot(tx - P.x, tz - P.z) : 1e9;
   if (W.arrKey !== key) { W.arrKey = key; W.arr = false; }
   if (!W.arr && dist < 8) { W.arr = true; if (o.n) { toast(`已抵達${o.n}`); sfx.tick(); } }
@@ -3288,7 +3319,7 @@ function waypointStep() {
   const o = W.obj; let tx = null, tz = null;
   if (o && o.track === 'slime') { let bd = 1e9; W.slimes.forEach(s => { if (s.cool > 0) return; const d = Math.hypot(s.x - P.x, s.z - P.z); if (d < bd) { bd = d; tx = s.x; tz = s.z; } }); }
   else if (o && o.x != null) { tx = o.x; tz = o.z; }
-  if (tx == null || GUI.kind || TITLE.on || inCity(tx) !== inCity()) { el.hidden = true; return; }
+  if (tx == null || GUI.kind || TITLE.on || CV.c || inCity(tx) !== inCity()) { el.hidden = true; return; }
   const dist = Math.hypot(tx - P.x, tz - P.z); if (dist < WP_HIDE) { el.hidden = true; return; }
   WPV.set(tx, G(tx, tz) + 1.8, tz).project(W.cam);
   const vw = innerWidth, vh = innerHeight, behind = WPV.z > 1; let sx = (WPV.x * .5 + .5) * vw, sy = (-WPV.y * .5 + .5) * vh;
@@ -3331,10 +3362,14 @@ function renderCompass() {
   [['西北', Math.PI / 4], ['西南', Math.PI * .75], ['東南', -Math.PI * .75], ['東北', -Math.PI / 4]].forEach(([n, a]) => put(a, n, 'dir2'));
   for (let a = 0; a < 72; a++) if (a % 9) put(a / 72 * PI2, '', a % 3 ? 'tick' : 'tick big');
   const bearing = (x, z) => Math.atan2(-(x - P.x), -(z - P.z)), dist = (x, z) => Math.round(Math.hypot(x - P.x, z - P.z));
-  put(bearing(0, 0), '<i></i>', 'pin home', '#22d3ee');
-  const o = W.obj; if (o && o.x != null) put(bearing(o.x, o.z), `<i></i><b>${dist(o.x, o.z)}m</b>`, 'pin goal', o.c || '#c4b5fd');
-  LMS.forEach(L => { const known = S.zones.includes(L.zone); put(bearing(L.x, L.z), `<i></i><b>${known ? L.name : '？'}</b>`, 'pin lm' + (known ? '' : ' unk'), known ? '#e2e8f0' : '#64748b'); });
-  Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].x * 1.4, GATES[k].z * 1.4), '<i></i>', 'pin gate', '#fbbf24'); });
+  const ca = caveAhead();
+  if (ca) put(bearing(ca.x, ca.z), `<i></i><b>${ca.name} ${ca.d}m</b>`, 'pin goal', ca.col); // 山洞裡只顯示「出口方向」一個標記（第 4 堂 4.4）
+  else {
+    put(bearing(0, 0), '<i></i>', 'pin home', '#22d3ee');
+    const o = W.obj; if (o && o.x != null) put(bearing(o.x, o.z), `<i></i><b>${dist(o.x, o.z)}m</b>`, 'pin goal', o.c || '#c4b5fd');
+    LMS.forEach(L => { const known = S.zones.includes(L.zone); put(bearing(L.x, L.z), `<i></i><b>${known ? L.name : '？'}</b>`, 'pin lm' + (known ? '' : ' unk'), known ? '#e2e8f0' : '#64748b'); });
+    Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].ex, GATES[k].ez), '<i></i>', 'pin gate', '#fbbf24'); });
+  }
   el.innerHTML = items.join('');
   const deg = Math.round(((-P.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360, dn = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'][Math.round(deg / 45) % 8];
   const dg = $('#cmpDeg'); if (dg) dg.textContent = `${dn} ${String(deg).padStart(3, '0')}°`;
@@ -3361,7 +3396,8 @@ function renderTop() {
   const t = trend.sp ? SP[trend.sp] : null; $('#sTrend').innerHTML = t ? `流行 ${dot(t.color)}${short(trend.sp)} ×1.35` : '流行 —';
   if (GUI.kind === 'pause') ui('pause'); // 暫停選單（音效、靈敏度、雲端存檔狀態）由 React 重繪
 }
-function pickTrend() { trend.sp = pick(unlockedSpecies()).id; renderTop(); toast('流行色更新：' + SP[trend.sp].name + '（售價 ×1.35）'); }
+const trendPool = () => unlockedSpecies().filter(s => !s.cave || (S.codex[s.id] && S.codex[s.id].made > 0)); // 洞穴史萊姆要先做過才會變成流行色
+function pickTrend() { trend.sp = pick(trendPool()).id; renderTop(); toast('流行色更新：' + SP[trend.sp].name + '（售價 ×1.35）'); }
 
 /* ============================================================
    介面視窗（工作站 / 背包 / 選單）
@@ -3980,6 +4016,10 @@ function startPlay() {
   if (S.coatMigrated) { S.coatMigrated = false; save(); setTimeout(() => toast('偵測到你已經開啟雪原：已補發保暖衣（現在雪原需要保暖衣才能進入）'), 1500); }
   if (S.ownMigrated) { S.ownMigrated = false; save(); setTimeout(() => toast('偵測到改版前的存檔：已補發你原本擁有的加工機器、裝飾桌與直播設備'), 900); }
   TITLE.on = false; document.body.classList.remove('titleon'); $('#title').hidden = true;
+  if (introStart(playReady)) return; // 第 4 堂：每次進入遊戲先用穿越機視角穿過一條山洞、進到中央平地（caves.js）
+  playReady();
+}
+function playReady() {
   $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast(S.tutDone ? '歡迎回到月光谷。左上角是目前目標。' : '歡迎來到月光谷！跟著畫面中央的提示一步一步來。');
   if (!S.seen) { S.seen = true; save(); modal('<h2>奶奶的信</h2><div class="riddle" style="text-align:left">親愛的孩子：<br>月光谷那間舊工坊，現在交給你了。窗戶破了、屋頂也缺了幾片瓦，但史萊姆們還在等著被捏。<br>每完成一件事，工坊就會慢慢變回從前的樣子。<br>——奶奶</div>', [{ t: '收下工坊' }]); }
 }
@@ -4213,10 +4253,10 @@ function netLeave(silent) {
   AV.forEach(a => dropObj(a.g)); AV.clear(); if (W.liveTag) { dropObj(W.liveTag); W.liveTag = null; W.liveTagName = null; }
   if (W.ready) {
     if (W.giant) { dropSlime(W.giant); W.slimes = W.slimes.filter(q => q !== W.giant); W.giant = null; } coopHide();
-    if (W.mirror) { W.slimes.forEach(dropSlime); W.slimes = []; W.mirror = false; W.spawned.clear(); spawnAllSlimes(); }
+    if (W.mirror) { W.slimes.forEach(dropSlime); W.slimes = []; W.mirror = false; W.spawned.clear(); CAVES.forEach(c => { c.slimes = 0; }); spawnAllSlimes(); }
     else if (wasHost) {
       // 房主收掉為其他玩家生成、自己還沒解鎖區域的史萊姆
-      W.slimes = W.slimes.filter(s => { if (S.zones.includes(s.zid)) return true; dropSlime(s); return false; });
+      W.slimes = W.slimes.filter(s => { if (s.cave || S.zones.includes(s.zid)) return true; dropSlime(s); return false; });
       [...W.spawned].forEach(z => { if (!S.zones.includes(z)) W.spawned.delete(z); });
     }
   }
@@ -4353,7 +4393,7 @@ function netTick() {
     // 每位玩家只收到自己附近的史萊姆（原本整張地圖上百隻、每秒廣播 10 次）
     NET.conns.forEach((c, id) => {
       const pl = NET.players.get(id); if (!c.open || !pl || backlog(c)) return; const a = [];
-      for (const s of W.slimes) if (!s.tut && Math.abs(s.x - pl.x) < SL_RANGE && Math.abs(s.z - pl.z) < SL_RANGE) a.push([s.id, SPECIES.indexOf(s.sp), Math.round(s.x * 50) / 50, Math.round(s.z * 50) / 50, Math.round(s.cool * 10) / 10, s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0, s.giant ? 1 : 0]);
+      for (const s of W.slimes) if (!s.tut && !s.cave && Math.abs(s.x - pl.x) < SL_RANGE && Math.abs(s.z - pl.z) < SL_RANGE) a.push([s.id, SPECIES.indexOf(s.sp), Math.round(s.x * 50) / 50, Math.round(s.z * 50) / 50, Math.round(s.cool * 10) / 10, s.hits, s.sq > .5 ? 1 : 0, Math.round(s.sc * 100), s.happy > 0 ? 1 : 0, s.giant ? 1 : 0]);
       try { c.send({ t: 'sl', a }); } catch (_) { }
     });
   } else {
@@ -4370,7 +4410,7 @@ function dropSlime(s) {
 }
 function mirrorSlimes(a) {
   if (!W.ready) return;
-  if (!W.mirror) { W.slimes.forEach(dropSlime); W.slimes = []; W.mirror = true; }
+  if (!W.mirror) { W.slimes.forEach(s => { if (!s.cave) dropSlime(s); }); W.slimes = W.slimes.filter(s => s.cave); W.mirror = true; }
   const byId = new Map(W.slimes.map(s => [s.id, s])), now = performance.now();
   for (const e of a.slice(0, 600)) {
     if (!Array.isArray(e)) continue; const [id, si, x, z, cool, hits, sq, sc, happy, gi] = e;
@@ -4382,7 +4422,7 @@ function mirrorSlimes(a) {
     if (happy && !(s.happy > 0)) { s.happy = .6; s.hap = 1.4; slimeReact(s, null, 'harvest'); }
   }
   // 走出範圍的史萊姆先保留幾秒（來回走動不必一直重建），太久沒更新才釋放記憶體
-  W.slimes = W.slimes.filter(s => { if (now - (s.seenT || 0) < 4000) return true; dropSlime(s); return false; });
+  W.slimes = W.slimes.filter(s => { if (s.cave || now - (s.seenT || 0) < 4000) return true; dropSlime(s); return false; });
 }
 
 /* ---------- 其他玩家的角色 ---------- */
@@ -5131,7 +5171,7 @@ function upgradeFx(dt) {
 }
 function viewModelStep(dt) {
   if (!VM.g) initViewModel();
-  const show = !GUI.kind && !TITLE.on && !W.camAway; VM.g.visible = show; if (!show) { VM.key = ''; return; }
+  const show = !GUI.kind && !TITLE.on && !W.camAway && !INTRO.on; VM.g.visible = show; if (!show) { VM.key = ''; return; }
   const it = held(), key = it ? (it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp) : '';
   if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') { jellyColors(VM.J, sp); jellyCut(VM.J, it.p); } else VM.gel.material.color.set(sp.color); } }
   VM.swing = Math.max(0, VM.swing - dt * 2.2); VM.sq = Math.max(0, VM.sq - dt);
@@ -5204,7 +5244,8 @@ function envStep(dt) {
   shC.set(fx, P.y, fz); const a = Math.round(shC.dot(SUN_R) / tx) * tx, b = Math.round(shC.dot(SUN_U) / tx) * tx, c = shC.dot(SUN_D);
   shC.copy(SUN_R).multiplyScalar(a).addScaledVector(SUN_U, b).addScaledVector(SUN_D, c);
   W.sun.target.position.copy(shC); W.sun.position.copy(shC).addScaledVector(SUN_D, 66);
-  const zid = inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  const zid = CV.c ? W.zoneNow : inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev && !W.quietZone) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); W.quietZone = false; if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  caveEnv(dt);
 }
 // 距離剔除：超出霧距的道具區塊不繪製（大城市時整片山谷都不畫）
 const LOD_D = LOW ? 30 : 50, SHADOW_D = 52; // 50m 涵蓋整個陰影範圍（含視線前方偏移），遠角的樹也有陰影
@@ -5218,7 +5259,7 @@ function cullChunks(at = P) {
   }
 }
 /* ---------- 雪原體溫：每次進入雪原有 10 分鐘，歸零就凍僵（發抖、減速），要到大城市的醫院看醫生 ---------- */
-const inSnowZone = () => !!P && P.x < -56 * K && !inCity(P.x);
+const inSnowZone = () => !!P && P.x < -56 * K && !inCity(P.x) && !CV.c;
 let warmSig = '';
 function warmStep(dt) {
   const inS = inSnowZone();
@@ -5255,11 +5296,11 @@ function qualityStep(dt) {
 }
 function worldStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
-  W.t += dt; W.wind.value = W.t; if (!GUI.kind) playerStep(dt); warmStep(dt);
-  if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks();
+  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on) playerStep(dt); warmStep(dt);
+  if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   deliverStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
-  const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
+  const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
   if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); stageStep(); upgradeFx(dt);
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
   for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }
@@ -5329,7 +5370,7 @@ window.SlimeGame = {
 };
 
 /* ---------- 啟動 ---------- */
-offlineCatchUp(); trend.sp = pick(unlockedSpecies()).id; renderTop();
+offlineCatchUp(); trend.sp = pick(trendPool()).id; renderTop();
 if (initWorld()) { renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動'; }
 window.dispatchEvent(new Event('slime:ready')); // 通知 React 收起載入畫面（components/LoginGate.tsx）
 addEventListener('beforeunload', save); addEventListener('pagehide', () => { save(); cloud('leave'); if (NET.on) netLeave(true); });
