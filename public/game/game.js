@@ -4092,7 +4092,7 @@ function objective() {
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
     if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee', n: '機械行', here: '對準機械行的店門' + (TOUCH ? '點擊' : '按 E') + '，購買切片機。' };
-    return { t: '逛逛大城市', d: '商店在路的北側；廣場旁有咖啡館（老闆每天有小訂單）、週末市集與公告欄。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
+    return { t: '逛逛大城市', d: '商店在路的北側；廣場旁有咖啡館（老闆每天有小訂單）、週末市集與公告欄。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11.6, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
   }
   if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。', track: 'slime', c: '#6ee7a8' };
   if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24', n: '手作台', here: '對準手作台' + (TOUCH ? '點擊' : '按 E') + '，用 2 份凝膠做出粗製捏捏。' };
