@@ -88,54 +88,105 @@
 }
 
 /* =====================================================================
-   暫停選單（components/stations/Pause.tsx）：筆記本的紙張配色
+   暫停選單（components/stations/Pause.tsx）：手寫筆記本的一頁（外框、線圈、橫線、手寫字型在 app/stations.css 的筆記本）
+   字寫在 28px 的橫線上；按鈕至少 42px 高；螢光筆畫在字的「後面」（背景漸層），膠帶只貼在便利貼上緣的留白，不蓋到任何字
    ===================================================================== */
-.rx-pause{display:grid;gap:12px}
-.rx-resume{display:flex;align-items:center;gap:10px;width:100%;padding:14px 16px;border:0;border-radius:12px;background:var(--acc);color:#fff;font-size:17px;
-  box-shadow:0 12px 22px -14px color-mix(in srgb,var(--acc) 85%,#000);transition:transform .15s,filter .15s}
-.rx-resume:hover{transform:translateY(-1px);filter:brightness(1.08)}
-.rx-resume svg{width:20px;height:20px;fill:currentColor}
-.rx-resume b{flex:1;text-align:left;letter-spacing:3px}
-.rx-resume kbd{padding:2px 8px;border-radius:6px;border:1px solid #ffffff73;font:700 11px/1.4 Inter,sans-serif;color:#fff}
-.rx-acct{display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;border:1px dashed var(--line);background:color-mix(in srgb,var(--card) 70%,transparent)}
-.rx-acct-main{flex:1;min-width:0;display:grid;gap:6px}
-.rx-name-edit{display:flex;gap:6px}
-.rx-name-edit input{flex:1;min-width:0;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:inherit;font-size:15px;font-weight:700;user-select:text}
-.rx-name-edit input:focus{outline:none;border-color:var(--acc)}
-.rx-sync{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.4;color:var(--sub)}
-.rx-sync svg{width:15px;height:15px;flex:none}
-.rx-sync.ok svg{color:var(--good)}
-.rx-sync.wait svg{color:var(--warn)}
-.rx-sync.err{color:var(--red)}
-.rx-room{display:grid;gap:6px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:13px}
-.rx-room-hd{display:flex;align-items:center;gap:8px}
-.rx-dev{display:grid;gap:6px;margin:10px 0;padding:12px;border-radius:12px;border:1px dashed #818cf8aa;background:#818cf810;font-size:13px}
-.rx-dev .btn{justify-self:start}
-.rx-room ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.rx-room li{display:flex;align-items:center;gap:6px}
-.rx-room .btn{justify-self:start}
-.rx-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.rx-grid>*{position:relative;display:grid;grid-template-columns:auto 1fr;column-gap:10px;align-items:center;padding:11px 12px;border-radius:12px;border:1px solid var(--line);
-  background:var(--card);color:var(--tx);text-align:left;text-decoration:none;transition:transform .14s,border-color .15s,box-shadow .15s}
-.rx-grid>*:hover{transform:translateY(-2px);border-color:var(--acc);box-shadow:0 8px 16px -12px #0006}
-.rx-grid>* svg{grid-row:1/3;width:22px;height:22px;color:var(--acc)}
-.rx-grid b{font-size:14px}
-.rx-grid small{color:var(--sub);font-size:11.5px}
-.rx-switch{position:absolute;right:10px;top:50%;width:30px;height:18px;margin-top:-9px;border-radius:99px;background:color-mix(in srgb,var(--sub) 35%,transparent);transition:background .2s}
-.rx-switch::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px #0004;transition:transform .2s}
-.on>.rx-switch{background:var(--good)}
-.on>.rx-switch::after{transform:translateX(12px)}
-.rx-pips3{position:absolute;right:10px;top:50%;display:flex;align-items:flex-end;gap:2px;margin-top:-7px}
-.rx-pips3 i{width:4px;border-radius:1px;background:color-mix(in srgb,var(--sub) 40%,transparent)}
-.rx-pips3 i:nth-child(1){height:6px}.rx-pips3 i:nth-child(2){height:10px}.rx-pips3 i:nth-child(3){height:14px}
-.rx-pips3 i.on{background:var(--acc)}
-.rx-quit{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:12px;border:1.5px solid color-mix(in srgb,var(--red) 50%,transparent);background:transparent;color:var(--red);font-weight:800;font-size:15px}
-.rx-quit:hover{background:color-mix(in srgb,var(--red) 10%,transparent)}
-.rx-quit svg{width:18px;height:18px}
-.rx-pause-links{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;font-size:11.5px;color:var(--sub)}
-.rx-pause-links button{padding:0 4px;border:0;background:none;color:var(--sub);font-size:11.5px;text-decoration:underline}
-.rx-pause-links a{color:var(--sub)}
-@container (max-width:340px){.rx-grid{grid-template-columns:1fr}}
+.rx-pause{display:grid;grid-template-columns:minmax(0,1fr);gap:4px 30px;align-content:start;font-family:var(--hand,serif);color:var(--ink,#22314f);font-size:16px;line-height:28px}
+/* 回到遊戲：貼在頁面上的黃色便利貼（上緣的紙膠帶在便利貼的留白裡） */
+.rx-resume{position:relative;display:flex;align-items:center;gap:12px;width:calc(100% - 14px);min-height:60px;margin:14px 0 6px 4px;padding:16px 18px 12px;border:0;border-radius:2px 2px 12px 2px;
+  background:linear-gradient(180deg,#fff7b8,#fde68a);color:#3b2f0b;box-shadow:0 1px 0 #0000000d,2px 6px 10px -5px #0006;transform:rotate(-1.2deg);transition:transform .15s,box-shadow .15s}
+.rx-resume::before{content:"";position:absolute;left:50%;top:-9px;width:86px;height:19px;margin-left:-43px;background:#bae6fdc4;box-shadow:0 1px 2px #0002;transform:rotate(2deg)}
+.rx-resume:hover,.rx-resume:focus-visible{transform:rotate(-.4deg) translateY(-2px);box-shadow:0 1px 0 #0000000d,3px 10px 16px -6px #0007}
+.rx-resume svg{width:22px;height:22px;fill:currentColor;stroke:none;flex:none}
+.rx-resume b{flex:1;text-align:left;font-size:24px;line-height:1.2;letter-spacing:4px}
+.rx-resume kbd{padding:1px 8px;border-radius:5px;border:1.5px solid #3b2f0b5c;font:700 12px/1.5 var(--hand,serif);color:#3b2f0b}
+/* 小標題：手寫字，螢光筆畫在字後面 */
+.nb-h{width:fit-content;margin:6px 0 0;padding:0 8px 0 2px;font:700 20px/28px var(--hand,serif);letter-spacing:2px;color:var(--ink);background:linear-gradient(transparent 56%,#fde04794 56% 90%,transparent 90%)}
+.rx-pcol{display:grid;gap:4px;align-content:start;min-width:0}
+/* 頭像（拍立得貼紙）、暱稱寫在虛線上 */
+.rx-pause .rx-acct{display:flex;align-items:center;gap:14px;padding:6px 0 2px}
+.rx-pause .rx-avatar.slime{width:62px;height:62px;flex:none;padding:4px;border-radius:5px;background:#fff;box-shadow:0 2px 6px #0003;transform:rotate(-4deg)}
+.rx-pause button.rx-avatar.slime:hover,.rx-pause button.rx-avatar.slime.on{transform:rotate(-1deg) translateY(-2px);box-shadow:0 0 0 2px var(--acc),0 4px 10px #0003}
+.rx-pause .rx-av-edit{right:-8px;bottom:-8px;padding:1px 6px;font:700 11px/1.5 var(--hand,serif)}
+.rx-pause .rx-acct-main{flex:1;min-width:0;display:grid;gap:2px}
+.rx-pause .rx-name-edit{display:flex;align-items:center;gap:8px}
+.nb-lbl{flex:none;font-size:15px;color:var(--ink2)}
+.rx-pause .rx-name-edit input{flex:1;min-width:0;height:38px;padding:6px 2px 0;border:0;border-bottom:2px dashed #5d688099;border-radius:0;background:transparent;color:var(--ink);font:700 20px/1 var(--hand,serif);user-select:text}
+.rx-pause .rx-name-edit input:focus{outline:none;border-bottom-style:solid;border-bottom-color:var(--acc)}
+.rx-pause .rx-sync{display:flex;align-items:center;gap:6px;font-size:13.5px;line-height:1.5;color:var(--ink2)}
+.rx-pause .rx-sync svg{width:16px;height:16px;flex:none}
+.rx-pause .rx-sync.ok svg{color:var(--good)}.rx-pause .rx-sync.wait svg{color:var(--warn)}.rx-pause .rx-sync.err{color:var(--red)}
+/* 手寫的小按鈕：歪歪的鉛筆框 */
+.nb-btn{flex:none;min-height:38px;padding:4px 14px;border:1.8px solid var(--ink);border-radius:18px 14px 16px 12px/14px 18px 12px 16px;background:transparent;color:var(--ink);font:700 15px/1.2 var(--hand,serif);transition:background .15s,transform .15s}
+.nb-btn:hover:not(:disabled),.nb-btn:focus-visible{background:#fde04766;transform:rotate(-1deg)}
+.nb-btn.red{border-color:var(--pen);color:var(--pen)}
+.nb-btn:disabled{opacity:.45;cursor:not-allowed}
+/* 選頭像：攤開的一排貼紙 */
+.rx-pause .rx-avpick{padding:10px 12px;border:1.5px dashed #5d68807a;border-radius:10px;background:#ffffffb3}
+.rx-pause .rx-avpick-hd{line-height:1.4;margin-bottom:6px}
+.rx-pause .rx-avpick-hd small{color:var(--ink2);font-size:13px}
+.rx-pause .rx-avpick-grid button{background:transparent;font-family:inherit}
+.rx-pause .rx-avpick-grid button small{font-size:13px;color:var(--ink2);line-height:1.4}
+.rx-pause .rx-avpick-grid button:hover{background:#fde04740}
+/* 多人房間＝釘在頁面上的索引卡；開發者工具＝紫色便利貼 */
+.rx-pause .nb-card,.rx-pause .nb-sticky{display:grid;gap:4px;margin:8px 0 4px;padding:10px 14px 12px;border:0;border-radius:3px;font-size:14px;line-height:1.6;box-shadow:0 3px 8px -3px #0005}
+.rx-pause .nb-card{background:linear-gradient(#0000 34px,#ef44444d 34px 35px,#0000 35px),#fff;transform:rotate(.5deg)}
+.rx-pause .nb-sticky{background:#ede9fe;transform:rotate(-.7deg)}
+.rx-pause :is(.nb-card,.nb-sticky) .rx-room-hd{display:flex;align-items:center;gap:8px;font-size:16px}
+.rx-pause :is(.nb-card,.nb-sticky) .tag{font-family:inherit;background:transparent;border-color:#5d688066;color:var(--ink2)}
+.rx-pause :is(.nb-card,.nb-sticky) .rx-dim{color:var(--ink2);font-size:13.5px;margin:0}
+.rx-pause .rx-room ul{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.rx-pause .rx-room li{display:flex;align-items:center;gap:6px}
+.rx-pause :is(.nb-card,.nb-sticky) .nb-btn{justify-self:start}
+/* 待辦清單：一行一件事，滑過時螢光筆劃過 */
+.nb-list{display:grid}
+.nb-list>*{display:grid;grid-template-columns:28px auto 1fr;align-items:center;column-gap:8px;min-height:42px;padding:4px 8px 4px 4px;border:0;border-radius:6px;background:transparent;color:var(--ink);text-align:left;text-decoration:none;font:inherit}
+.nb-list svg{width:20px;height:20px;color:var(--ink);justify-self:center}
+.nb-list b{font-size:18px;letter-spacing:1px}
+.nb-list small{justify-self:end;font-size:13.5px;color:var(--ink2);white-space:nowrap}
+:is(.nb-list>*,button.nb-row):is(:hover,:focus-visible){background:linear-gradient(transparent 18%,#fde04770 18% 86%,transparent 86%)}
+/* 設定：打勾的方框、三格靈敏度、鉛筆色的音量滑桿、畫質選項用紅筆圈起來 */
+.nb-set{display:grid}
+.nb-row{display:flex;align-items:center;gap:10px;min-height:42px;margin:0;padding:4px 8px 4px 4px;border:0;border-radius:6px;background:transparent;color:var(--ink);text-align:left;font:inherit;line-height:1.3}
+.nb-row b{flex:none;min-width:5.4em;font-size:18px;letter-spacing:1px}
+.nb-row small{font-size:13.5px;color:var(--ink2)}
+.nb-check{position:relative;width:22px;height:22px;flex:none;margin:0 3px;border:2px solid var(--ink);border-radius:3px 5px 4px 6px;transform:rotate(-3deg)}
+.nb-row:not(.on) .nb-check+b{color:var(--ink2)}
+.nb-row.on .nb-check::after{content:"";position:absolute;left:5px;top:-7px;width:8px;height:18px;border:solid var(--acc);border-width:0 3px 3px 0;transform:rotate(40deg)}
+.nb-row:has(.nb-check) b{min-width:0}
+.rx-pause .rx-pips3{position:static;display:flex;align-items:flex-end;gap:3px;margin:0}
+.rx-pause .rx-pips3 i{width:6px;border-radius:2px;background:#5d688040}
+.rx-pause .rx-pips3 i:nth-child(1){height:8px}.rx-pause .rx-pips3 i:nth-child(2){height:13px}.rx-pause .rx-pips3 i:nth-child(3){height:18px}
+.rx-pause .rx-pips3 i.on{background:var(--ink)}
+.nb-row input[type=range]{flex:1;min-width:0;height:28px;margin:0;accent-color:#22314f;cursor:pointer}
+.rx-pause .rx-qual{gap:4px;font-size:inherit}
+.rx-pause .rx-qual button{position:relative;flex:none;min-width:54px;min-height:40px;padding:4px 12px;border:0;border-radius:8px;background:transparent;color:var(--ink2);font:700 17px/1 var(--hand,serif)}
+.rx-pause .rx-qual button.on{color:var(--ink)}
+.rx-pause .rx-qual button.on::before{content:"";position:absolute;inset:2px 0;border:2px solid var(--pen);border-radius:50% 46% 52% 48%/55% 50% 50% 45%;transform:rotate(-4deg);pointer-events:none}
+.rx-pause .rx-qual button:hover{color:var(--ink);background:#fde04740}
+.rx-pause .rx-credits{margin:4px 0 0 4px;font-size:12px;line-height:1.5;color:var(--ink2)}
+.rx-pause .rx-credits a{color:inherit}
+/* 頁尾：紅筆寫的「回主選單」、自動儲存的說明與連結 */
+.rx-pfoot{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin-top:8px;padding-top:10px;border-top:1.5px dashed #5d68805c}
+.rx-quit{display:inline-flex;align-items:center;gap:8px;flex:none;min-height:44px;margin:0;padding:8px 18px;border:2px solid var(--pen);border-radius:22px 18px 20px 16px/18px 22px 16px 20px;background:transparent;color:var(--pen);font:700 17px/1.2 var(--hand,serif);transform:rotate(-.6deg)}
+.rx-quit:hover,.rx-quit:focus-visible{background:#c2410c14}
+.rx-quit svg{width:19px;height:19px}
+.rx-pause-links{flex:1;min-width:220px;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:2px 10px;font-size:13.5px;line-height:1.5;color:var(--ink2)}
+.rx-pause-links button{min-height:32px;padding:0 4px;border:0;background:none;color:var(--ink2);font:inherit;text-decoration:underline}
+.rx-pause-links a{color:var(--ink2)}
+.rx-pause :focus-visible{outline:2.5px solid #0e7c74;outline-offset:2px}
+/* 寬螢幕：左欄（回到遊戲、待辦）＋右欄（我的資料、設定），頁尾放在左欄底下，和右欄底部對齊，整頁不用捲動 */
+@media (min-width:780px){
+  .rx-pause{grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);grid-template-rows:auto 1fr}
+  .rx-pause>.rx-pcol:first-child{grid-area:1/1}
+  .rx-pause>.rx-pcol:nth-child(2){grid-area:1/2/3/3}
+  .rx-pause>.rx-pfoot{grid-area:2/1;align-self:end}
+}
+@media (max-width:600px){
+  .rx-resume b{font-size:20px;letter-spacing:2px}
+  .nb-list>*{grid-template-columns:28px 1fr}
+  .nb-list small{grid-column:2;justify-self:start;margin-top:-8px}
+}
 @media (prefers-reduced-motion:reduce){.rx-mascot,.rx-title-col,.rx-mp{animation:none}}
 
 /* =====================================================================
@@ -195,16 +246,3 @@ button.rx-avatar.slime:hover,button.rx-avatar.slime.on{transform:translateY(-1px
 .rx-avpick-grid button.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent)}
 .rx-avpick-grid button.on small{color:inherit;font-weight:700}
 .rx-avpick-grid button>span svg,.rx-avatar.slime svg,.sv-av svg{width:100%!important;height:100%!important;stroke:none!important;fill-rule:nonzero}
-
-/* 暫停選單：寬螢幕兩欄（左：帳號、頭像、多人房間；右：功能、音量與畫質），上方回到遊戲、下方回主選單與連結 */
-.rx-pcol{display:grid;gap:12px;align-content:start;min-width:0}
-.rx-pcol:empty{display:none}
-.rx-pfoot{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap}
-.rx-pfoot .rx-quit{flex:none;margin:0}
-.rx-pfoot .rx-pause-links{flex:1;min-width:220px}
-@media (min-width:780px){
-  .rx-pause{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
-  .rx-pause>.rx-resume,.rx-pause>.rx-pfoot{grid-column:1/-1}
-  .rx-pause>.rx-pcol:only-of-type{grid-column:1/-1}
-}
-.rx-pfoot .rx-quit{width:auto;padding:10px 18px}

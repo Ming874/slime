@@ -15,6 +15,31 @@
 @keyframes st-pop{from{opacity:0;transform:scale(.94) translateY(10px)}}
 @keyframes st-pop-out{to{opacity:0;transform:scale(.96) translateY(8px)}}
 
+/* ---------- 過場模式（game.js 的 GX，#gui[data-mode]） ----------
+   held＝手持道具：3D 的手把道具拿到眼前、停在和這裡的 .gwin 完全重合的位置後，.shown 讓 2D 淡入接手；.dim 再讓背後的世界變暗
+   face＝固定的工作站：.gwin 由 game.js 每一格設 matrix3d，從物件表面的位置展開；展開完成才加 .shown 可以操作
+   這兩種模式的 .gwin 位置由 3D 決定，所以關掉各道具自己會移動 .gwin 的開關動畫（道具內部的裝飾動畫照常） */
+#gui:is([data-mode="held"],[data-mode="face"]){background:transparent;transition:background .14s}
+#gui[data-mode="held"] .gwin,#gui[data-mode="face"]:not([data-prop="parchment"]) .gwin{animation:none!important}
+#gui[data-mode="held"] .gwin{opacity:0;transition:opacity .11s ease-out}
+#gui[data-mode="held"].shown .gwin{opacity:1}
+#gui[data-mode="held"] :is(.ghead,.gbody){opacity:0;transition:opacity .16s ease-out}
+#gui[data-mode="held"].shown :is(.ghead,.gbody){opacity:1;transition-delay:.05s}
+#gui[data-mode="held"] .st-cover{display:none} /* 手帳的封面由 3D 翻開 */
+#gui:is([data-mode="held"],[data-mode="face"]):not(.shown) .gwin{pointer-events:none}
+#gui[data-mode="face"] .gwin{transform-origin:0 0}
+#gui[data-mode="face"]:not(.shown) .gwin{will-change:transform,opacity} /* 只在展開／收回時，停下來後字才清楚 */
+/* 2D 接手後背後的世界變暗；筆記本、手帳另外模糊（game.js 在 #game 加 .gblur），手機只稍微變暗，看得到後面的世界還在動 */
+#gui[data-mode="held"].dim{background:radial-gradient(125% 100% at 50% 45%,#0a0f1c40 25%,#05070dc4 100%);transition-duration:.35s}
+#gui[data-mode="held"][data-prop="phone"].dim{background:radial-gradient(120% 100% at 50% 45%,#0000 45%,#05070d8c 100%)}
+#gui[data-mode="face"].shown{background:radial-gradient(140% 110% at 50% 45%,#0000 55%,#05070d73 100%);transition-duration:.4s}
+#worldCv{transition:filter .14s}
+#gui[data-mode="face"][data-prop="monitor"].opening .st-boot,#gui[data-mode="face"][data-prop="monitor"].opening .st-boot::before,#gui[data-mode="face"][data-prop="monitor"].opening .st-boot b{animation-duration:.75s} /* 開機和鏡頭推近差不多同時結束 */
+#game.gblur #worldCv{filter:blur(2.5px) saturate(.88);transition-duration:.35s}
+/* 貼在物件表面上的紙類介面：夜裡跟著環境一起暗一點（--night 由 game.js 設定，0～1） */
+#gui[data-mode="face"]:is([data-prop="mat"],[data-prop="parchment"],[data-prop="catalog"],[data-prop="cork"],[data-prop="tablet"]) .gwin::after{
+  content:"";position:absolute;inset:0;z-index:9;border-radius:inherit;pointer-events:none;background:#24305e;mix-blend-mode:multiply;opacity:calc(var(--night,0) * .18)}
+
 /* ---------- 紙類道具共用：手帳、筆記本、型錄、羊皮紙、切割墊上的紙 ---------- */
 :is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"]) .gwin,
 #gui[data-prop="mat"] .gbody{
@@ -97,21 +122,58 @@
 }
 
 /* =====================================================================
-   筆記本（暫停選單）：上方線圈，往上翻開
+   筆記本（暫停選單）：上方線圈的手寫筆記本。3D 的手把闔著的筆記本拿到眼前、翻開封面後由這裡接手（game.js 的 heldStep），
+   所以頁首線（70px）、第一條橫線（99px，行距 28px）、紅色邊線（52px；窄螢幕 30px）要和 game.js 的 NBP 一致，交接時才看不出接縫。
+   手寫字型：Latin／數字用系統的手寫體，中文用各平台內建的手寫／楷書（macOS 手札體、翩翩體、楷體，Windows 標楷體…），都沒有就退回明體；
+   --hand-lx 只給全部字都在 public/fonts/signs.woff2（霞鶩文楷子集）裡的裝飾文字用，不然一行裡會混兩種字型
    ===================================================================== */
-#gui[data-prop="notebook"] .gwin{width:min(880px,100%);overflow:visible;border:0;border-radius:6px 6px 10px 10px;padding-top:20px;transform-origin:50% 0;
-  background:repeating-linear-gradient(180deg,#0000 0 29px,#7aa7d433 29px 30px) 0 66px,#fffdf5;
-  box-shadow:5px 6px 0 -1px #efe6d0,10px 12px 0 -2px #ddd1b4,0 34px 60px -18px #000}
-#gui[data-prop="notebook"] .ghead{background:transparent;border-bottom:2px solid #f43f5e33;padding:8px 14px 8px 58px}
-#gui[data-prop="notebook"] .gbody{padding:12px 16px 18px 58px}
+#gui[data-prop="notebook"]{--hand:"Noteworthy","Bradley Hand","Segoe Print","Ink Free","Hannotate TC","HanziPen TC","Kaiti TC","BiauKai","STKaiti","DFKai-SB","標楷體","KaiTi","楷体","AR PL UKai TW","TW-Kai",serif;
+  --hand-lx:"LXGW WenKai TC",var(--hand);--ink:#22314f;--ink2:#5d6880;--pen:#c2410c;--nb-m:52px}
+#gui[data-prop="notebook"] .gwin{width:min(900px,100%);height:min(660px,calc(100% - 28px));overflow:visible;border:0;border-radius:3px 3px 8px 8px;
+  background:linear-gradient(90deg,#0000 var(--nb-m),#ef444452 var(--nb-m) calc(var(--nb-m) + 2px),#0000 calc(var(--nb-m) + 2px)),linear-gradient(#0000 70px,#ef444433 70px 72px,#0000 72px),
+    repeating-linear-gradient(180deg,#0000 0 27px,#7aa0cc4d 27px 28px) 0 72px/100% calc(100% - 78px) no-repeat,#fffdf6;
+  box-shadow:0 2px 0 -1px #efe6cf,0 4px 0 -1px #e2d6ba,0 6px 0 -2px #d8caa9,0 30px 60px -20px #000c;
+  --bg:#f6f0e2;--bg2:#fffdf6;--card:#fffdf6;--line:#cfd8e4;--tx:var(--ink);--sub:var(--ink2);--acc:#0e7c74;color:var(--ink);font-family:var(--hand)}
+#gui[data-prop="notebook"] .ghead{height:56px;margin-top:14px;padding:0 12px 0 calc(var(--nb-m) + 14px);background:transparent;border:0}
+#gui[data-prop="notebook"] #gtitle{font:700 25px/1 var(--hand);letter-spacing:3px;color:var(--ink)}
+#gui[data-prop="notebook"] .gclose{width:44px;height:44px;border:0;border-radius:50%;background:transparent;color:var(--ink2)}
+#gui[data-prop="notebook"] .gclose:hover{color:var(--pen);background:#c2410c12}
+#gui[data-prop="notebook"] .gclose svg{width:24px;height:24px;stroke-width:2.4}
+#gui[data-prop="notebook"] .gbody{flex:1;min-height:0;padding:10px 22px 16px calc(var(--nb-m) + 14px)}
 #gui[data-prop="notebook"] .st-rings{position:absolute;top:-13px;left:22px;right:22px;display:flex;justify-content:space-between;z-index:3}
 #gui[data-prop="notebook"] .st-rings i{width:9px;height:26px;border-radius:6px;border:3px solid #9aa3b2;border-bottom-color:#6b7280;background:linear-gradient(90deg,#0000 40%,#fff6 50%,#0000 60%)}
-#gui[data-prop="notebook"] .st-margin{position:absolute;left:44px;top:20px;bottom:0;width:2px;background:#f43f5e55;z-index:1}
-#gui[data-prop="notebook"] .st-band-v{position:absolute;right:-6px;top:30%;width:12px;height:38%;border-radius:4px;background:linear-gradient(90deg,#111827,#374151 50%,#111827);z-index:3;box-shadow:0 2px 4px #0006}
-#gui[data-prop="notebook"].opening .gwin{animation:st-flip-up .55s cubic-bezier(.2,.8,.25,1.08)}
-#gui[data-prop="notebook"].closing .gwin{animation:st-flip-down .38s ease-in forwards}
-@keyframes st-flip-up{0%{transform:rotateX(-92deg) translateY(40px);opacity:0}35%{opacity:1}}
-@keyframes st-flip-down{to{transform:rotateX(-88deg) translateY(30px);opacity:0}}
+/* 邊線外的小塗鴉（只畫在紅線左邊的空白，不會蓋到字） */
+#gui[data-prop="notebook"] .st-doodle{position:absolute;left:12px;bottom:26px;z-index:1;width:28px;height:22px;border:2px solid #22314f88;border-radius:52% 52% 44% 44%/70% 70% 32% 32%;transform:rotate(-8deg)}
+#gui[data-prop="notebook"] .st-doodle::before,#gui[data-prop="notebook"] .st-doodle::after{content:"";position:absolute;top:8px;width:4px;height:5px;border-radius:50%;background:#22314f88}
+#gui[data-prop="notebook"] .st-doodle::before{left:7px}#gui[data-prop="notebook"] .st-doodle::after{right:7px}
+#gui[data-prop="notebook"] .st-star{position:absolute;left:17px;top:104px;z-index:1;font:700 18px/1 var(--hand);color:#f59e0b;transform:rotate(-12deg)}
+/* 頁首右上的日期章（「月光谷」三個字都在霞鶩文楷子集裡，所以用 --hand-lx）：在標題和關閉鈕之間的空白 */
+#gui[data-prop="notebook"] .st-stamp{position:absolute;top:10px;right:70px;z-index:3;display:grid;place-items:center;align-content:center;width:58px;height:58px;border-radius:50%;
+  border:2px solid #c2410ca6;color:#c2410cc4;transform:rotate(9deg);text-align:center;line-height:1.15}
+#gui[data-prop="notebook"] .st-stamp b{font:700 13px/1.2 var(--hand-lx);letter-spacing:1px}
+#gui[data-prop="notebook"] .st-stamp span{font:600 9.5px/1.3 var(--hand);white-space:nowrap}
+@media (max-width:600px){#gui[data-prop="notebook"]{--nb-m:30px}#gui[data-prop="notebook"] :is(.st-doodle,.st-star){display:none}}
+@media (max-width:420px){#gui[data-prop="notebook"] .st-stamp{display:none}}
+/* 沒有 3D 過場時（系統設定減少動態、或 3D 還沒準備好）：原地淡入 */
+#gui[data-prop="notebook"][data-mode="card"].opening .gwin{animation:st-fade-in .2s ease-out}
+#gui[data-prop="notebook"][data-mode="card"].closing .gwin{animation:st-fade-out .2s ease-in forwards}
+@keyframes st-fade-in{from{opacity:0}}
+
+/* =====================================================================
+   公告欄（大城市廣場）：軟木塞板，訂單紙用圖釘釘在上面
+   ===================================================================== */
+#gui[data-prop="cork"] .gwin{width:min(860px,100%);overflow:visible;border:12px solid #8b6544;border-radius:6px;
+  background:radial-gradient(circle at 30% 30%,#00000017 0 1.5px,#0000 2.5px) 0 0/19px 17px,radial-gradient(circle at 70% 60%,#ffffff1f 0 1.5px,#0000 2.5px) 0 0/23px 21px,#c8995f;
+  box-shadow:inset 0 0 0 1px #0003,inset 0 6px 14px #0004,0 0 0 1px #5b4030,0 34px 70px -24px #000;
+  --bg:#f6ecd6;--bg2:#fffaf0;--card:#fffdf6;--line:#d9c7a1;--tx:#33291d;--sub:#6b5a44;--acc:#b45309;--good:#15803d;--warn:#b45309;--red:#be123c;color:var(--tx)}
+#gui[data-prop="cork"] .ghead{background:transparent;border-bottom:0;padding:12px 14px 4px}
+#gui[data-prop="cork"] #gtitle{padding:5px 14px;background:#fffdf6;color:#3f2d0c;box-shadow:0 2px 4px #0004;transform:rotate(-1.5deg)}
+#gui[data-prop="cork"] .gclose{background:#fffdf6;border-color:#0000;color:#6b5a44}
+#gui[data-prop="cork"] .gbody{margin:6px 14px 16px;padding:16px;border-radius:2px;background:#fffdf6;box-shadow:0 8px 18px -8px #000a}
+#gui[data-prop="cork"] .st-pin{position:absolute;top:49px;z-index:3;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#fca5a5,#dc2626 55%,#7f1d1d);box-shadow:1px 3px 3px #0006}
+#gui[data-prop="cork"] .st-pin.l{left:24px}#gui[data-prop="cork"] .st-pin.r{right:24px} /* 釘在紙的上緣，字從紙內 16px 才開始，不會被蓋到 */
+#gui[data-prop="cork"] :is(.btn:not(.ghost),.btn.red){color:#fff}
+#gui[data-prop="cork"][data-mode="card"].opening .gwin{animation:st-zoom .35s ease-out}
 
 /* =====================================================================
    電腦螢幕（工作電腦）：開機，分頁是瀏覽器分頁
@@ -357,5 +419,7 @@
 }
 @media (prefers-reduced-motion:reduce){
   #gui[data-prop] .gwin,#gui[data-prop] .gwin *,#gui[data-prop] .gwin *::before,#gui[data-prop] .gwin *::after{animation:none!important}
+  #gui[data-prop].opening .gwin{animation:st-fade-in .18s ease-out!important} /* 減少動態：不移動、不翻轉，只短短淡入 */
   .st-flip,.st-boot,.st-cover,.st-door{display:none}
+  #worldCv{transition:none}
 }

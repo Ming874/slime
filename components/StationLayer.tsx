@@ -40,6 +40,8 @@ function owner() {
   try { return window.SlimeCloud?.user?.name || ''; } catch { return ''; }
 }
 const clock = () => { const d = new Date(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// 筆記本頁首的日期章：今天的日期＋遊戲裡的時段（白天、黃昏…）
+const stampDay = () => { const d = new Date(), g = window.SlimeGame, ph = g?.DN && g.DN_PHASE ? g.DN_PHASE[g.DN.phase] || '' : ''; return `${d.getMonth() + 1}/${d.getDate()} ${ph}`.trim(); };
 
 function Decor({ prop, tab, flip, kind }: State) {
   switch (prop) {
@@ -71,12 +73,20 @@ function Decor({ prop, tab, flip, kind }: State) {
           {flip > 0 && <div className="st-flip" key={flip} aria-hidden="true" />}
         </>
       );
-    case 'notebook': // 暫停選單：闔起的線圈筆記本往上翻開
+    case 'notebook': // 暫停選單：3D 的手把線圈筆記本拿到眼前翻開，這裡是接手後的線圈與邊線外的小塗鴉（12 個線圈和 game.js 的 3D 模型一致）
       return (
         <>
           <div className="st-rings" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>
-          <div className="st-band-v" aria-hidden="true" />
-          <div className="st-margin" aria-hidden="true" />
+          <i className="st-star" aria-hidden="true">★</i>
+          <i className="st-doodle" aria-hidden="true" />
+          <div className="st-stamp" aria-hidden="true"><b>月光谷</b><span>{stampDay()}</span></div>
+        </>
+      );
+    case 'cork': // 公告欄：軟木塞板上的圖釘
+      return (
+        <>
+          <i className="st-pin l" aria-hidden="true" />
+          <i className="st-pin r" aria-hidden="true" />
         </>
       );
     case 'monitor': // 工作電腦：螢幕開機，分頁是瀏覽器分頁
