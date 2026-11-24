@@ -186,6 +186,7 @@ function sanitize(o) {
   if (!AVATARS.some(a => a.id === s.avatar)) s.avatar = 'mint';
   // 彩蛋：舊存檔沒有這個欄位就是空清單；只留合法的 id（大城市的彩蛋也存在這裡，所以不依登記表過濾）
   s.eggs = [...new Set(arr(s.eggs).filter(k => typeof k === 'string' && /^[\w-]{1,48}$/.test(k)))].slice(0, 300);
+  s.tipTalk = clamp(Math.floor(+s.tipTalk) || 0, 0, 9); // 前兩次對話在泡泡下方提示「E 繼續・走開就結束」（talk.js）
   s.wk = { w: Math.floor(+obj(s.wk).w) || 0, done: arr(obj(s.wk).done).filter(Number.isFinite).slice(0, 10) };
   s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade; if (!CUTS[s.cut]) s.cut = 'thick'; s.cutN = Math.max(0, Math.floor(+s.cutN) || 0);
   s.farmT = Math.max(0, +s.farmT || 0); if (s.farmT > Date.now()) s.farmT = Date.now();
@@ -283,7 +284,7 @@ function musicStep(dt) {
   if (!AC || AC.state !== 'running') return; // 瀏覽器規定：玩家第一次點畫面之後才能出聲
   if (master) master.gain.value = .9 * (S.vol ? S.vol.sfx : .9) / .9;
   const want = musicWant(); MUS.want = want;
-  MUS.duck += ((L.on ? .3 : GUI.kind === 'line' ? .55 : 1) - MUS.duck) * Math.min(1, dt * 2); // 直播時音樂自動降低，讓捏捏聲更清楚
+  MUS.duck += ((L.on ? .3 : GUI.kind === 'line' ? .55 : TK.on ? .85 : 1) - MUS.duck) * Math.min(1, dt * 2); // 直播時音樂自動降低，讓捏捏聲更清楚；跟人說話時也輕輕降一點（talk.js）
   const vol = (S.vol ? S.vol.music : .6) * MUS.duck * caveMusic(); // 進山洞時配樂淡出（第 4 堂 2.2）
   if (want && !MUS.els[want]) { try { musicEl(want); } catch (e) { MUS.list[want] = null; } }
   // 走到別區附近時先開始下載那一區的曲子（串流，不必整首下載完）
@@ -1475,6 +1476,8 @@ function infoBoard(k, lx, lz, dist) {
   addCol({ x: x + Math.cos(a0) * 1.08, z: z - Math.sin(a0) * 1.08, r: .2 }); addCol({ x: x - Math.cos(a0) * 1.08, z: z + Math.sin(a0) * 1.08, r: .2 });
   addInter(hitBox(2.2, 1.6, .7, 0, 1.5, .2, g), 'station', 'info:' + k, I.t + '的告示牌');
 }
+// 告示牌的補充故事：木牌上方攤開一張牛皮紙便條（talk.js），E 翻頁、走開就收起
+function infoAct(it, k) { const I = INFO[k]; if (I) talk(signWho(it, I), [I.more]); }
 function buildLandmarks3() {
   const sc = W.scene;
   const addLM = (id, name, zone, x, z, near, far, col) => { far.position.set(x, 0, z); sc.add(far); far.visible = false; LMS.push({ id, name, zone, x, z, near, far, col: new THREE.Color(col) }); };
@@ -1799,17 +1802,17 @@ function regEgg(id, name, hint) {
   if (!EGGS.has(id)) EGGS.set(id, { id, name: String(name || id), hint: String(hint || '') });
   return EGGS.get(id);
 }
-// 第一次發現才算：短短一行訊息＋叮叮聲＋一點經驗，存進存檔；回傳是否第一次
+// 第一次發現才算：蓋一個章「✦ 小秘密 n/28」＋叮叮聲＋一點經驗，存進存檔；回傳是否第一次
 function foundEgg(id) {
   if (!S || typeof id !== 'string' || !id) return false; if (!Array.isArray(S.eggs)) S.eggs = [];
   if (S.eggs.includes(id)) return false; S.eggs.push(id);
   const e = EGGS.get(id), n = S.eggs.filter(k => EGGS.has(k)).length;
-  toast(`✦ 發現月光谷的小秘密：「${e ? e.name : id}」（${n}/${EGGS.size}）`); const lg = $('#log') && $('#log').lastChild; if (lg) lg.classList.add('egg');
+  tkStamp(id, '✦ 小秘密 ' + n + '/' + EGGS.size, e ? e.name : id); // 章蓋在旁白的想法雲、正在讀的紙或說話的人的泡泡上，不再跳左下角的長句（talk.js）
   if (S.sound) { try { const t = audio().currentTime; [1318.5, 1568, 2093, 2637].forEach((f, i) => tone(f, t + i * .075, .4, .045, 'triangle')); } catch (er) { } }
   gainXP(8, '發現小秘密'); save(); ui('inv'); return true;
 }
-// 場景觸發：還沒找到的話，先用一句話說出場景裡發生了什麼，再算發現
-function eggHit(id, msg) { if (!S || (Array.isArray(S.eggs) && S.eggs.includes(id))) return false; if (msg) toast(msg); return foundEgg(id); }
+// 場景觸發：還沒找到的話，先在畫面下方冒一朵自己的想法雲說出場景裡發生了什麼，再算發現（章蓋在這朵雲上）
+function eggHit(id, msg) { if (!S || (Array.isArray(S.eggs) && S.eggs.includes(id))) return false; if (msg) bark(SELF, msg, { egg: id }); return foundEgg(id); }
 const eggList = () => [...EGGS.values()].map(e => ({ id: e.id, name: e.name, hint: e.hint, found: !!(S.eggs && S.eggs.includes(e.id)) }));
 
 /* ---------- 共用：材質、合併、交給 cullChunks ---------- */
@@ -1935,7 +1938,7 @@ function nookPond(M) {
     parts.push([new THREE.SphereGeometry(.24, 10, 8), '#24180e', M4(0, 1.25, .3, 0, 0, 0, .75, 1, .32)], [new THREE.BoxGeometry(.14, .1, .02), '#fff3c4', M4(.02, 1.2, .37, 0, 0, .15)], [new THREE.SphereGeometry(.3, 8, 5, 0, PI2, 0, Math.PI / 2), '#5b8f3e', M4(-.15, .02, .3, 0, 0, 0, 1.4, .4, 1)]);
     const tm = new THREE.Mesh(mergeParts(parts), M.tree); tm.position.set(x, y, z); tm.rotation.y = face; tm.receiveShadow = true; chunkObj(tm, 140, true); addCol({ x, z, r: .5, tree: 1 });
     const hb = hitBox(.7, .7, .6, 0, 1.22, .35, tm);
-    addInter(hb, 'nook', 'forest_note', '看看樹洞', { act() { toast('紙條上是奶奶的字：「池塘的小青蛙最愛學人跳，跳給牠看看吧。」'); foundEgg('forest_note'); } });
+    addInter(hb, 'nook', 'forest_note', '看看樹洞', { act(it) { talk(noteWho('奶奶的紙條', { src: it }), [{ t: '池塘的小青蛙最愛學人跳，跳給牠看看吧。', sig: '——奶奶' }], { egg: 'forest_note' }); foundEgg('forest_note'); } }); // 紙條拿在手上讀（talk.js），章蓋在紙上
   }
   // 睡蓮上的小青蛙：你跳，牠也跳；連跳三次就是好朋友了
   const frog = new THREE.Mesh(nookMerge([[new THREE.SphereGeometry(.1, 10, 8), '#4ade80', M4(0, .07, 0, 0, 0, 0, 1, .7, 1.25)], [new THREE.SphereGeometry(.07, 8, 6), '#d9f99d', M4(0, .05, .05, 0, 0, 0, 1, .6, 1.1)], ...[-1, 1].flatMap(s => [[new THREE.SphereGeometry(.036, 8, 6), '#4ade80', M4(s * .05, .135, .06)], [new THREE.SphereGeometry(.02, 6, 5), '#111827', M4(s * .056, .145, .085)], [new THREE.SphereGeometry(.05, 8, 6), '#22c55e', M4(s * .085, .04, -.07, 0, 0, 0, .8, .55, 1.3)], [new THREE.SphereGeometry(.025, 6, 5), '#22c55e', M4(s * .07, .02, .11)]])], true), M.soft);
@@ -2152,7 +2155,7 @@ function nookBoat(M) {
   const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex(), color: '#ecfeff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 })); glint.position.copy(bp).add(new THREE.Vector3(0, .08, 0)); chunkObj(glint, 45, false, [bp.x, bp.z, 1]);
   addCol({ x: bx, z: bz, r: 1.5 });
   const hb = hitBox(.6, .5, .6, bp.x, bp.y, bp.z); W.scene.add(hb);
-  addInter(hb, 'nook', 'coast_bottle', '撿起瓶子看看', { act() { toast('瓶中信：「撿到這封信的人：月光谷的史萊姆捏起來，是全世界最療癒的聲音。——一個路過的水手」'); foundEgg('coast_bottle'); } });
+  addInter(hb, 'nook', 'coast_bottle', '撿起瓶子看看', { act(it) { talk(noteWho('瓶中信', { src: it }), [{ t: '撿到這封信的人：月光谷的史萊姆捏起來，是全世界最療癒的聲音。', sig: '——一個路過的水手' }], { egg: 'coast_bottle' }); foundEgg('coast_bottle'); } }); // 信拿在手上讀
   nkReg(bp.x, bp.z, 45, (dt, t) => { const k = (t % 4.5) / 4.5, f = Math.max(0, Math.sin(k * Math.PI * 6)) * (k < .33 ? 1 : 0); glint.material.opacity = f * .9; glint.scale.setScalar(.25 + f * .45); });
 }
 function nookArch(M) {
@@ -2617,7 +2620,7 @@ function buildWorkshop() {
   W.slotInter.live = addInter(hitBox(3.6, 2.6, 3.6, 0, 1.3, 0, lv), 'station', 'live', '直播台');
   W.slotMark.live = slotMark(g, BASE.live, '直播台空地', '工作電腦網購或大城市器材行', 2.2);
   // 計程車（出生點左邊）
-  const tx = at(makeTaxi('#facc15', true), BASE.taxi, Math.PI / 2);
+  const tx = at(makeTaxi('#facc15', true), BASE.taxi, Math.PI / 2); W.taxiV = tx; // 司機從車窗說話（taxiWho）
   addCol({ box: [BASE.taxi[0] - 1, BASE.taxi[1] - 2, BASE.taxi[0] + 1, BASE.taxi[1] + 2] });
   addInter(hitBox(4.2, 2.2, 2, 0, 1, 0, tx), 'station', 'taxi', '計程車'); label('計程車', '#facc15', '前往大城市購買設備', BASE.taxi[0], tx.position.y + 3, BASE.taxi[1]);
   g.traverse(o => { if (o.isMesh && o.material.visible !== false) { o.castShadow = !LOW; o.receiveShadow = true; } });
@@ -3033,10 +3036,8 @@ function puzzleTap(it) {
   } else if (pz.type === 'altar') openAltar();
   else if (pz.type === 'note') {
     if (!q.notes.includes(pz.i)) { q.notes.push(pz.i); gainXP(5); } removePuz(it); sfx.pop(); save(); renderQuest(); objSig = ''; renderObjective();
-    const all = q.notes.length >= 3;
-    modal(`<h2>撕碎的紙條（${q.notes.length}/3）</h2><div class="riddle">${NOTE_TXT[pz.i]}</div>
-      <p class="small" style="margin:10px 0 4px"><b>目前拼出的謎語</b>（依照醒來的順序整理）：</p>${tideStepsHTML()}
-      <p class="small" style="color:var(--sub)">${all ? '謎語完整了！到海邊的潮汐石陣，依照上面的順序，依序點亮對應顏色的石頭。每顆石頭上方都標有顏色名稱。' : '還有紙條散落在海灘上，找到發出微光的光柱就是了。'}</p>`);
+    const all = q.notes.length >= 3; if (W.goo) W.goo.emit(above(1.2), 10, '#fde68a', { collect: true }); // 紙條化成光點飛進手裡，拿在面前讀（完整的謎語在目標面板）
+    talk(noteWho('撕碎的紙條 ' + q.notes.length + '/3'), [NOTE_TXT[pz.i]], { end: () => bark(SELF, all ? '謎語拼完整了！照紙條上的順序，去點亮潮汐石吧。' : '還有紙條散在海灘上……找找地上發光的光柱。') });
   } else if (pz.type === 'tide') {
     if (q.notes.length < 3) return toast('潮汐石毫無反應……先把三張紙條都找齊，弄清楚完整的謎語。');
     if (q.tide.includes(pz.c)) return toast('這顆石頭已經亮了。');
@@ -3769,6 +3770,7 @@ function bindInput() {
       if (GUI.kind === 'line' && M.active) { if (k === 'Space') { e.preventDefault(); if (!e.repeat) { makeAction('tap'); makeAction('hold', true); } } if (k === 'ArrowLeft' || k === 'KeyA') M.kdir = -1; if (k === 'ArrowRight' || k === 'KeyD') M.kdir = 1; }
       if (k === 'KeyE' && GUI.kind !== 'line' && !e.repeat) closeGui(); return;
     }
+    if (TK.cards && (k === 'Digit1' || k === 'Digit2')) { if (!e.repeat) tkPick(+k[5] - 1); return; } // 回話卡舉著時 1、2 是選卡，不切快捷列
     KEYS.add(k); if (k === 'Space') { e.preventDefault(); if (!e.repeat) jump(); }
     if ((k === 'KeyE' || k === 'KeyF') && !e.repeat) { act(); IN.holdE = true; IN.holdT = .55; }
     if (/^Digit[1-9]$/.test(k)) { S.hb = +k.slice(5) - 1; renderHotbar(true); }
@@ -4034,8 +4036,8 @@ function finishTutorial() {
   if (S.tutDone) return; S.tutDone = true; const gift = !S.own.slicer; S.own.slicer = true; refreshBase(); objSig = ''; if (W.starterLabel) { dropObj(W.starterLabel); W.starterLabel = null; } gainXP(5); save();
   modal(`<h2>第一個捏捏完成！</h2><p>聽到那聲「喀滋」了嗎？這就是捏捏讓人停不下來的地方。</p>${gift ? '<p>奶奶的倉庫裡還留著一台<b>舊切片機</b>，已經幫你裝到中央平地北邊的<b>加工產線</b>上。用機器做的捏捏更酥脆、更值錢。</p>' : ''}<p><b>接下來</b>：把捏捏<b>賣掉</b> → 存錢 → 在<b>工作電腦的「網購」</b>買更多機器。</p>`, [{ t: '好！' }]);
 }
-function act() { if (GUI.kind || !W.ready) return; if (TARGET && TARGET.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(TARGET); }
-function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
+function act() { if (GUI.kind || !W.ready) return; if (TK.on && tkKey(TARGET)) return; if (TARGET && TARGET.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(TARGET); } // 對話中：E＝繼續（手不揮）；對著別的東西＝先收起再照常互動
+function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (TK.on && tkKey(t, true)) return; if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
 function doAct(t) {
   if (!t) return;
   FOCUS = (t.type === 'station' || t.type === 'puzzle') && t.it && t.it.hit ? t.it : null; // 打開介面時鏡頭推近這個物件（surfOf）
@@ -4044,7 +4046,7 @@ function doAct(t) {
 function doActAt(t) {
   if (t.it && t.it.act) return t.it.act(t.it); // 自訂互動（例如大城市的販賣機、橘貓）
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
-  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id.startsWith('info:')) { const I = INFO[id.slice(5)]; if (I) modal('<h2>' + I.t + '</h2><div class="riddle" style="text-align:left">' + I.l.join('。<br>') + '。</div><p>' + I.more + '</p>', [{ t: '好' }]); } else if (id === 'cafe') cafeAct(); else if (id === 'market') marketAct(); else if (id === 'board') openGui('board', 'weekly'); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
+  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id.startsWith('info:')) infoAct(t.it, id.slice(5)); else if (id === 'cafe') cafeAct(); else if (id === 'market') marketAct(); else if (id === 'board') openGui('board', 'weekly'); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
   else if (t.type === 'avatar') giftGel(t.id);
   else if (t.type === 'npc') npcTalk(t.n);
   else if (t.type === 'puzzle') puzzleTap(t.it);
@@ -6013,7 +6015,7 @@ function buildCity() {
   shop('hospital', -34, 11, '#f8fafc', '醫院', '凍僵了來這裡看醫生', '#f87171');
   shop('arms', 35, 11, '#f2e3c6', '武器店', armsOpen() ? '長劍、保暖衣' : 'Lv 5 解鎖營業', '#f87171');
   // 計程車招呼站（同材質的零件合併；停在人行道路線南邊，散步的居民不會穿過車子）
-  const tx = makeTaxi('#facc15', true); tx.position.set(7, 0, 13.6); g.add(tx); mergeStatic(tx); addCol({ box: [CITY.x + 5, CITY.z + 12.6, CITY.x + 9, CITY.z + 14.6] });
+  const tx = makeTaxi('#facc15', true); tx.position.set(7, 0, 13.6); g.add(tx); mergeStatic(tx); W.taxiC = tx; addCol({ box: [CITY.x + 5, CITY.z + 12.6, CITY.x + 9, CITY.z + 14.6] });
   addInter(hitBox(4.2, 2.2, 2, 7, 1, 13.6, g), 'station', 'taxi', '計程車');
   const tl = textSprite('計程車招呼站', '#facc15', '回到月光谷'); tl.position.set(7, 3.4, 13.6); g.add(tl);
   buildStreet(g, rd);
@@ -6246,8 +6248,8 @@ function vendStep(dt, v) {
   if (t < 1.15) { const k = (t - .5) / .65; c.position.set(v.tx + k * .4, .26 + Math.sin(k * Math.PI) * .38, v.tz); c.rotation.set(0, 0, k * 4); c.scale.setScalar(1); }
   else { const k = Math.min(1, (t - 1.15) / .5), cam = W.cam.position; c.position.lerp(tmpV.set(cam.x - CITY.x, cam.y - .35, cam.z - CITY.z), k * .3); c.scale.setScalar(Math.max(.01, 1 - k)); }
   if (v.busy > 0) return; c.visible = false; const p = new THREE.Vector3(CITY.x + v.tx + .3, 1, CITY.z + v.tz);
-  if (v.slime) { citySnd.fizz(); fx3(p, '史萊姆汽水！', '#4ade80', 'big'); if (W.goo) W.goo.emit(p, 12, '#4ade80', { gy: .01, up: 2.6, speed: 1.2, size: .05 }); toast('喀咚！掉出一罐發光的「史萊姆汽水」。喝一口……QQ 彈彈的，嘴巴裡冒出綠色泡泡。'); cityEgg('city_soda'); }
-  else { sfx.pop && sfx.pop(); toast('喀咚！掉出一罐「' + v.d[0] + '」。' + v.d[2]); }
+  if (v.slime) { citySnd.fizz(); fx3(p, '史萊姆汽水！', '#4ade80', 'big'); if (W.goo) W.goo.emit(p, 12, '#4ade80', { gy: .01, up: 2.6, speed: 1.2, size: .05 }); bark(SELF, '喀咚！掉出一罐發光的「史萊姆汽水」。喝一口……QQ 彈彈的，嘴巴裡冒出綠色泡泡。', { egg: 'city_soda' }); cityEgg('city_soda'); } // 自己的想法雲，章蓋在同一朵雲上
+  else { sfx.pop && sfx.pop(); bark(SELF, '喀咚！掉出一罐「' + v.d[0] + '」。' + v.d[2]); }
 }
 /* 橘貓：平常趴在生活百貨與器材行之間的巷口（吐司坐姿），玩家慢慢走近就起身跟著走一小段（跑太快會跟丟），走累了回巷口。
    按 E 摸摸頭會呼嚕。跟著走超過 7 公尺就算發現彩蛋 */
@@ -6457,7 +6459,7 @@ function buildDoors(g) {
 function doorStep(dt, d) {
   const px = P.x - CITY.x, pz = P.z - CITY.z, near = Math.abs(px - d.x) < 2.2 && pz > -14.6 && pz < -10.6;
   if (near && !d.near) { citySnd.ding(); fx3(new THREE.Vector3(CITY.x + d.x, 2.4, CITY.z - 13.2), '叮咚～歡迎光臨！', '#93c5fd'); cityEgg('city_ding'); }
-  d.near = near; d.nt = near ? d.nt + dt : 0; if (d.nt > 2.5 && !d.told) { d.told = true; toast('店員從櫃台探出頭：「歡迎光臨！不好意思，店裡正在補貨，晚一點再來喔～」'); }
+  d.near = near; d.nt = near ? d.nt + dt : 0; if (d.nt > 2.5 && !d.told) { d.told = true; bark(spotWho('door', '店員', [CITY.x + d.x, 2.7, CITY.z - 13.3], [CITY.x + d.x, 1.7, CITY.z - 13.6]), '歡迎光臨！不好意思，店裡正在補貨，晚一點再來喔～'); } // 店員從門口冒一句話（talk.js）
   d.k += ((near ? 1 : 0) - d.k) * Math.min(1, dt * 5); d.leaves[0].position.x = d.x - .54 - d.k; d.leaves[1].position.x = d.x + .54 + d.k;
 }
 // 鐘塔報時：每 5 分鐘（真實時間 :00、:05…）鐘面下的小門打開，報時史萊姆滑出來點頭，噹、噹、噹
@@ -6554,31 +6556,31 @@ function drawTV() {
   list.slice(0, 5).forEach((e, i) => { x.fillStyle = e.me ? '#34d399' : '#e2e8f0'; x.font = '15px "Noto Sans TC","Microsoft JhengHei",sans-serif'; x.fillText((i + 1) + '. ' + e.n, 14, 52 + i * 22, 170); x.textAlign = 'right'; x.fillText(e.v + ' 人', 242, 52 + i * 22); x.textAlign = 'left'; });
   if (W.tvTx) W.tvTx.needsUpdate = true;
 }
-/* ---------- 大城市的居民：有五官、會走路、可以聊天（同一個人說過的話不會重複，全部聊完才重新輪一次） ---------- */
+/* ---------- 大城市的居民：有五官、會走路、可以聊天（同一個人說過的話不會重複，全部聊完才重新輪一次）。bye＝走開時的道別、tag＝名牌顏色（預設是上衣顏色） ---------- */
 const NPC_DEF = [
-  { id: 'yun', name: '小芸', role: '花店店員', hair: 'long', hc: '#3b2417', skin: '#f3cfb0', top: '#f9a8d4', bot: '#f1f5f9', skirt: '#f472b6', acc: 'apron', r: 0, o: .05,
+  { id: 'yun', name: '小芸', role: '花店店員', bye: '要常來看花喔～', hair: 'long', hc: '#3b2417', skin: '#f3cfb0', top: '#f9a8d4', bot: '#f1f5f9', skirt: '#f472b6', acc: 'apron', r: 0, o: .05,
     lines: ['今天進了一批向日葵，整間店都亮起來了。', '常有客人問我，花和捏捏哪個比較療癒？我都說兩個一起最療癒。', '鐘塔下的噴泉是我最喜歡的地方，下班都會在那裡坐一下。', '你身上有淡淡的青草味，是剛從月光谷過來的嗎？', '我想在店門口擺一個花朵形狀的捏捏，你接受訂做嗎？', '花要每天換水，捏捏也要好好保存才不會變形吧？', '聽說森林裡的月光巨木晚上會發光，好想親眼看看。', '店裡最受歡迎的是滿天星，小小的，就像夜空一樣。', '下雨天客人很少，我就在櫃台後面偷偷捏捏捏。', '你知道嗎？粉紅色的花代表「感謝」，送給幫助過你的人吧。'] },
-  { id: 'chen', name: '陳伯伯', role: '退休的老爺爺', hair: 'bald', hc: '#d4d4d8', skin: '#e8b996', top: '#a16207', bot: '#57534e', acc: 'glasses', spot: [-4.6, PLAZA.z + 5.6], slow: 1,
+  { id: 'chen', name: '陳伯伯', role: '退休的老爺爺', bye: '路上小心啊。', hair: 'bald', hc: '#d4d4d8', skin: '#e8b996', top: '#a16207', bot: '#57534e', acc: 'glasses', spot: [-4.6, PLAZA.z + 5.6], slow: 1,
     lines: ['年輕人，我在這座城市住了七十年囉。', '這座鐘塔比我還老，從來沒慢過一分鐘。', '以前月光谷那邊只有你奶奶一間工坊，生意可好了。', '你奶奶年輕時捏的史萊姆，整條街的小孩都搶著要。', '每天早上我都來看噴泉，看水花就覺得年輕了幾歲。', '我的膝蓋不好，走不了遠路，你去雪原的時候替我看看雪吧。', '做事情慢慢來，捏捏也是，急不得。', '咖啡館的熱可可很好喝，但醫生叫我少喝甜的。', '我孫子也很喜歡看捏捏直播，每天晚上都在看。', '有空多回去看看奶奶的工坊，那是很多人的回憶喔。', '這些鴿子都認得我，我每天都帶麵包屑來餵牠們。'] },
-  { id: 'zhe', name: '阿哲', role: '上班族', hair: 'short', hc: '#1c1917', skin: '#f1c7a1', top: '#e2e8f0', bot: '#1e293b', acc: 'tie', tie: '#2563eb', r: 0, o: .55, fast: 1,
+  { id: 'zhe', name: '阿哲', role: '上班族', bye: '我、我要去開會了！', tag: '#60a5fa', hair: 'short', hc: '#1c1917', skin: '#f1c7a1', top: '#e2e8f0', bot: '#1e293b', acc: 'tie', tie: '#2563eb', r: 0, o: .55, fast: 1,
     lines: ['抱歉，我在趕下一場會議……好吧，聊一下下。', '我桌上擺了一個捏捏，開會壓力大的時候捏兩下就好了。', '公司樓下的機械行最近在打折，你有看到嗎？', '每天加班，我都快忘記天空是什麼顏色了。', '我老闆說報告要「有手感」，我覺得他其實想要捏捏。', '下班後的鐘塔很美，可惜我總是看不到。', '要是工作也能像捏捏一樣喀滋一聲就完成就好了。', '我在網路商店買過你的捏捏！包裝很用心。', '假日我只想躺著，什麼都不想做。', '有人說直播賺錢很容易，我看是很辛苦吧？'] },
-  { id: 'mei', name: '美美', role: '國中生', hair: 'bun', hc: '#422006', skin: '#f6d2b5', top: '#ffffff', bot: '#1d4ed8', skirt: '#1d4ed8', acc: 'bag', bag: '#f59e0b', r: 1, o: .2, kid: .9,
+  { id: 'mei', name: '美美', role: '國中生', bye: '掰掰！下次要幫我簽名喔！', tag: '#f9a8d4', hair: 'bun', hc: '#422006', skin: '#f6d2b5', top: '#ffffff', bot: '#1d4ed8', skirt: '#1d4ed8', acc: 'bag', bag: '#f59e0b', r: 1, o: .2, kid: .9,
     lines: ['哇！你就是那個捏捏工坊的主人嗎？可以幫我簽名嗎？', '我們班上大家都在收集史萊姆圖鑑，我還差好多種。', '考試前我都會捏捏捏，聽說可以增加運氣。', '聽說夜晚才會出現的史萊姆會發光，是真的嗎？', '我長大也想開一間工坊！要先存很多錢吧……', '數學好難，捏捏比較簡單。', '我最喜歡粉紅色的捏捏，軟軟的那種。', '學校旁邊的文具店也開始賣捏捏了，不過沒有你的好看。', '你去過火山嗎？會不會很燙？', '下次直播可以捏一個會發光的嗎？我會守著看！'] },
-  { id: 'jie', name: '阿傑', role: '外送員', hair: 'cap', hc: '#111827', cap: '#16a34a', skin: '#d9a47e', top: '#22c55e', bot: '#334155', acc: 'box', r: 2, o: .1, fast: 1,
+  { id: 'jie', name: '阿傑', role: '外送員', bye: '外送去囉～', hair: 'cap', hc: '#111827', cap: '#16a34a', skin: '#d9a47e', top: '#22c55e', bot: '#334155', acc: 'box', r: 2, o: .1, fast: 1,
     lines: ['外送！啊不是，我在找地址。', '這個城市的路我閉著眼睛都會走。', '最近很多人訂捏捏外送，你的生意應該不錯吧？', '騎車最怕下雨，箱子裡的東西不能濕。', '我送過一箱捏捏去月光谷，聽說是給工坊的客人。', '今天已經送了 32 單，腳好痠。', '咖啡館的老闆給小費最大方。', '我偷偷告訴你，公告欄的訂單常常是城裡的大客戶。', '如果有一天捏捏也能自己走路就好了，我就不用送了。', '外送箱要保持平穩，就像捏捏機器的輸送帶一樣。'] },
-  { id: 'lin', name: '林太太', role: '主婦', hair: 'curly', hc: '#57534e', skin: '#f0c4a0', top: '#7c3aed', bot: '#44403c', skirt: '#6d28d9', acc: 'bag', bag: '#be123c', r: 2, o: .6, slow: 1,
+  { id: 'lin', name: '林太太', role: '主婦', bye: '記得吃飯喔。', hair: 'curly', hc: '#57534e', skin: '#f0c4a0', top: '#7c3aed', bot: '#44403c', skirt: '#6d28d9', acc: 'bag', bag: '#be123c', r: 2, o: .6, slow: 1,
     lines: ['今天的菜價又漲了，買個菜都要精打細算。', '我家小孩每天都吵著要買捏捏，你那邊有便宜一點的嗎？', '週末的市集東西最新鮮，我每週都會去。', '你看起來沒有好好吃飯喔，年輕人要照顧身體。', '我年輕時也做過手工，捏東西真的很需要耐心。', '鄰居家的小狗好可愛，但牠每次都追著我的購物袋跑。', '醫院的醫生人很好，看病又不貴。', '晚餐要煮什麼呢……每天都在煩惱這件事。', '我把你做的捏捏放在客廳，客人來都會捏一下。', '下雨記得帶傘，這個城市的天氣變得很快。'] },
-  { id: 'yu', name: '小宇', role: '小學生', hair: 'short', hc: '#292524', skin: '#f5d0b0', top: '#ef4444', bot: '#2563eb', acc: 'bag', bag: '#0ea5e9', r: 1, o: .7, kid: .72,
+  { id: 'yu', name: '小宇', role: '小學生', bye: '拜拜～！', hair: 'short', hc: '#292524', skin: '#f5d0b0', top: '#ef4444', bot: '#2563eb', acc: 'bag', bag: '#0ea5e9', r: 1, o: .7, kid: .72,
     lines: ['大哥哥／大姊姊，你會捏史萊姆嗎？好厲害！', '我在噴泉旁邊撿到一枚硬幣，要不要許願？', '我最喜歡的史萊姆是會飛的那種……啊，沒有那種嗎？', '媽媽說我捏太多捏捏，手會變得很有力氣。', '我長大要當史萊姆博士！', '你知道鐘塔裡面住著貓頭鷹嗎？我聽說的。', '下課後我都在廣場跑來跑去。', '我有一個藍色的捏捏，晚上睡覺都抱著它。', '你可以教我怎麼捏嗎？我會很小心的。', '剛剛有一隻鴿子一直看我，牠是不是也想要捏捏？'] },
-  { id: 'leo', name: 'Leo', role: '大學生・直播迷', hair: 'pony', hc: '#78350f', skin: '#eec3a0', top: '#0f766e', bot: '#1f2937', acc: 'hood', r: 0, o: .82, fan: 1,
+  { id: 'leo', name: 'Leo', role: '大學生・直播迷', bye: '今晚會開播嗎？我會守著！', hair: 'pony', hc: '#78350f', skin: '#eec3a0', top: '#0f766e', bot: '#1f2937', acc: 'hood', r: 0, o: .82, fan: 1,
     lines: ['我每天晚上都在看捏捏直播，聲音超療癒。', '直播的時候觀眾最喜歡聽「喀滋」那一聲，你知道嗎？', '我報告寫不出來，只好來廣場散步找靈感。', '你的直播排行有上咖啡館的電視嗎？我會去投票！', '我在研究為什麼人會覺得捏東西很舒服，結論是：就是很舒服。', '學校社團想辦捏捏工作坊，你願意來當講師嗎？', '熬夜的時候，捏捏是我最好的朋友。', '直播主要多跟觀眾互動，大家會越來越喜歡你。', '我收藏了 12 個不同顏色的捏捏，排成一排很好看。', '聽說有人捏出過完美的酥脆度，那一定是傳說。'] },
-  { id: 'kai', name: '阿凱', role: '街頭吉他手', hair: 'long', hc: '#0c0a09', skin: '#d6a07a', top: '#1f2937', bot: '#3f3f46', acc: 'guitar', spot: [-9, PLAZA.z - 6.5], face: [0, 14],
+  { id: 'kai', name: '阿凱', role: '街頭吉他手', bye: '♪ 謝謝你停下來聽。', hair: 'long', hc: '#0c0a09', skin: '#d6a07a', top: '#1f2937', bot: '#3f3f46', acc: 'guitar', spot: [-9, PLAZA.z - 6.5], face: [0, 14],
     lines: ['要不要點一首歌？今天的曲子是〈月光谷的夜晚〉。', '我在這裡彈了三年，鐘塔的鐘聲就是我的節拍器。', '音樂和捏捏一樣，都要有節奏感。', '黃昏的時候廣場人最多，我最喜歡那個時候。', '有一天我想把捏捏的聲音放進歌裡。', '我的吉他有點走音，就像我的人生一樣（笑）。', '有人說我彈得很好聽，那我就繼續彈下去。', '如果你在直播，我可以幫你配背景音樂喔。', '夜晚的城市很安靜，彈起來特別有感覺。', '謝謝你停下來聽，這對街頭藝人來說很重要。'] },
-  { id: 'wang', name: '王阿姨', role: '市集攤販', hair: 'bun', hc: '#44403c', skin: '#e9b892', top: '#f97316', bot: '#57534e', acc: 'apron', apron: '#fef3c7', spot: [28, PLAZA.z - 1.8], face: [28, 10],
+  { id: 'wang', name: '王阿姨', role: '市集攤販', bye: '慢走喔，下週見！', hair: 'bun', hc: '#44403c', skin: '#e9b892', top: '#f97316', bot: '#57534e', acc: 'apron', apron: '#fef3c7', spot: [28, PLAZA.z - 1.8], face: [28, 10],
     lines: ['來來來，看看喔！這週的凝膠很漂亮喔！', '我在市集擺攤擺了二十年，什麼客人都見過。', '平日我在家準備貨，週末才出來擺攤。', '你奶奶以前也常來我的攤子買材料。', '做生意最重要的是誠實，東西好客人自然會回來。', '下雨天我就用布把攤子蓋起來，等雨停。', '我的攤子每週輪替不同的稀有凝膠，要常來看看喔。', '今天生意還不錯，阿姨請你喝杯茶。', '年輕人有夢想很好，要一步一步來。', '這些凝膠都是從很遠的地方運來的，很珍貴喔。'] },
-  { id: 'zhang', name: '張警官', role: '交通警察', hair: 'cap', hc: '#111827', cap: '#1e3a8a', skin: '#e2ad85', top: '#1e40af', bot: '#1e3a8a', acc: 'vest', spot: [13.5, -9.4], face: [13.5, 0],
+  { id: 'zhang', name: '張警官', role: '交通警察', bye: '注意安全！', hair: 'cap', hc: '#111827', cap: '#1e3a8a', skin: '#e2ad85', top: '#1e40af', bot: '#1e3a8a', acc: 'vest', spot: [13.5, -9.4], face: [13.5, 0],
     lines: ['過馬路要走斑馬線喔，注意左右來車。', '這個路口每天早上都很塞。', '我站在這裡十年了，認得這條街上的每一個人。', '計程車招呼站在廣場邊，要回月光谷就去那裡。', '有人說看到史萊姆跑進城裡，結果只是一團綠色塑膠袋。', '晚上巡邏的時候，路燈一盞一盞亮起來，很漂亮。', '安全第一！做捏捏的機器也要注意安全喔。', '不要在街上奔跑，很容易撞到人。', '武器店賣的東西要小心使用，長劍只能收藏喔。', '有任何問題都可以來問我，這是我的工作。'] },
-  { id: 'anna', name: '安娜', role: '觀光客', hair: 'pony', hc: '#facc15', skin: '#f8d9c4', top: '#38bdf8', bot: '#a16207', acc: 'camera', r: 1, o: .45,
+  { id: 'anna', name: '安娜', role: '觀光客', bye: 'Bye bye！', hair: 'pony', hc: '#facc15', skin: '#f8d9c4', top: '#38bdf8', bot: '#a16207', acc: 'camera', r: 1, o: .45,
     lines: ['Hello！我是從很遠的地方來旅行的。', '這座鐘塔好美，我已經拍了一百張照片。', '我聽說附近有一座會發光的森林，在哪裡呢？', '這裡的人都好親切，每個人都跟我打招呼。', '我想帶一個捏捏回國當紀念品，你有推薦的嗎？', '咖啡館的熱可可是我喝過最好喝的！', '我在旅遊書上看到「史萊姆捏捏」，原來這麼受歡迎。', '週末的市集好熱鬧，我買了好多東西。', '我的中文還在學，說錯了請不要笑我。', '下一站我想去看海，聽說東邊有一座燈塔。'] },
 ];
 // 跟狀態有關的話題：時間、天色、市集、玩家的進度。條件不成立的話題不會出現
@@ -6605,7 +6607,7 @@ function npcTopics() {
 function npcLine(n) {
   const st = S.npc[n.d.id] || (S.npc[n.d.id] = { n: 0, seen: [] });
   if (!st.n) { st.n = 1; return { k: 'hi', t: '你好！我是' + n.d.name + '，' + n.d.role + '。你是月光谷那間工坊的新主人吧？' }; }
-  if (n.d.id === 'chen' && W.pgScare && performance.now() - W.pgScare < 25000) return { k: 'c:pg', t: '哎呀，鴿子都被你嚇飛了！別擔心，牠們繞一圈就會回來吃麵包屑。' };
+  if (n.d.id === 'chen' && W.pgScare && performance.now() - W.pgScare < 25000) { W.pgScare = 0; st.n++; return { k: 'c:pg', t: '哎呀，鴿子都被你嚇飛了！別擔心，牠們繞一圈就會回來吃麵包屑。' }; } // 嚇飛一次說一次（「再聊一句」不會一直重複）
   if (n.d.fan) { const f = fanLine(); if (f) return f; }
   const pool = [...n.d.lines.map((t, i) => ({ k: 'p' + i, t })), ...npcTopics()];
   let left = pool.filter(l => !st.seen.includes(l.k));
@@ -6622,11 +6624,11 @@ function fanLine() {
   if (S.liveBest > 0) L0.push('你直播最高有 ' + S.liveBest + ' 個人同時在看，那天我也在！');
   return { k: 'f:x', t: pick(L0) };
 }
+// 居民：誰在說話，字就從誰頭上冒出來（talk.js）。E＝再聊一句（一次最多 4 句，之後他自己道別）、走開＝再見；不需要任何按鈕
 function npcTalk(n) {
-  n.talk = 8; const l = npcLine(n); save(); if (sfx.pop) sfx.pop();
-  const ic = '<span class="npc-ic" style="background:color-mix(in srgb,' + n.d.top + ' 55%,#fff)">' + esc([...n.d.name][0]) + '</span>';
-  modal('<div class="npc-talk"><div class="npc-hd">' + ic + '<div><b>' + esc(n.d.name) + '</b><small>' + esc(n.d.role) + '</small></div></div><p class="npc-say">「' + esc(l.t) + '」</p></div>',
-    [{ t: '再見', ghost: true, f: () => { n.talk = 1.5; } }, { t: '再聊一句', f: () => npcTalk(n) }]);
+  if (n.d.id === 'wang' && mktOpenNow()) return marketAct(); // 週末王阿姨在顧攤：直接講生意
+  const line = () => { const l = npcLine(n); save(); return npcBeat(n, l); };
+  talk(npcWho(n), [line()], { more: line, max: 4 });
 }
 // 圓角方塊：方塊外形但邊角是圓的（參考方塊人，但不要全是硬邊）
 function roundBox(w, h, d, r, seg = 2) {
@@ -6715,38 +6717,65 @@ function buildNPCs(g) {
       m.body.position.y = Math.abs(Math.cos(n.ph)) * .035 * n.walk; m.body.scale.y = (n.d.kid || 1) * (1 + Math.sin(t * 1.8 + n.ph) * .006 * (1 - n.walk));
       // 頭：玩家在 6 公尺內就轉頭看玩家（最多轉 60 度）；聊天時會點頭
       const rel = Math.atan2(Math.sin(toP - n.yaw), Math.cos(toP - n.yaw)), want = dist < 6 ? clamp(rel, -1.05, 1.05) : Math.sin(t * .4 + n.ph) * .25;
-      n.hy += (want - n.hy) * Math.min(1, dt * 4); m.head.rotation.y = n.hy; m.head.rotation.x = n.talk > 0 ? Math.sin(t * 6) * .06 : 0;
+      n.hy += (want - n.hy) * Math.min(1, dt * 4); m.head.rotation.y = n.hy; tkHead(n, m, dist, t); // 上下看著你、說話時點頭、揮手與歪頭（talk.js）
       m.root.position.set(n.x, 0, n.z); m.root.rotation.y = n.yaw;
     });
   });
 }
+// 會說話的店家：準心對到時頭上冒「…」、按 E 開口（talk.js 的 tkWhoOf 依 it.id 查這張表）
+const TALK_AT = { cafe: () => cafeWho(), market: () => wangWho(), hospital: () => hospWho(), taxi: () => taxiWho() };
+// 咖啡館：老闆在門口招呼（店裡的人看不到，泡泡從門口冒出來）；今天的小訂單用回話卡回答，E 只會選「下次吧」
+const cafeWho = () => spotWho('cafe', '咖啡館老闆', [CITY.x - 28, 2.5, CITY.z + PLAZA.z - 3], [CITY.x - 28, 1.7, CITY.z + PLAZA.z - 2.1], { col: '#fde7b0', vo: [.9, 34], bye: '慢走喔～' });
 function cafeAct() {
   const day = Math.floor(Date.now() / 864e5); if (S.cafe.d !== day) S.cafe = { d: day, done: false };
-  const r = seeded(day * 13 + 5), us = unlockedSpecies(), sp = us[Math.floor(r() * us.length)], p = S.stock.find(q => q.sp === sp.id), reward = Math.round(fair({ sp: sp.id, crisp: .7, dur: 100, deco: [] }, 'shop') * 1.6);
-  drawTV();
-  const tv = '<p class="small" style="color:var(--sub)">牆上的電視正在播「本週直播排行」，你的最高紀錄是 ' + (S.liveBest || 0) + ' 位觀眾。</p>';
-  if (S.cafe.done) return modal('<h2>咖啡館</h2><p>你在窗邊坐下，喝了一杯熱可可，看著廣場上的噴泉。</p>' + tv + '<p class="small">老闆：「今天的訂單已經收到了，謝謝你！明天再來喔。」</p>', [{ t: '起身' }]);
-  modal('<h2>咖啡館</h2><p>你在窗邊坐下休息。老闆端來一杯熱可可：</p><div class="riddle" style="text-align:left">「今天店裡想擺一個<b>' + sp.name + '</b>的捏捏，可以賣我一個嗎？我出 ' + fmt(reward) + '。」</div>' + tv,
-    [{ t: '先坐一下', ghost: true }, { t: p ? '交給老闆（' + fmt(reward) + '）' : '背包裡沒有' + short(sp.id) + '捏捏', f: () => { if (!p) return toast('背包裡沒有' + sp.name + '捏捏，做一個再來吧'); S.stock = S.stock.filter(q => q !== p); addMoney(reward); S.fans += 1; gainXP(6); S.cafe.done = true; sfx.coin && sfx.coin(); toast('老闆的小訂單完成 +' + fmt(reward)); renderTop(); renderHotbar(true); saveCloud(); } }]);
+  const r = seeded(day * 13 + 5), us = unlockedSpecies(), sp = us[Math.floor(r() * us.length)], reward = Math.round(fair({ sp: sp.id, crisp: .7, dur: 100, deco: [] }, 'shop') * 1.6), who = cafeWho(); drawTV();
+  const tv = S.liveBest ? '牆上的電視在播本週直播排行，你最高有 ' + S.liveBest + ' 個人在看喔！' : '牆上的電視每天都在播直播排行，哪天你也會上去的。';
+  if (S.cafe.done) return talk(who, ['今天的訂單收到囉，謝謝你！', tv]);
+  talk(who, ['歡迎光臨～外面有位子，坐一下吧。', { t: '今天店裡想擺一個「' + sp.name + '」的捏捏，可以賣我一個嗎？我出 ' + fmt(reward) + '。', opt: [
+    { t: '交給老闆', sub: '+' + fmt(reward), ok: () => S.stock.some(q => q.sp === sp.id), no: '背包裡沒有' + short(sp.id) + '捏捏', nf: ['沒關係，做好了再拿來就好～'], f: () => cafeDeal(sp, reward, who, tv) },
+    { t: '下次吧', e: 1, f: () => ['好喔，今天的訂單都有效～'] }] }]);
+}
+// 交貨：狀態一次改完並存檔（跟原本一樣）；手往前遞、門口冒一圈捏捏顏色的光點、錢包彈一下，不再 toast
+function cafeDeal(sp, reward, who, tv) {
+  const h = held(), p = h && h.t === 'prod' && h.p.sp === sp.id ? h.p : S.stock.find(q => q.sp === sp.id); if (!p) return ['咦？捏捏不見了……下次再說吧。'];
+  S.stock = S.stock.filter(q => q !== p); addMoney(reward); S.fans += 1; gainXP(6); S.cafe.done = true; sfx.coin(); renderTop(); renderHotbar(true); saveCloud();
+  VM.swing = .35; if (W.goo) W.goo.emit(who.mouth(new THREE.Vector3()), 8, sp.color, { size: .04, up: 1.6, speed: .8 }); tkBump('#sMoney');
+  return [{ t: '謝謝！擺在櫃台剛剛好。', emo: 'heart' }, tv];
 }
 // 週末市集：每週六日擺攤，每週輪替一種稀有凝膠，加上一個打折的裝飾零件包
 const mktOpenNow = () => { const d = new Date().getDay(); return d === 0 || d === 6; };
 function marketOffers() {
   const w = weekNo(), rares = SPECIES.filter(s => s.rar >= 3), sp = rares[w % rares.length], pk = Object.keys(PACKS).filter(k => !S.packs.includes(k))[0];
-  const list = [{ id: 'gel', t: sp.name + '凝膠 × 3', d: '本週限定的稀有凝膠（不用去' + ZONES.find(z => z.id === sp.zone).name + '也能拿到）', cost: sp.price * 4, f: () => { S.gel[sp.id] = (S.gel[sp.id] || 0) + 3; discover(sp.id); } }];
-  if (pk) list.push({ id: 'pack', t: PACKS[pk].name + '（市集價 7 折）', d: '市集限定的裝飾零件', cost: Math.round(PACKS[pk].cost * .7), f: () => { S.packs.push(pk); } });
+  const list = [{ id: 'gel', t: sp.name + '凝膠 × 3', d: '本週限定的稀有凝膠（不用去' + ZONES.find(z => z.id === sp.zone).name + '也能拿到）', cost: sp.price * 4, c: sp.color, f: () => { S.gel[sp.id] = (S.gel[sp.id] || 0) + 3; discover(sp.id); } }];
+  if (pk) list.push({ id: 'pack', t: PACKS[pk].name + '（市集價 7 折）', d: '市集限定的裝飾零件', cost: Math.round(PACKS[pk].cost * .7), c: '#e2e8f0', f: () => { S.packs.push(pk); } }); // c：買到時從攤子飛進手心的光點顏色
   return list;
 }
+// 週末市集：王阿姨（攤位後面的居民）招呼；準心對準攤位也是跟她說話。花錢的卡只能按數字或點選，E＝先不用
+function wangWho() { const n = W.npcs && W.npcs.find(x => x.d.id === 'wang'), stall = t => !!t && !!t.it && t.it.id === 'market';
+  if (!n) return spotWho('market', '王阿姨', [CITY.x + 28, 2.4, CITY.z + PLAZA.z - 4], [CITY.x + 28, 1.4, CITY.z + PLAZA.z - 3.6], { col: '#f97316', bye: '慢走喔，下週見！' }); // 萬一她不在：聲音從攤子出來
+  const w = npcWho(n); return w.mk || (w.mk = Object.assign({}, w, { tg: t => w.tg(t) || stall(t) })); }
 function marketAct() {
-  if (!mktOpenNow()) return toast('週末市集只在星期六、日擺攤，平日攤位都蓋著布。');
+  const who = wangWho();
+  if (!mktOpenNow()) return talk(who, ['攤子平日先用布蓋著，阿姨在整理這週的貨。', '星期六、日再來看看喔！']); // 她人就站在攤子後面，所以不說「在家」
   if (S.mkt.w !== weekNo()) S.mkt = { w: weekNo(), got: [] };
-  const offers = marketOffers();
-  modal('<h2>週末市集</h2><p>攤販們吆喝著本週的限定商品（每週輪替，每樣限買一次）：</p>' + offers.map(o => '<div class="card small"><b>' + o.t + '</b>　' + fmt(o.cost) + (S.mkt.got.includes(o.id) ? '　<span class="tag">已購買</span>' : '') + '<br><span style="color:var(--sub)">' + o.d + '</span></div>').join(''),
-    [...offers.filter(o => !S.mkt.got.includes(o.id)).map(o => ({ t: '買' + o.t.split('（')[0] + '（' + fmt(o.cost) + '）', f: () => { if (S.money < o.cost) return toast('資金不足'); S.money -= o.cost; o.f(); S.mkt.got.push(o.id); sfx.pop(); toast('買到了：' + o.t); renderTop(); renderHotbar(true); saveCloud(); } })), { t: '離開', ghost: true }]);
+  const offers = marketOffers().filter(o => !S.mkt.got.includes(o.id));
+  if (!offers.length) return talk(who, ['這週的好貨都被你買走啦！下週再來喔～']);
+  talk(who, [{ t: '來來來，看看喔！這週的限定貨～', g: 'wave' }, { t: '每樣限買一次，要哪一樣？', opt: offers.slice(0, 2).map(o => ({ t: o.t.replace('史萊姆', '').split('（')[0], sub: fmt(o.cost), ok: () => S.money >= o.cost && !S.mkt.got.includes(o.id), no: '錢不夠', nf: [{ t: '哎呀，錢包好像不太夠喔～賣掉幾個捏捏再來。', emo: 'sweat' }], f: () => mktBuy(o) })) }], { none: ['慢慢看，不買也沒關係～'] });
 }
+function mktBuy(o) {
+  if (S.mkt.got.includes(o.id) || S.money < o.cost) return [{ t: '哎呀，錢包好像不太夠喔～', emo: 'sweat' }];
+  S.money -= o.cost; o.f(); S.mkt.got.push(o.id); sfx.pop(); renderTop(); renderHotbar(true); saveCloud(); tkBump('#sMoney');
+  if (W.goo) W.goo.emit(new THREE.Vector3(CITY.x + 28, 1.3, CITY.z + PLAZA.z - 4), o.id === 'gel' ? 9 : 6, o.c || '#e2e8f0', { collect: true }); // 買到的東西從攤子飛進手心（跟採集凝膠同一種光點）
+  return [{ t: '好眼光！這可是這週才有的喔。', emo: 'star' }];
+}
+// 計程車：司機從你站的那一側的前座車窗說話；「上車」免費、可反悔，所以 E 就能選；接著交給 taxiRide（那一段路由計程車組負責）
+function taxiWho() { const g = inCity() ? W.taxiC : W.taxiV; if (!g) return spotWho('taxi', '司機大叔', [P.x, 2.2, P.z], [P.x, 1.5, P.z]);
+  g.updateMatrixWorld(); const s = g.worldToLocal(tkV.set(P.x, 1, P.z)).z < 0 ? -1 : 1, L = (x, y, z) => g.localToWorld(new THREE.Vector3(x, y, z)).toArray();
+  return spotWho('taxi', '司機大叔', L(.35, 2.15, s * .85), L(.35, 1.4, s * .8), { col: '#fde047', vo: [.85, 30], bye: '要搭車再叫我～' }); }
 function taxiAsk() {
-  const toCity = !inCity();
-  modal(`<h2>${toCity ? '前往大城市' : '回到月光谷'}</h2><p>${toCity ? '大城市裡有機械行、器材行與生活百貨，可以購買加工機器、直播設備與各種升級。' : '搭計程車回到月光谷的中央平地。'}</p>`, [{ t: '取消', ghost: true }, { t: '出發', f: taxiRide }]);
+  const toCity = !inCity(), who = taxiWho(), q = S.frozen ? (toCity ? '哎呀，你在發抖耶！我載你去城裡的醫院吧？' : '還是要回月光谷？') : toCity ? '要去大城市嗎？' : '要回月光谷了嗎？';
+  const pre = [...(S.frozen && !toCity ? ['醫院就在路的北邊喔，先去看醫生吧。'] : []), ...(toCity && !W.taxiN ? ['城裡有機械行、器材行跟生活百貨，買機器都在那邊。'] : [])];
+  talk(who, [...pre, { t: q, opt: [{ t: '上車', e: 1, f: () => { W.taxiN = (W.taxiN || 0) + 1; tkEnd('ride', true); bark(who, '坐穩囉～'); taxiRide(); } }, { t: '再逛逛', f: () => ['好喔，要搭車再叫我～'] }] }]);
 }
 function taxiRide() {
   const toCity = !inCity(), f = $('#fade'); f.textContent = toCity ? '計程車駛向大城市…' : '計程車駛回月光谷…'; f.hidden = false; requestAnimationFrame(() => f.classList.add('on')); sfx.open();
@@ -6838,6 +6867,7 @@ const VM_POSE = {
   reach: { x: -.03, y: .04, z: -.08, rx: -.62, ry: .3, rz: -.3, c: .1, t: .08, sp: .16 },
   squeeze: { x: -.035, y: .03, z: -.12, rx: -.5, ry: .3, rz: -.3, c: 1.32, t: 1.05, sp: 0 },
   hold: { x: 0, y: 0, z: 0, rx: .1, ry: .1, rz: -.1, c: .9, t: .7, sp: .02 }, // 托著筆記本、手機、手帳的下緣
+  fan: { x: -.05, y: .06, z: -.03, rx: -.35, ry: .05, rz: -.25, c: .55, t: .55, sp: .12 }, // 舉著回話卡（talk.js）
 };
 function initViewModel() {
   if (W.cam.parent !== W.scene) W.scene.add(W.cam);
@@ -7036,10 +7066,10 @@ function viewModelStep(dt) {
   if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') { jellyColors(VM.J, sp); jellyCut(VM.J, it.p); } else VM.gel.material.color.set(sp.color); } }
   VM.swing = Math.max(0, VM.swing - dt * 2.2); VM.sq = Math.max(0, VM.sq - dt);
   // 選擇手勢：擠壓 > 對準史萊姆時伸手 > 拿著的東西 > 空手
-  const aimSlime = TARGET && TARGET.type === 'slime', pose = VM.sq > 0 ? 'squeeze' : aimSlime ? 'reach' : it ? (it.t === 'prod' ? 'prod' : 'gel') : 'empty';
+  const aimSlime = TARGET && TARGET.type === 'slime', tp = tkPose(), pose = tp || (VM.sq > 0 ? 'squeeze' : aimSlime ? 'reach' : it ? (it.t === 'prod' ? 'prod' : 'gel') : 'empty'); // 對話：舉著回話卡＝fan、讀手上的紙＝hold
   const T = VM_POSE[pose], k = 1 - Math.exp(-dt * 32); for (const n in T) VM.p[n] += (T[n] - VM.p[n]) * k; const p = VM.p;
   // 伸手或擠壓時，手上的東西先收進掌心（縮小），避免手指張開時穿模
-  const keep = it && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
+  const keep = it && !tp && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
   VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
   vmPose(p);
   VM.gad.visible = S.up.net > 0; VM.gadL.forEach((m, i) => m.visible = i < S.up.net);
@@ -7134,11 +7164,19 @@ function warmStep(dt) {
   el.classList.toggle('low', !S.frozen && pct < .25); el.classList.toggle('frozen', S.frozen);
   el.querySelector('i').style.height = pct * 100 + '%'; el.querySelector('span').textContent = S.frozen ? '凍僵了' : Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
+// 醫院：護理師在門口（聲音從門口出來）；「看醫生」要花錢，只能按數字或點選，E＝等一下
+const hospWho = () => spotWho('hospital', '護理師', [CITY.x - 34, 2.7, CITY.z - 12.6], [CITY.x - 34, 1.6, CITY.z - 13.9], { col: '#99f6e4', vo: [1.15, 32], bye: '保重身體喔！' });
 function hospitalAct() {
-  if (!S.frozen) return toast('醫生說你的身體很健康。從雪原回來凍僵了再來吧。');
-  if (S.money < HOSPITAL_FEE) return toast('診療費 ' + fmt(HOSPITAL_FEE) + '，你的錢不夠（目前 ' + fmt(S.money) + '）。先賣掉一些捏捏再來吧。');
-  S.money -= HOSPITAL_FEE; S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level && sfx.level(); renderTop(); saveCloud();
-  modal('<h2>醫生：沒問題了</h2><p>診療費 ' + fmt(HOSPITAL_FEE) + '。一杯熱茶和一條毛毯，你的身體立刻暖和起來，不再發抖了。</p><p class="small" style="color:var(--sub)">下次進雪原一樣有 10 分鐘的體溫。</p>');
+  const who = hospWho();
+  if (!S.frozen) return talk(who, ['你看起來很健康喔！', '從雪原回來覺得冷，再過來找我們。']);
+  talk(who, [{ t: '你凍得在發抖！看診要 ' + fmt(HOSPITAL_FEE) + '，現在看嗎？', emo: 'sweat', opt: [
+    { t: '看醫生', sub: fmt(HOSPITAL_FEE), ok: () => S.money >= HOSPITAL_FEE, no: '錢不夠', nf: ['先賣掉幾個捏捏再來，我們等你。'], f: hospCure },
+    { t: '等一下', e: 1, f: () => ['不要拖太久喔，凍僵很難受的。'] }] }]);
+}
+function hospCure() {
+  if (!S.frozen || S.money < HOSPITAL_FEE) return ['你已經不抖了，好好休息喔。'];
+  S.money -= HOSPITAL_FEE; S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level(); renderTop(); saveCloud(); tkBump('#sMoney');
+  return [{ t: '來，熱茶和毛毯……好多了吧？', emo: 'heart' }, '下次進雪原一樣有 10 分鐘的體溫，記得保暖喔。'];
 }
 /* 畫質：自動／高／低。自動時 FPS 連續 5 秒低於 28 就依序關掉粒子、減少遠景植被、縮短霧距（解析度原本就會自動調整） */
 const QL = { lvl: 0, lowT: 0, frames: 0, acc: 0, noParts: false };
@@ -7163,10 +7201,11 @@ function worldStep(dt) {
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
   for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }
   renderCoach();
-  if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = targetLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
+  // 準心對到會說話的對象時，改由他頭上的「…」提示，畫面中央不顯示文字（talk.js 的 tkLabel）
+  if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
   else if (GUI.kind) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）
-  if ((IN.hold || IN.holdE) && !GUI.kind) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
+  if ((IN.hold || IN.holdE) && !GUI.kind && !TK.on) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
   if (W.sneakUI !== !!P.sneak) { W.sneakUI = !!P.sneak; $('#vig').classList.toggle('on', W.sneakUI); $('#btnSneak').classList.toggle('on', W.sneakUI); if (W.sneakUI && !S.tipSneak) { S.tipSneak = true; toast('潛行中：腳步變輕，怕生的稀有史萊姆比較不會發現你'); } }
   W.r.render(W.scene, W.cam);
 }
@@ -7190,7 +7229,7 @@ function loop(now) {
       bgAcc += dt; if (bgAcc >= (LOW ? .05 : .033)) { worldStep(Math.min(bgAcc, .1)); bgAcc = 0; QL.frames = QL.acc = 0; } DRS.acc = DRS.n = 0;
     }
     gxStep();
-    if (W.ready) waypointStep();
+    if (W.ready) { waypointStep(); tkStep(dt); } // 對話泡泡、一句話、準心的「…」：世界畫完之後把說話的人投影到畫面上（talk.js）
     else DRS.acc = DRS.n = 0;
     if (M.active) makeTick(dt);
     if (tab === 'decor') decorSt.step(dt);
