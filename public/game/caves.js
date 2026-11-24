@@ -82,7 +82,7 @@ function caveShape(x, z, h) {
   for (const q of CAVE_SEC) {
     if (xw < q.x0 || xw > q.x1 || zw < q.z0 || zw > q.z1) continue; const c = q.c; let bi = q.i0, bd = 1e18;
     for (let i = q.i0; i <= q.i1; i++) { const dx = xw - c.X[i], dz = zw - c.Z[i], d = dx * dx + dz * dz; if (d < bd) { bd = d; bi = i; } }
-    const d = Math.sqrt(bd), w = c.Wd[bi], sv = q.head ? c.S[bi] : c.L - c.S[bi], wt = (1 - smooth(w + 1.2, w + 6.5, d)) * smooth(.4, 2.2, sv), top = (c.Y[bi] + c.Hh[bi] + 2.4) / K;
+    const d = Math.sqrt(bd), w = c.Wd[bi], sv = q.head ? c.S[bi] : c.L - c.S[bi], wt = (1 - smooth(w + 1.2, w + 6.5, d)) * smooth(1.9, 3.6, sv), top = (c.Y[bi] + c.Hh[bi] + 2.4) / K;
     if (h < top) h += (top - h) * wt;
   }
   return h;
@@ -509,14 +509,14 @@ function caveMove(dx, dz) {
   if (!CV.c) {
     for (const c of CAVES) for (const e of c.ends) {
       if (Math.abs(nx - e.x) > 10 || Math.abs(nz - e.z) > 10) continue;
-      const q = caveQ(c, nx, nz, e.i); if (q.s < 0 || q.s > c.L || Math.abs(q.l) > q.w * .95) continue;
+      const q = caveQ(c, nx, nz, e.i); if (q.s < -1.2 || q.s > c.L + 1.2 || Math.abs(q.l) > q.w * .95) continue;
       const dir = e.s ? -1 : 1, why = caveBlock(c, dir); if (why) { barrierMsg(why); return false; }
       caveEnter(c, dir); return caveSlide(c, caveQ(c, nx, nz, e.i), nx, nz);
     }
     return undefined;
   }
   const c = CV.c, q = caveQ(c, nx, nz, CV.i);
-  if (q.s < 0 || q.s > c.L) { caveLeave(q.s > c.L ? 1 : 0); return undefined; }
+  if (q.s < -1.6 || q.s > c.L + 1.6) { caveLeave(q.s > c.L ? 1 : 0); return undefined; }
   return caveSlide(c, q, nx, nz);
 }
 function caveSlide(c, q, nx, nz) {
@@ -541,7 +541,7 @@ function caveLeave(side) {
     CV.flash = 1; if (first) { CV.lift = 1.4; W.quietZone = true; const z = ZONES.find(z => z.id === c.def.to); caveReveal(z.name, { sea: '穿過海蝕洞，白色沙灘與燈塔就在眼前', lava: '走出熔岩隧道，冒煙的火山口就在北方', ice: '走出冰洞，雪原的丘陵一片銀白' }[c.id] || ''); }
   } else if (!c.dead && side === 0 && CV.dir === -1) { S.cave = S.cave || {}; (S.cave.seen = S.cave.seen || {})[c.id] = 1; CV.flash = .7; }
 }
-function caveG(x, z) { const c = CV.c; if (!c) return H(x, z); const q = caveQ(c, x, z, CV.i); return q.s < -.2 || q.s > c.L + .2 || Math.abs(q.l) > q.w + 1 ? H(x, z) : q.y; }
+function caveG(x, z) { const c = CV.c; if (!c) return H(x, z); const q = caveQ(c, x, z, CV.i); return q.s < -1.7 || q.s > c.L + 1.7 || Math.abs(q.l) > q.w + 1 ? H(x, z) : q.y; }
 // 走過的洞：按住奔跑會稍微加速（快速通行，2.3）；冰洞的地面比較滑（只影響停下來的距離）
 function caveSpeed(run) { return CV.c && run && S.cave && S.cave.seen && S.cave.seen[CV.c.id] ? 1.3 : 1; }
 function caveSlip() { return CV.c && CV.c.th === 'ice' && CV.k > .3 ? .22 : 1; }
@@ -728,7 +728,8 @@ const crV = (a, b, c2, d, t, out) => out.set(0, 0, 0).addScaledVector(b, 2).addS
 function introCurve(pts, t, out) { const n = pts.length - 1, f = clamp(t, 0, 1) * n, i = Math.min(n - 1, Math.floor(f)); return crV(pts[Math.max(0, i - 1)], pts[i], pts[i + 1], pts[Math.min(n, i + 2)], f - i, out); }
 function introStep(dt) {
   const I = INTRO, c = I.c, cam = W.cam; if (I.skip && I.t < I.dA + I.dB) { I.t = I.dA + I.dB + I.dC * .55; I.skip = false; I.inCave = false; }
-  I.t += dt; DRS.skip = Math.max(DRS.skip || 0, 1); const tA = I.dA, tB = tA + I.dB, tC = tB + I.dC; // 開場期間動態解析度不計時 let look = IV[1], pos = I.pos, fov = 96, bank = 0;
+  I.t += dt; DRS.skip = Math.max(DRS.skip || 0, 1); // 開場期間動態解析度不計時
+  const tA = I.dA, tB = tA + I.dB, tC = tB + I.dC; let look = IV[1], pos = I.pos, fov = 96, bank = 0;
   if (I.t < tA) { // A：從洞口外俯衝進洞
     const u = smooth(0, 1, I.t / tA) * .55 + I.t / tA * .45; introCurve(I.A, u, pos); introCurve(I.A, Math.min(1, u + .06), look); I.inCave = false;
     if (I.t / tA > .8 && !I.inCave) { I.s = c.L; }
