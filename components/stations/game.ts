@@ -35,7 +35,10 @@ export type Game = {
   DN?: { phase: string; night: number; p: number }; DN_PHASE?: Record<string, string>; creditsHTML?: () => string;
   AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string;
   tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
+  eggs?: () => Egg[];
 };
+// 月光谷的小秘密（彩蛋）：id 開頭是區域（forest_／coast_／volcano_／snow_／city_）
+export type Egg = { id: string; name: string; hint: string; found: boolean };
 
 declare global {
   interface Window { SlimeGame?: Game }

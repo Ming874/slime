@@ -128,6 +128,7 @@ function fresh() {
     codex: {}, rate: [4, 4, 5], reviews: [], branch: null, workers: 0, auto: 0, rep: 0,
     contracts: [], regulars: {}, tier: { live: {}, web: {} }, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
     pos: null, hb: 0, sens: 1, q: null, own: {}, photos: [], cafe: { d: 0, done: false }, mkt: { w: 0, got: [] }, liveBest: 0, vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] }, npc: {}, avatar: 'mint',
+    eggs: [], // 找到的「月光谷的小秘密」（彩蛋 id，依發現順序）
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -175,6 +176,8 @@ function sanitize(o) {
   if (!('lineMade' in o)) s.lineMade = !!(s.own.slicer || s.own.coater || s.own.dryer) && s.tutDone;
   s.npc = Object.fromEntries(Object.entries(obj(s.npc)).filter(([k, v]) => NPC_IDS.includes(k) && v && typeof v === 'object').map(([k, v]) => [k, { n: Math.max(0, Math.floor(+v.n) || 0), seen: arr(v.seen).filter(x => typeof x === 'string' && x.length < 20).slice(-60) }]));
   if (!AVATARS.some(a => a.id === s.avatar)) s.avatar = 'mint';
+  // 彩蛋：舊存檔沒有這個欄位就是空清單；只留合法的 id（大城市的彩蛋也存在這裡，所以不依登記表過濾）
+  s.eggs = [...new Set(arr(s.eggs).filter(k => typeof k === 'string' && /^[\w-]{1,48}$/.test(k)))].slice(0, 300);
   s.wk = { w: Math.floor(+obj(s.wk).w) || 0, done: arr(obj(s.wk).done).filter(Number.isFinite).slice(0, 10) };
   s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade; if (!CUTS[s.cut]) s.cut = 'thick'; s.cutN = Math.max(0, Math.floor(+s.cutN) || 0);
   s.farmT = Math.max(0, +s.farmT || 0); if (s.farmT > Date.now()) s.farmT = Date.now();
@@ -831,6 +834,30 @@ function H(x, z) {
   if (u + v <= 1) return a + (d - a) * u + (b - a) * v;
   const c = h[(j + 1) * r + i + 1]; return c + (b - c) * (1 - u) + (d - c) * (1 - v);
 }
+/* 小場景的地形雕塑（H0 最後呼叫 nookH）：放在 H0 前面，任何時候算高度都已經初始化好了；場景本身在「小場景與彩蛋」段落 */
+// 地形雕塑：w 水面（或整平）高度、d 碗深（0＝整平）、dig 整平時再往下挖（冰面下留空間給魚）、b 外圍過渡寬度、wob 岸線起伏、keep 外圍不低於水面（裝水的才要）
+const NOOK_DIG = [
+  { x: -23, z: -13.5, r: 5, w: -.66, d: .45, b: 2.5, wob: .1, keep: 1 },        // 0 睡蓮池塘
+  { x: 129.4, z: -24.2, r: 2.2, w: -.34, d: .32, b: 1, wob: .14, keep: 1 },       // 1-3 潮池
+  { x: 131.2, z: -30.4, r: 2.6, w: -.48, d: .34, b: 1.2, wob: .14, keep: 1 },
+  { x: 129.2, z: -36.4, r: 1.9, w: .1, d: .3, b: 1, wob: .14, keep: 1 },
+  { x: -55, z: -112, r: 3.6, w: -.28, d: .5, b: 1.6, wob: .08, keep: 1 },        // 4 溫泉
+  { x: -138, z: -41, r: 7, w: 1.32, d: 0, dig: .1, b: 2.6, wob: .06, keep: 1 },   // 5 冰湖
+  { x: -158.4, z: 38.6, r: 2.6, w: 2.74, d: 0, dig: .06, b: 1.4, wob: .1, keep: 1 }, // 6 冰瀑下的水潭
+  { x: -128.4, z: -45.6, r: 2, w: 2.45, d: 0, b: 1.6 },                           // 7 冰屋地基
+  { x: -141.5, z: -33.5, r: 1.8, w: 2.05, d: 0, b: 1.6 },                         // 8 雪人一家
+];
+// 岸線半徑（基礎單位）：兩個不同頻率的起伏，池塘不會是正圓
+const nookR = (p, a) => p.r * (1 + (p.wob || 0) * Math.sin(a * 3 + p.x) * (.7 + .3 * Math.sin(a * 5 + p.z)));
+function nookH(x, z, h) {
+  for (const p of NOOK_DIG) {
+    const dx = x - p.x, dz = z - p.z, R = p.r * (1 + (p.wob || 0)) + p.b; if (dx * dx + dz * dz > R * R) continue;
+    const d = Math.hypot(dx, dz), rr = nookR(p, Math.atan2(dz, dx));
+    if (d < rr) { const u = d / rr; h = p.d ? p.w - p.d + (p.d + .08) * u * u : p.w - (p.dig || 0) * (1 - smooth(.75, 1, u)); }
+    else { const e = p.d ? p.w + .08 : p.w, s = smooth(rr, rr + p.b, d); h = e + (h - e) * s; if (p.keep) h = Math.max(h, p.w + .04 * s); }
+  }
+  return h;
+}
 function H0(x, z) {
   const ax = Math.abs(x), az = Math.abs(z), r = Math.max(ax, az);
   let h = (fbm(x * .045, z * .045, 3) - .45) * 3.2 + (vnoise(x * .2, z * .2, 11) - .5) * .35;
@@ -850,6 +877,8 @@ function H0(x, z) {
   const vn = smooth(62, 84, -z), vd = Math.hypot(x, z + 130); h += Math.max(0, 34 * (1 - vd / 36)) * vn; if (vd < 5) h -= (5 - vd) * 2.4 * vn;
   // 雪原：起伏更大的丘陵
   h += smooth(62, 84, -x) * fbm(x * .05, z * .05, 21) * 10;
+  // 小場景的地形：池塘與溫泉挖出碗、冰湖與冰屋整平（只動場景附近，見 NOOK_DIG）
+  h = nookH(x, z, h);
   return h;
 }
 const WS_R = 16, WS_Y = .4;
@@ -1223,6 +1252,7 @@ function buildProps() {
     if (Math.abs(x) < 10 * K && Math.abs(z + 54 * K) < 9 * K) return true;
     if (onPath(x, z) > .12) return true;
     if (Math.hypot(x - GIANT[0], z - GIANT[1]) < 9 || Math.hypot(x - RUINS[0], z - RUINS[1]) < 9) return true;
+    if (nookAvoid(x, z)) return true; // 小場景（池塘、冰屋、岩拱…）裡不長隨機的樹和石頭
     return PUZ_SPOTS.some(([px, pz]) => Math.hypot(x - px, z - pz) < 4.5);
   };
   const tries = LOW ? 11000 : 20000;
@@ -1302,6 +1332,7 @@ function buildProps() {
     if (b === 'coast' && h < 1.4 * K && h > -.5) { if (rd() < .3) (rd() < .6 ? shells : stars).push({ x: x + 1, y: H(x + 1, z) + .01, z, s: .8 + rd() * .6, ry: rd() * 6, c: new THREE.Color(pick(['#fde7d6', '#fbcfe8', '#fed7aa', '#fb923c', '#f9a8d4'])) }); if (rd() < .35) dune.push({ x: x - 1, y: H(x - 1, z), z, s: 1.1 + rd() * .8, ry: rd() * 6, c: gTint[3].clone() }); }
     if (b === 'coast' && h > -1.3 && h < .2 && rd() < .5) reeds.push({ x, y: h - .05, z, s: .8 + rd() * .5, ry: rd() * 6 });
   }
+  [grass, dune, pebbles, shells, stars, reeds, ...Object.values(flowers)].forEach(nookClear); // 水面、冰面、倒木與冰屋裡面不要冒出草叢
   const fG = LOW ? [32, 50] : [52, 78], fS = LOW ? [22, 34] : [34, 52], small = r => ({ cell: LOW ? 64 : 44, far: r[1] + 2 });
   const grassM = windMat(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, side: THREE.DoubleSide }), .42, true, fG);
   scatter(tuftGeo(5, .5, 3), grassM, grass, false, small(fG)); scatter(tuftGeo(7, .9, 5), grassM, dune, false, small(fG));
@@ -1598,6 +1629,7 @@ function buildLandmarks3() {
     addLM('ice', '冰晶塔', 'snow', x, z, [g], f, '#9cc9e4'); infoBoard('ice', x, z, 8.5);
   }
   W.anim.push(() => landmarkStep());
+  buildNooks(); // 各區的小場景、彩蛋、小徑沿途的東西與地面細節
 }
 // 遠近切換：120 公尺外只畫剪影（顏色跟著霧與天色走，夜裡更暗）
 function landmarkStep() {
@@ -1713,6 +1745,744 @@ function nightLights() {
   const n = DN.night, k = Math.round(n * 20); if (k === W.nlK) return; W.nlK = k;
   (W.cityWin || []).forEach(m => { m.emissiveIntensity = .12 + n * .85; });
   (W.lampMats || []).forEach(m => { m.emissiveIntensity = .4 + n * 1.6; });
+}
+
+/* ============================================================
+   小場景與彩蛋（月光谷的小秘密）
+   各區 2～4 個有記憶點的小場景（地形小雕塑＋道具＋一點故事），和要靠觀察、時間、動作才找得到的彩蛋。
+   - 地形：H0 最後呼叫 nookH（池塘挖碗、冰湖整平），只動場景附近的點；NOOK_DIG 與 nookH 放在 H0 前面
+   - 道具：每個場景依材質合併成少數幾個網格（nookKit），交給 cullChunks 做距離／霧剔除（chunkObj）
+   - 彩蛋：regEgg 登記、foundEgg 發現（存在 S.eggs）；大城市那邊也用這兩個全域函式（id 以 city_ 開頭）
+   NOOK 與 NOOK_DIG 是基礎單位（×K＝世界座標）；42 < max(|x|,|z|) < 66 的山脊帶不放任何東西
+   ============================================================ */
+const NOOK = {
+  pond: [-23, -13.5], willow: [-28.6, -17.2], ring: [-20, 21.5], picnic: [20, -21], log: [6, 32], rock: [-30, 6.2],
+  tide: [130.4, -30.2], boat: [122, 38], arch: [133.2, -56], conch: [98, 6.6],
+  spring: [-55, -112], obsid: [54, -104], tube: [18, -88],
+  lake: [-138, -41], igloo: [-128.4, -45.6], snowmen: [-141.5, -33.5], falls: [-158.4, 38.6], icicle: [-156.8, 33.6],
+};
+const nw = k => kk(NOOK[k]);
+// 隨機散布的樹木、岩石不要長在場景裡（世界座標、半徑）；水面上的草叢另外用 nookWet 清掉
+const NOOK_CLEAR = [['pond', 10.5], ['willow', 3], ['ring', 7], ['picnic', 6], ['log', 6], ['rock', 2.4], ['tide', 12], ['boat', 6], ['arch', 7.5], ['conch', 2.2], ['spring', 9], ['obsid', 11], ['tube', 10], ['lake', 16], ['igloo', 6], ['snowmen', 4.5], ['falls', 7], ['icicle', 4]].map(([k, r]) => [...nw(k), r]);
+NOOK_CLEAR.push([-165.5 * K, 38.6 * K, 9]); // 冰瀑整條斜坡
+const nookAvoid = (x, z) => NOOK_CLEAR.some(([cx, cz, r]) => (x - cx) ** 2 + (z - cz) ** 2 < r * r);
+const nookWet = (x, z) => NOOK_DIG.some(p => { const dx = x / K - p.x, dz = z / K - p.z; return dx * dx + dz * dz < (nookR(p, Math.atan2(dz, dx)) + .4) ** 2; })
+  || [['log', 4.5], ['igloo', 3.4], ['tube', 6.5]].some(([k, r]) => { const [cx, cz] = nw(k); return (x - cx) ** 2 + (z - cz) ** 2 < r * r; });
+function nookClear(l) { let j = 0; for (const o of l) if (!nookWet(o.x, o.z)) l[j++] = o; l.length = j; }
+
+/* ---------- 彩蛋：登記與發現 ---------- */
+const EGGS = new Map(); // id → { id, name, hint }，依登記順序顯示在手帳
+function regEgg(id, name, hint) {
+  if (typeof id !== 'string' || !id) return null;
+  if (!EGGS.has(id)) EGGS.set(id, { id, name: String(name || id), hint: String(hint || '') });
+  return EGGS.get(id);
+}
+// 第一次發現才算：短短一行訊息＋叮叮聲＋一點經驗，存進存檔；回傳是否第一次
+function foundEgg(id) {
+  if (!S || typeof id !== 'string' || !id) return false; if (!Array.isArray(S.eggs)) S.eggs = [];
+  if (S.eggs.includes(id)) return false; S.eggs.push(id);
+  const e = EGGS.get(id), n = S.eggs.filter(k => EGGS.has(k)).length;
+  toast(`✦ 發現月光谷的小秘密：「${e ? e.name : id}」（${n}/${EGGS.size}）`); const lg = $('#log') && $('#log').lastChild; if (lg) lg.classList.add('egg');
+  if (S.sound) { try { const t = audio().currentTime; [1318.5, 1568, 2093, 2637].forEach((f, i) => tone(f, t + i * .075, .4, .045, 'triangle')); } catch (er) { } }
+  gainXP(8, '發現小秘密'); save(); ui('inv'); return true;
+}
+// 場景觸發：還沒找到的話，先用一句話說出場景裡發生了什麼，再算發現
+function eggHit(id, msg) { if (!S || (Array.isArray(S.eggs) && S.eggs.includes(id))) return false; if (msg) toast(msg); return foundEgg(id); }
+const eggList = () => [...EGGS.values()].map(e => ({ id: e.id, name: e.name, hint: e.hint, found: !!(S.eggs && S.eggs.includes(e.id)) }));
+
+/* ---------- 共用：材質、合併、交給 cullChunks ---------- */
+const NK = { list: [], vy: 0, jumped: false, look: 0, star: null, starT: -1, starCd: 0, m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3() };
+const wrapA = a => ((a + Math.PI) % PI2 + PI2) % PI2 - Math.PI;
+// 每個場景登記一個「靠近才跑」的更新函式（距離 r 以外完全不算）
+function nkReg(x, z, r, fn) { NK.list.push({ x, z, r, fn }); }
+// 交給 cullChunks：超過 far 公尺或在霧外就不畫、只有玩家附近才投射陰影（與 scatter 的道具同一套規則）。b＝[x, z, 半徑]（會動的群組用）
+function chunkObj(o, far = 150, shadow = true, b) {
+  if (!o.parent) W.scene.add(o); const u = o.userData;
+  if (b) Object.assign(u, { x0: b[0] - b[2], z0: b[1] - b[2], x1: b[0] + b[2], z1: b[1] + b[2] });
+  else { const bb = new THREE.Box3().setFromObject(o); Object.assign(u, { x0: bb.min.x, z0: bb.min.z, x1: bb.max.x, z1: bb.max.z }); }
+  u.far = far; u.shadow = shadow && !LOW; o.castShadow = u.shadow; W.chunks.push(o); return o;
+}
+// 和 mergeParts 一樣把零件合併成一個帶頂點色的幾何；顏色給 null＝沿用零件自己的頂點色（水面、冰面、野餐墊的格紋）
+function nookMerge(parts, keepN) {
+  const gs = []; let n = 0;
+  for (const [g0, c, m] of parts) {
+    const g = g0.index ? g0.toNonIndexed() : g0.clone(); if (m) g.applyMatrix4(m);
+    if (!keepN || !g.attributes.normal || (m && m.determinant() < 0)) g.computeVertexNormals(); // 鏡像過的零件（內壁）法線要重算才會朝內
+    gs.push([g, c == null ? null : new THREE.Color(c)]); n += g.attributes.position.count;
+  }
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3); let o = 0;
+  for (const [g, c] of gs) {
+    const k = g.attributes.position.count, ca = g.attributes.color; pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
+    for (let i = 0; i < k; i++) { const j = (o + i) * 3; if (c) { col[j] = c.r; col[j + 1] = c.g; col[j + 2] = c.b; } else if (ca) { col[j] = ca.getX(i); col[j + 1] = ca.getY(i); col[j + 2] = ca.getZ(i); } else col[j] = col[j + 1] = col[j + 2] = 1; }
+    o += k; g.dispose();
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); return geo;
+}
+// 一個場景的零件收集器（世界座標）。at(x, z, 離地, 轉向, 指定高度, 縮放) 回傳在那個位置擺零件的函式；seg 在兩點之間放一根棍子（樹枝、釣竿、雪人手臂）；done() 依材質各合併成一個網格
+function nookKit() {
+  const by = new Map(), add = (mat, geo, col, m) => { if (!by.has(mat)) by.set(mat, []); by.get(mat).push([geo, col, m]); };
+  const at = (x, z, dy = 0, ry = 0, y, s = 1) => { const B = M4(x, y == null ? H(x, z) + dy : y, z, 0, ry, 0, s); return (mat, geo, col, px = 0, py = 0, pz = 0, rx = 0, ry2 = 0, rz = 0, sx = 1, sy = sx, sz = sx) => add(mat, geo, col, B.clone().multiply(M4(px, py, pz, rx, ry2, rz, sx, sy, sz))); };
+  const seg = (mat, a, b, r, col, n = 5, r1 = r) => { const d = new THREE.Vector3().subVectors(b, a), L = d.length(); add(mat, new THREE.CylinderGeometry(r1, r, L, n), col, new THREE.Matrix4().compose(new THREE.Vector3().addVectors(a, b).multiplyScalar(.5), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()), new THREE.Vector3(1, 1, 1))); };
+  const done = (far = 150) => { by.forEach((parts, mat) => { const m = new THREE.Mesh(nookMerge(parts, !!mat.userData.smooth), mat); m.receiveShadow = !mat.transparent && !mat.userData.noRecv; chunkObj(m, far, mat.userData.shadow !== false); }); by.clear(); };
+  return { add, at, seg, done };
+}
+// 水面／冰面：兩圈以上的頂點，顏色由中心往岸邊變淺；rf(角度)＝岸線半徑（世界座標）；cf(x, z, 0～1, color) 可以自己上色
+function nookDisc(cx, y, cz, rf, cols, seg = 40, rings = 2, cf) {
+  const g = new THREE.RingGeometry(.001, 1, seg, rings).rotateX(-Math.PI / 2), p = g.attributes.position, col = new Float32Array(p.count * 3), c = new THREE.Color(), C = cols && cols.map(x => new THREE.Color(x));
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i), r = Math.hypot(x, z), R = rf(Math.atan2(z, x)), wx = cx + x * R, wz = cz + z * R; p.setXYZ(i, wx, y, wz);
+    if (cf) cf(wx, wz, r, c); else c.copy(C[0]).lerp(C[1], r); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  g.deleteAttribute('uv'); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g;
+}
+// 裝飾用的小史萊姆（不是可以捏的那種）：身體顏色 col（instanceColor 會再乘上去），sleepy＝閉著眼睛睡覺
+function toyGeo(col = '#ffffff', sleepy = false) {
+  const p = [[new THREE.SphereGeometry(.5, 16, 12), col, M4(0, .36, 0, 0, 0, 0, 1, .74, 1)], [new THREE.SphereGeometry(.1, 8, 6), '#ffffff', M4(-.17, .58, .3, 0, 0, 0, 1.3, .8, .6)]];
+  [-1, 1].forEach(s => {
+    p.push(sleepy ? [new THREE.TorusGeometry(.055, .015, 4, 10, Math.PI), '#1f2937', M4(s * .15, .45, .452, 0, 0, Math.PI)] : [new THREE.SphereGeometry(.055, 8, 6), '#1f2937', M4(s * .15, .45, .44, 0, 0, 0, 1, 1.25, .6)]);
+    p.push([new THREE.SphereGeometry(.06, 8, 5), '#fb7185', M4(s * .27, .37, .41, 0, 0, 0, 1, .55, .35)]);
+  });
+  return nookMerge(p, true);
+}
+// 所有場景共用的材質（每種一份）：flat 平面著色、soft 平滑、night 夜裡自己發光（蘑菇、晶石）、lamp 永遠亮（火、燈、燭光）、warm 室內暖光（不吃陰影）、water、ice、obs 黑曜石、tree 會隨風擺
+function nookMats() {
+  if (W.nk) return W.nk;
+  const U = { value: 0 }, glowOn = (m, k, key) => { m.onBeforeCompile = sh => { sh.uniforms.uNight = U; sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * ' + k + ';'); }; m.customProgramCacheKey = () => key; return m; };
+  const sm = m => { m.userData.smooth = true; return m; }, ns = m => { m.userData.shadow = false; return m; };
+  const water = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, opacity: .72, roughness: .05, metalness: .1, depthWrite: false });
+  water.onBeforeCompile = sh => { // 細碎漣漪：兩層反向流動的雜訊擾動法線，反射的天空會碎成波光（與海水同一招，便宜很多）
+    sh.uniforms.uWind = W.wind;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWq;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWq = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nvarying vec2 vWq;\n' + GLSL_DETAIL).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      float wq = (tN(vWq * 1.6 + vec2(uWind * 0.35, uWind * 0.22)) + tN(vWq * 3.7 - vec2(uWind * 0.3, uWind * 0.41)) * 0.5) * 0.06;
+      normal = tPerturb(-vViewPosition, normal, vec2(dFdx(wq), dFdy(wq)));`)
+      // 水自己帶一點顏色的光：火山橘紅的天光下，溫泉的藍才不會被染成黃綠色
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * 0.22;');
+  };
+  water.customProgramCacheKey = () => 'nkWater';
+  return W.nk = {
+    U, water: ns(water),
+    flat: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 }),
+    soft: sm(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .5, metalness: 0 })),
+    night: sm(glowOn(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .45, metalness: 0 }), '(0.06 + uNight * 1.25)', 'nkNight')),
+    toy: sm(glowOn(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .22, metalness: 0 }), '(uNight * 0.7)', 'nkToy')),
+    lamp: ns(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false })),
+    warm: Object.assign(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0, emissive: '#7a4f1f', emissiveIntensity: .5 }), { userData: { noRecv: true } }),
+    ice: ns(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .06, metalness: .05, clearcoat: 1, clearcoatRoughness: .06, transparent: true, opacity: .86, flatShading: true })),
+    obs: new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .07, metalness: .35, clearcoat: 1, clearcoatRoughness: .05, flatShading: true }),
+    tree: windMat(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 }), .0045),
+  };
+}
+const rk = (s, d = 0) => jit(new THREE.DodecahedronGeometry(1, d), .38, s); // 一顆隨機起伏的低面數岩石
+// 小音效（彩蛋用）：呱、鈴聲、回音、海螺
+const nkSfx = {
+  ribbit() { if (!S.sound) return; try { const ac = audio(), t = ac.currentTime; for (let i = 0; i < 2; i++) { sweep(420, 230, t + i * .12, .08, .035, 'square'); noise(ac, t + i * .12, .06, 650, 1.6, .03, 'bandpass'); } } catch (e) { } },
+  bell(f, v = 1) { if (!S.sound) return; try { const t = audio().currentTime; tone(f, t, 1.4, .06 * v); tone(f * 2.01, t, .7, .022 * v); tone(f * 3.02, t, .35, .01 * v, 'triangle'); } catch (e) { } },
+  echo() { if (!S.sound) return; try { const ac = audio(), t = ac.currentTime; for (let i = 0; i < 4; i++) { sweep(520, 300, t + i * .34, .2, .05 * Math.pow(.5, i), 'triangle'); noise(ac, t + i * .34, .18, 900, 1, .02 * Math.pow(.5, i), 'bandpass'); } } catch (e) { } },
+  conch(k = 0) { if (!S.sound) return; try { const ac = audio(), t = ac.currentTime; noise(ac, t, 1.1, 380 + k * 60, .8, .07, 'lowpass', .6); tone(196 * (1 + k * .25), t + .05, 1, .04, 'triangle'); } catch (e) { } },
+};
+/* ---------- 森林（中央平地）：睡蓮池塘與老柳樹、蘑菇圈、花海野餐、空心倒木、像史萊姆的石頭、流星 ---------- */
+function nookPond(M) {
+  const kt = nookKit(), p = NOOK_DIG[0], [cx, cz] = kk([p.x, p.z]), wy = p.w * K, rf = a => nookR(p, a) * K, rd = seeded(41);
+  regEgg('forest_frog', '跟著跳的青蛙', '池塘睡蓮上的小青蛙很愛學人，在牠面前做點什麼吧。');
+  regEgg('forest_note', '樹洞裡的小紙條', '池塘邊那棵老柳樹的樹洞裡，好像夾著一張紙。');
+  kt.add(M.water, nookDisc(cx, wy, cz, a => rf(a) * 1.03, ['#2a6657', '#7cc4a4']), null);
+  const pad = (x, z, s, c) => kt.add(M.flat, new THREE.CylinderGeometry(s, s, .03, 12, 1, false, .35, PI2 - .7), c, M4(x, wy + .025, z, 0, rd() * PI2, 0));
+  const lotus = (x, z) => { for (let k = 0; k < 7; k++) { const b = k / 7 * PI2; kt.add(M.flat, new THREE.SphereGeometry(.06, 7, 5), k % 2 ? '#f9a8d4' : '#fdf2f8', M4(x + Math.cos(b) * .06, wy + .09, z + Math.sin(b) * .06, 0, -b, .65, 2.1, .7, 1)); } kt.add(M.flat, new THREE.SphereGeometry(.04, 7, 5), '#facc15', M4(x, wy + .11, z)); };
+  for (let i = 0; i < (LOW ? 8 : 13); i++) { const a = rd() * PI2, r = (.18 + rd() * .62) * rf(a), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; pad(x, z, .3 + rd() * .32, ['#3f8f45', '#5aa64e', '#6dbb5c'][i % 3]); if (i % 4 === 1) lotus(x + .08, z - .05); }
+  // 青蛙坐的那片大睡蓮（靠東邊的小木棧）
+  const fa = .15, fx = cx + Math.cos(fa) * rf(fa) * .6, fz = cz + Math.sin(fa) * rf(fa) * .6; pad(fx, fz, .5, '#4d9a46');
+  // 岸邊的石頭（半埋）、踏腳石、香蒲
+  for (let i = 0; i < 11; i++) { const a = i / 11 * PI2 + rd() * .4, r = rf(a) * (1.04 + rd() * .16), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, s = .28 + rd() * .42; kt.add(M.flat, rk(60 + i), rd() < .5 ? '#8b918a' : '#737a72', M4(x, H(x, z) - s * .2, z, rd(), rd() * 6, rd() * .3, s * 1.25, s * .7, s)); }
+  [1.12, .93, .76].forEach((k, i) => { const a = 1.75, x = cx + Math.cos(a) * rf(a) * k, z = cz + Math.sin(a) * rf(a) * k; kt.add(M.flat, rk(80 + i), '#9aa09a', M4(x, wy - .12, z, 0, i, 0, .42, .3, .36)); });
+  [2.7, 3.5, 4.3].forEach(a0 => { for (let k = 0; k < (LOW ? 4 : 7); k++) { const a = a0 + (rd() - .5) * .4, r = rf(a) * (.92 + rd() * .16), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = Math.max(H(x, z), wy - .25), h = 1 + rd() * .8; kt.add(M.flat, new THREE.CylinderGeometry(.012, .02, h, 4), '#6f8f3a', M4(x, y + h / 2, z)); if (k % 2 === 0) kt.add(M.flat, new THREE.CylinderGeometry(.04, .04, .22, 6), '#6b4423', M4(x, y + h - .05, z)); else kt.add(M.flat, new THREE.ConeGeometry(.05, h * .8, 3), '#7fa04a', M4(x + .05, y + h * .4, z, 0, k, .12, 1, 1, .3)); } });
+  // 東岸的小木棧＋奶奶的長椅
+  { const a = 0, x = cx + Math.cos(a) * rf(a) * 1.06, z = cz, y = Math.max(H(x, z), wy + .3), w = kt.at(x, z, 0, -Math.PI / 2, y);
+    for (let i = 0; i < 11; i++) w(M.flat, new THREE.BoxGeometry(1.1, .06, .26), i % 2 ? '#9a7652' : '#8b6544', 0, .02, i * .28 - .1);
+    [0, 1.4, 2.7].forEach(pz => [-.5, .5].forEach(px => w(M.flat, new THREE.CylinderGeometry(.06, .07, 1.4, 6), '#5b4030', px, -.6, pz)));
+    const ex = cx + Math.cos(.9) * rf(.9) * 1.35, ez = cz + Math.sin(.9) * rf(.9) * 1.35, b = kt.at(ex, ez, 0, Math.atan2(cx - ex, cz - ez)); // 面向池塘
+    b(M.flat, new THREE.BoxGeometry(1.4, .07, .42), '#a07850', 0, .46, 0); b(M.flat, new THREE.BoxGeometry(1.4, .32, .06), '#8b6544', 0, .74, -.2, -.12); [-.58, .58].forEach(px => b(M.flat, new THREE.BoxGeometry(.07, .46, .38), '#6b4d33', px, .23, 0));
+    b(M.flat, new THREE.SphereGeometry(.09, 10, 8), '#fca5a5', .35, .55, .05, 0, 0, 0, 1, .7, 1); // 椅子上一顆紅蘋果（奶奶留的）
+  }
+  kt.done(100);
+  // 老柳樹：垂下來的枝條會隨風擺；樹洞朝著池塘，裡面夾著奶奶的紙條
+  { const [x, z] = nw('willow'), y = H(x, z) - .1, face = Math.atan2(cx - x, cz - z), parts = [];
+    parts.push([new THREE.CylinderGeometry(.26, .4, 2.3, 9), '#6b5040', M4(0, 1.15, 0, .05, 0, -.07)], [new THREE.CylinderGeometry(.17, .25, 1.7, 8), '#6b5040', M4(.12, 2.8, .05, -.08, 0, .18)], [new THREE.CylinderGeometry(.06, .1, 1.3, 6), '#6b5040', M4(-.5, 3, .2, .3, 0, .8)]);
+    [[0, 3.8, 0, 1.6], [.95, 3.45, .4, 1.1], [-.85, 3.55, -.3, 1.2], [.2, 4.1, -.85, 1], [-.3, 4, .9, 1]].forEach(([bx, by, bz, s], i) => parts.push([jit(new THREE.IcosahedronGeometry(1, 1), .25, 300 + i), i % 2 ? '#8fbf5a' : '#a3cf6a', M4(bx, by, bz, 0, i, 0, s * 1.15, s * .6, s * 1.15)]));
+    for (let i = 0; i < (LOW ? 20 : 34); i++) { const a = i / (LOW ? 20 : 34) * PI2 + rd() * .2, r = 1.35 + rd() * .75, l = 1.3 + rd() * 1.2; parts.push([new THREE.BoxGeometry(.08, l, .025), i % 3 ? '#9ccc65' : '#b5d97a', M4(Math.cos(a) * r, 3.4 - l / 2, Math.sin(a) * r, 0, -a, 0)]); }
+    parts.push([new THREE.SphereGeometry(.24, 10, 8), '#24180e', M4(0, 1.25, .3, 0, 0, 0, .75, 1, .32)], [new THREE.BoxGeometry(.14, .1, .02), '#fff3c4', M4(.02, 1.2, .37, 0, 0, .15)], [new THREE.SphereGeometry(.3, 8, 5, 0, PI2, 0, Math.PI / 2), '#5b8f3e', M4(-.15, .02, .3, 0, 0, 0, 1.4, .4, 1)]);
+    const tm = new THREE.Mesh(mergeParts(parts), M.tree); tm.position.set(x, y, z); tm.rotation.y = face; tm.receiveShadow = true; chunkObj(tm, 140, true); addCol({ x, z, r: .5, tree: 1 });
+    const hb = hitBox(.7, .7, .6, 0, 1.22, .35, tm);
+    addInter(hb, 'nook', 'forest_note', '看看樹洞', { act() { toast('紙條上是奶奶的字：「池塘的小青蛙最愛學人跳，跳給牠看看吧。」'); foundEgg('forest_note'); } });
+  }
+  // 睡蓮上的小青蛙：你跳，牠也跳；連跳三次就是好朋友了
+  const frog = new THREE.Mesh(nookMerge([[new THREE.SphereGeometry(.1, 10, 8), '#4ade80', M4(0, .07, 0, 0, 0, 0, 1, .7, 1.25)], [new THREE.SphereGeometry(.07, 8, 6), '#d9f99d', M4(0, .05, .05, 0, 0, 0, 1, .6, 1.1)], ...[-1, 1].flatMap(s => [[new THREE.SphereGeometry(.036, 8, 6), '#4ade80', M4(s * .05, .135, .06)], [new THREE.SphereGeometry(.02, 6, 5), '#111827', M4(s * .056, .145, .085)], [new THREE.SphereGeometry(.05, 8, 6), '#22c55e', M4(s * .085, .04, -.07, 0, 0, 0, .8, .55, 1.3)], [new THREE.SphereGeometry(.025, 6, 5), '#22c55e', M4(s * .07, .02, .11)]])], true), M.soft);
+  frog.position.set(fx, wy + .04, fz); chunkObj(frog, 60, false, [fx, fz, 1]);
+  const fr = { hop: 0, n: 0, last: -9, ry: 0 };
+  nkReg(fx, fz, 30, (dt, t, d) => {
+    if (NK.jumped && d < 11) {
+      fr.n = t - fr.last < 4 ? fr.n + 1 : 1; fr.last = t; fr.hop = .55; nkSfx.ribbit(); fx3(new THREE.Vector3(fx, wy + .7, fz), fr.n >= 3 ? '呱呱呱！' : '呱！', '#86efac');
+      if (fr.n >= 3) eggHit('forest_frog', '青蛙跟著你一起跳了三下，看起來超開心。');
+    }
+    if (fr.hop > 0) { fr.hop = Math.max(0, fr.hop - dt); const k = 1 - fr.hop / .55; frog.position.y = wy + .04 + Math.sin(Math.PI * k) * .42; frog.rotation.y = fr.ry + k * PI2; frog.scale.set(1, 1, 1); }
+    else { frog.position.y = wy + .04; fr.ry += wrapA(Math.atan2(P.x - fx, P.z - fz) - fr.ry) * Math.min(1, dt * 3); frog.rotation.y = fr.ry; const b = 1 + Math.max(0, Math.sin(t * 2.4)) ** 8 * .25; frog.scale.set(1, 1, b); } // 喉嚨一鼓一鼓
+  });
+}
+function nookRing(M) {
+  const kt = nookKit(), [cx, cz] = nw('ring'), y0 = H(cx, cz), rd = seeded(52);
+  regEgg('forest_ring', '月光下的蘑菇圈', '森林西南邊有一圈蘑菇，聽說月亮出來時會變得很熱鬧。');
+  const caps = ['#ff8fab', '#ffd6a5', '#caffbf', '#a0c4ff', '#ffc6ff', '#fdffb6'];
+  for (let i = 0; i < 14; i++) {
+    const a = i / 14 * PI2 + rd() * .18, r = 2.5 + rd() * .35, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = H(x, z), s = .5 + rd() * .7;
+    kt.add(M.flat, new THREE.CylinderGeometry(.05 * s, .075 * s, .44 * s, 7), '#f5efe6', M4(x, y + .2 * s, z, (rd() - .5) * .2, 0, (rd() - .5) * .2));
+    kt.add(M.night, new THREE.SphereGeometry(.21 * s, 12, 6, 0, PI2, 0, Math.PI / 2), caps[i % 6], M4(x, y + .4 * s, z, 0, 0, 0, 1, .72, 1));
+    if (s > .8) for (let k = 0; k < 3; k++) kt.add(M.night, new THREE.SphereGeometry(.03 * s, 6, 4), '#ffffff', M4(x + Math.cos(k * 2.1 + a) * .1 * s, y + .5 * s, z + Math.sin(k * 2.1 + a) * .1 * s));
+  }
+  // 圈中央的小樹樁舞台、圈內的三葉草
+  kt.add(M.flat, new THREE.CylinderGeometry(.34, .4, .3, 10), '#7a5a3c', M4(cx, y0 + .1, cz)); kt.add(M.flat, new THREE.CylinderGeometry(.32, .32, .02, 10), '#c8a27a', M4(cx, y0 + .26, cz));
+  kt.add(M.flat, new THREE.CylinderGeometry(.2, .2, .025, 10), '#a07850', M4(cx, y0 + .265, cz));
+  for (let i = 0; i < (LOW ? 10 : 22); i++) { const a = rd() * PI2, r = .6 + rd() * 1.6, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = H(x, z); for (let k = 0; k < 3; k++) kt.add(M.flat, new THREE.SphereGeometry(.05, 6, 4), k ? '#4f9a45' : '#5fae52', M4(x + Math.cos(k * 2.1) * .05, y + .05, z + Math.sin(k * 2.1) * .05, 0, 0, 0, 1, .25, 1)); }
+  kt.done(85);
+  // 夜裡出來跳舞的五隻小史萊姆（同一個 InstancedMesh）
+  const N = 5, im = new THREE.InstancedMesh(toyGeo(), M.toy, N); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false; im.visible = false;
+  ['#6ee7b7', '#f9a8d4', '#fde047', '#93c5fd', '#c4b5fd'].forEach((c, i) => im.setColorAt(i, new THREE.Color(c)));
+  chunkObj(im, 55, false, [cx, cz, 3]); let noteT = 0; // 繪製距離比下面的更新半徑短：白天藏起來時不會被 cullChunks 又打開
+  nkReg(cx, cz, 60, (dt, t, d) => {
+    const on = smooth(.45, .75, DN.night); im.visible = on > .01; if (!im.visible) return;
+    for (let i = 0; i < N; i++) {
+      const a = t * .55 + i / N * PI2, hop = Math.abs(Math.sin(t * 3.4 + i * 1.3)), sq = 1 - hop, s = .3 * on, x = cx + Math.cos(a) * 1.25, z = cz + Math.sin(a) * 1.25;
+      NK.m.compose(NK.v.set(x, H(x, z) + hop * .32 * on, z), NK.q.setFromEuler(NK.e.set(0, -a + Math.sin(t * 2 + i) * .4, 0)), NK.s.set(s * (1 + .22 * sq), s * (1 - .22 * sq), s * (1 + .22 * sq))); im.setMatrixAt(i, NK.m);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    if (on > .9 && d < 9) { if ((noteT -= dt) < 0) { noteT = .9; fx3(new THREE.Vector3(cx + rnd(-1, 1), y0 + 1.1, cz + rnd(-1, 1)), pick(['♪', '♫', '♪']), pick(['#f9a8d4', '#fde047', '#a5f3fc'])); } eggHit('forest_ring', '蘑菇圈亮了起來，小史萊姆們手牽手跳著月光舞。'); }
+  });
+}
+function nookPicnic(M) {
+  const kt = nookKit(), [bx, bz] = nw('picnic'), yaw = .35, rd = seeded(63);
+  regEgg('forest_picnic', '黃昏的野餐', '花海裡有一張野餐墊。黃昏時，在上面蹲下來休息一下吧。');
+  // 紅白格紋野餐墊：每個頂點都貼著地面（地面有一點起伏）
+  { const g = new THREE.PlaneGeometry(2.4, 1.8, 8, 6).rotateX(-Math.PI / 2).toNonIndexed(), p = g.attributes.position, col = new Float32Array(p.count * 3), cr = Math.cos(yaw), sr = Math.sin(yaw), A = new THREE.Color('#e5484d'), B = new THREE.Color('#fff4e6');
+    for (let f = 0; f < p.count; f += 3) { const lx = (p.getX(f) + p.getX(f + 1) + p.getX(f + 2)) / 3, lz = (p.getZ(f) + p.getZ(f + 1) + p.getZ(f + 2)) / 3, c = (Math.floor((lx + 1.2) / .3) + Math.floor((lz + .9) / .3)) % 2 ? A : B; for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (f + k) * 3); }
+    for (let i = 0; i < p.count; i++) { const lx = p.getX(i), lz = p.getZ(i), x = bx + lx * cr + lz * sr, z = bz - lx * sr + lz * cr, edge = Math.max(Math.abs(lx) / 1.2, Math.abs(lz) / .9); p.setXYZ(i, x, H(x, z) + .04 - smooth(.85, 1, edge) * .025 + Math.sin(lx * 9 + lz * 7) * .006, z); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); kt.add(M.flat, g, null); }
+  const a = kt.at(bx, bz, .04, yaw);
+  // 籐籃（半開的蓋子、提把、露出來的餐巾）、盤子與三明治、蘋果、保溫瓶、杯子、蜂蜜罐、草帽、翻開的書
+  a(M.flat, new THREE.CylinderGeometry(.24, .2, .24, 12), '#c4935a', -.75, .12, -.45); a(M.flat, new THREE.TorusGeometry(.235, .025, 5, 14), '#a8743f', -.75, .24, -.45, Math.PI / 2);
+  a(M.flat, new THREE.TorusGeometry(.2, .018, 5, 12, Math.PI), '#a8743f', -.75, .25, -.45); a(M.flat, new THREE.CylinderGeometry(.25, .25, .03, 12), '#b98450', -.6, .33, -.45, 0, 0, .9);
+  a(M.flat, new THREE.BoxGeometry(.18, .08, .16), '#e5484d', -.8, .27, -.4, .3, .4, .2);
+  a(M.flat, new THREE.CylinderGeometry(.17, .15, .02, 14), '#f8fafc', .1, .02, .1);
+  [[.05, .12, .2], [.16, .05, -.3]].forEach(([px, pz, r], i) => { a(M.flat, new THREE.CylinderGeometry(.1, .1, .06, 3), '#f3d9a4', px, .06, pz, 0, r + i, 0); a(M.flat, new THREE.CylinderGeometry(.103, .103, .015, 3), '#65a30d', px, .065, pz, 0, r + i, 0); });
+  [[.55, -.3], [.65, -.18], [.5, -.12]].forEach(([px, pz], i) => { a(M.flat, new THREE.SphereGeometry(.07, 10, 8), i === 1 ? '#facc15' : '#dc2626', px, .07, pz); a(M.flat, new THREE.CylinderGeometry(.006, .008, .05, 4), '#5b4030', px, .15, pz); });
+  a(M.flat, new THREE.CylinderGeometry(.07, .07, .34, 12), '#3b82f6', .75, .17, .45); a(M.flat, new THREE.CylinderGeometry(.075, .075, .07, 12), '#cbd5e1', .75, .37, .45);
+  [[.45, .5], [.58, .62]].forEach(([px, pz]) => a(M.flat, new THREE.CylinderGeometry(.05, .04, .09, 10), '#f8fafc', px, .045, pz));
+  a(M.flat, new THREE.CylinderGeometry(.06, .06, .12, 10), '#f59e0b', -.25, .06, .55); a(M.flat, new THREE.CylinderGeometry(.065, .065, .03, 10), '#a16207', -.25, .135, .55);
+  a(M.flat, new THREE.CylinderGeometry(.34, .34, .02, 18), '#e9cf8f', .95, .03, -.55); a(M.flat, new THREE.SphereGeometry(.17, 12, 6, 0, PI2, 0, Math.PI / 2), '#e2c27a', .95, .03, -.55); a(M.flat, new THREE.TorusGeometry(.17, .02, 5, 16), '#f472b6', .95, .06, -.55, Math.PI / 2);
+  [-1, 1].forEach(s => a(M.flat, new THREE.BoxGeometry(.2, .015, .28), s < 0 ? '#fef3c7' : '#fde68a', -.3 + s * .1, .02 + (s > 0 ? .01 : 0), -.1, 0, .3, s * .12));
+  // 遮蔭的大樹，樹枝上卡著一個風箏（誰的呢？）
+  { const tx = bx + Math.cos(yaw) * 3.3 + .6, tz = bz - Math.sin(yaw) * 3.3 - 1.2, ty = H(tx, tz) - .1, t = kt.at(tx, tz, -.1);
+    t(M.flat, new THREE.CylinderGeometry(.2, .34, 2.6, 9), '#5b4030', 0, 1.3, 0); kt.seg(M.flat, new THREE.Vector3(tx, ty + 2.2, tz), new THREE.Vector3(tx - .9, ty + 3.2, tz + .4), .07, '#5b4030', 6, .1);
+    [[0, 3.4, 0, 1.5], [.9, 3.1, .3, 1.1], [-.9, 3.2, -.2, 1.15], [.2, 3.9, -.6, 1], [-.4, 3.8, .7, .95], [.6, 3.7, .7, .9]].forEach(([px, py, pz, s], i) => t(M.flat, jit(new THREE.IcosahedronGeometry(1, 1), .28, 400 + i), ['#4c9a45', '#62a84b', '#57a04a'][i % 3], px, py, pz, 0, i, 0, s, s * .82, s));
+    t(M.flat, new THREE.BoxGeometry(.55, .55, .02), '#f472b6', -1.2, 3.25, .9, 0, .5, Math.PI / 4); t(M.flat, new THREE.BoxGeometry(.04, .78, .025), '#fde047', -1.2, 3.25, .91, 0, .5, Math.PI / 4);
+    for (let i = 0; i < 4; i++) t(M.flat, new THREE.BoxGeometry(.1, .05, .02), i % 2 ? '#38bdf8' : '#fde047', -1.38 + i * .04, 2.75 - i * .22, .95, 0, .5, i * .4);
+    addCol({ x: tx, z: tz, r: .45, tree: 1 }); }
+  kt.done(100);
+  // 花海：一束一束（同一個幾何裡三朵不同的花）成片長在野餐墊周圍，隨風擺
+  const fm = windMat(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .6, flatShading: true, side: THREE.DoubleSide }), .3, false, LOW ? [32, 50] : [52, 78]);
+  // 一束＝五朵不同顏色的花：花頭是兩個交錯的三角形（六角星形的花瓣）＋花心，只有二十幾個面；花頭比一般野花大，遠看才會是一片花海
+  const bunch = mergeParts([[0, 0, '#f9a8d4'], [.17, .08, '#ffffff'], [-.11, .14, '#fde047'], [.06, -.16, '#c4b5fd'], [-.16, -.07, '#fb7185']].flatMap(([x, z, c], i) => { const h = .2 + (i % 3) * .07, tl = (i % 2 - .5) * .5; return [[new THREE.CylinderGeometry(.012, .016, h, 3, 1, true), '#4f8a3f', M4(x, h / 2, z)], [new THREE.ConeGeometry(.04, .16, 3, 1, true), '#5aa04a', M4(x + .04, .07, z, 0, i, -.7, 1, 1, .3)], [new THREE.CircleGeometry(.075, 3), c, M4(x, h, z, -Math.PI / 2 + tl, 0, i)], [new THREE.CircleGeometry(.075, 3), c, M4(x, h + .002, z, -Math.PI / 2 + tl, 0, i + Math.PI / 3)], [new THREE.CircleGeometry(.03, 5), '#fbbf24', M4(x, h + .006, z, -Math.PI / 2 + tl, 0, 0)]]; }));
+  const BL = [];
+  for (let i = 0; i < (LOW ? 90 : 220); i++) { const a = rd() * PI2, r = 1.8 + Math.sqrt(rd()) * 8, x = bx + Math.cos(a) * r, z = bz + Math.sin(a) * r; if (Math.hypot(x - bx, z - bz) < 2 || onPath(x, z) > .2) continue; BL.push({ x, y: H(x, z) - .02, z, s: .9 + rd() * .5, ry: rd() * 6 }); }
+  scatter(bunch, fm, BL, false, { cell: 44, far: 80 });
+  let sit = 0;
+  nkReg(bx, bz, 12, (dt, t, d) => {
+    sit = d < 1.25 && P.sneak && DN.dusk > .05 ? sit + dt : 0;
+    if (sit > 1.2) eggHit('forest_picnic', '在野餐墊上坐下來看夕陽，風裡有花香……好放鬆。');
+  });
+}
+function nookLog(M) {
+  const kt = nookKit(), [cx, cz] = nw('log'), L = 6.5, R1 = 1.25, R0 = 1.02, y = H(cx, cz) + R0 - .14, rd = seeded(71);
+  regEgg('forest_log', '鑽過空心倒木', '森林南邊躺著一根空心的大倒木，從一頭鑽到另一頭看看？');
+  kt.add(M.flat, jit(new THREE.CylinderGeometry(R1, R1 * 1.05, L, 14, 3, true), .05, 7), '#6b4d33', M4(cx, y, cz, 0, 0, Math.PI / 2));
+  kt.add(M.flat, new THREE.CylinderGeometry(R0, R0, L, 14, 1, true), '#a8835c', M4(cx, y, cz, 0, 0, Math.PI / 2, 1, 1, -1)); // 內壁：鏡像讓面朝內
+  [-1, 1].forEach(s => { kt.add(M.flat, new THREE.RingGeometry(R0, R1 * (s > 0 ? 1.05 : 1), 14), '#c8a27a', M4(cx + s * L / 2, y, cz, 0, s * Math.PI / 2, 0)); kt.add(M.flat, new THREE.TorusGeometry((R0 + R1) / 2, .015, 3, 20), '#a07850', M4(cx + s * (L / 2 + .005), y, cz, 0, s * Math.PI / 2, 0)); });
+  // 背上的苔蘚、側面的層孔菌、兩頭的小蘑菇與蕨葉
+  for (let i = 0; i < 4; i++) kt.add(M.flat, new THREE.SphereGeometry(.45, 8, 5, 0, PI2, 0, Math.PI / 2), i % 2 ? '#5b8f3e' : '#4f7f36', M4(cx - 2.2 + i * 1.4 + rd() * .4, y + R1 - .1, cz + (rd() - .5) * .4, 0, rd() * 6, 0, 1.5, .35, .9));
+  [[-1.4, .4], [-.9, .1], [1.6, .55]].forEach(([px, py]) => kt.add(M.flat, new THREE.CylinderGeometry(.2, .2, .04, 10, 1, false, 0, Math.PI), '#e7c9a0', M4(cx + px, y + py, cz + R1 * .98, 0, -Math.PI / 2, 0))); // 半圓朝外長出來
+  [[-L / 2 - .4, .6], [L / 2 + .5, -.7], [L / 2 + .3, .9]].forEach(([px, pz], i) => { const x = cx + px, z = cz + pz, gy = H(x, z); kt.add(M.flat, new THREE.CylinderGeometry(.04, .05, .22, 6), '#f5efe6', M4(x, gy + .1, z)); kt.add(M.flat, new THREE.SphereGeometry(.13, 10, 5, 0, PI2, 0, Math.PI / 2), i % 2 ? '#c98f5a' : '#e5484d', M4(x, gy + .2, z, 0, 0, 0, 1, .7, 1)); });
+  // 倒木裡面：鋪著葉子的小窩、三顆橡實，還有一隻睡著的小史萊姆
+  const my = H(cx, cz);
+  kt.add(M.flat, new THREE.CylinderGeometry(.55, .6, .06, 10), '#c2884a', M4(cx, my + .03, cz, 0, 0, 0, 1.4, 1, .9));
+  [[.5, .25], [.62, .1], [.45, -.05]].forEach(([px, pz]) => { kt.add(M.flat, new THREE.SphereGeometry(.05, 8, 6), '#a16207', M4(cx + px, my + .08, cz + pz, 0, 0, 0, 1, 1.2, 1)); kt.add(M.flat, new THREE.CylinderGeometry(.045, .05, .03, 8), '#78350f', M4(cx + px, my + .13, cz + pz)); });
+  kt.done(85);
+  const sl = new THREE.Mesh(toyGeo('#86efac', true), M.toy); sl.position.set(cx - .15, my + .05, cz); sl.rotation.y = Math.PI / 2; sl.scale.setScalar(.6); chunkObj(sl, 50, false, [cx, cz, 1]);
+  addCol({ box: [cx - L / 2, cz + .82, cx + L / 2, cz + R1 + .1] }); addCol({ box: [cx - L / 2, cz - R1 - .1, cx + L / 2, cz - .82] });
+  const st = { side: 0 }; let zz = 0;
+  nkReg(cx, cz, 30, (dt, t, d) => {
+    sl.scale.y = .6 * (1 + Math.sin(t * 1.6) * .05);
+    const lx = P.x - cx, lz = P.z - cz;
+    if (Math.abs(lx) < L / 2 - .5 && Math.abs(lz) < .8) { if (!st.side) st.side = Math.sign(st.lx || lx); }
+    else if (st.side && Math.abs(lx) > L / 2 + .2 && Math.abs(lz) < 1.3) { if (Math.sign(lx) === -st.side) eggHit('forest_log', '鑽過倒木的時候，裡面有一隻小史萊姆睡得好熟，連翻身都沒有。'); st.side = 0; }
+    else if (Math.abs(lx) > L / 2 + 1.5 || Math.abs(lz) > 1.6) st.side = 0;
+    st.lx = lx;
+    if (d < 4.5 && (zz -= dt) < 0) { zz = 2.2; fx3(new THREE.Vector3(cx - .15, my + .75, cz), 'Zzz', '#a7f3d0'); }
+  });
+}
+function nookRock(M) {
+  const [x, z] = nw('rock'), y = H(x, z) - .1, g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.PI; W.scene.add(g);
+  regEgg('forest_rock', '長得像史萊姆的石頭', '往雪原的小徑旁，有一塊圓得很可疑的石頭。');
+  // 身體用有稜角的石頭（平面著色），只有眼睛圓圓亮亮的：遠看是石頭，靠近才覺得「咦？」
+  const body = new THREE.Mesh(nookMerge([[jit(new THREE.IcosahedronGeometry(.85, 2), .05, 9), '#8f9aa4', M4(0, .62, 0, 0, 0, 0, 1.05, .8, .95)], [jit(new THREE.SphereGeometry(.88, 12, 4, 0, PI2, 0, .85), .05, 10), '#6b9a4e', M4(0, .62, 0, 0, 0, 0, 1.05, .8, .95)], [new THREE.SphereGeometry(.08, 8, 6), '#f0abfc', M4(-.42, .52, .68, 0, 0, 0, 1, .55, .4)], [new THREE.SphereGeometry(.08, 8, 6), '#f0abfc', M4(.42, .52, .68, 0, 0, 0, 1, .55, .4)], [new THREE.ConeGeometry(.05, .2, 4), '#65a30d', M4(.1, 1.36, 0, 0, 0, -.4, 1, 1, .4)], [new THREE.ConeGeometry(.05, .18, 4), '#84cc16', M4(-.04, 1.34, 0, 0, 0, .5, 1, 1, .4)]]), M.flat);
+  const eyes = new THREE.Mesh(nookMerge([-1, 1].map(s => [new THREE.SphereGeometry(.075, 10, 8), '#273038', M4(s * .24, .72, .73, 0, 0, 0, 1, 1.35, .5)]), true), M.soft);
+  g.add(body, eyes); body.castShadow = !LOW; chunkObj(g, 75, false, [x, z, 1.2]); addCol({ x, z, r: .85 });
+  const st = { wob: 0, blink: 0 };
+  addInter(hitBox(1.8, 1.4, 1.6, 0, .7, 0, g), 'nook', 'forest_rock', '摸摸這塊圓石頭', { act() { st.wob = 1; st.blink = .25; sfx.boing(1.25, .9); if (!eggHit('forest_rock', '……這真的是石頭吧？它好像對你眨了眨眼。')) fx3(new THREE.Vector3(x, y + 1.8, z), '……？', '#cbd5e1'); } });
+  nkReg(x, z, 25, (dt, t) => {
+    st.wob = Math.max(0, st.wob - dt * 1.6); st.blink = Math.max(0, st.blink - dt);
+    const w = Math.sin(st.wob * 14) * st.wob * .12; g.scale.set(1 + w, 1 - w + Math.sin(t * 1.1) * .008, 1 + w);
+    eyes.scale.y = st.blink > 0 ? .12 : 1;
+  });
+}
+// 流星：晴朗的夜裡在中央平地抬頭看天空幾秒，就會有一顆劃過去
+function starStep(dt) {
+  NK.starCd = Math.max(0, NK.starCd - dt);
+  const r = Math.max(Math.abs(P.x), Math.abs(P.z)) / K;
+  NK.look = r < 42 && DN.night > .7 && P.pitch > .5 && !GUI.kind ? NK.look + dt : 0;
+  if (NK.look > 3 && NK.starT < 0 && !NK.starCd) {
+    if (!NK.star) {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 16; const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 256, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.85, 'rgba(220,235,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,1)');
+      g.fillStyle = gr; g.beginPath(); g.moveTo(0, 8); g.lineTo(248, 3); g.arc(248, 8, 5, -Math.PI / 2, Math.PI / 2); g.closePath(); g.fill();
+      const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace;
+      NK.star = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending, rotation: -.35 })); NK.star.renderOrder = 2; W.scene.add(NK.star);
+    }
+    // 出現當下的視線方向當作基準（之後轉頭，流星還是留在天上同一個地方）
+    NK.starT = 0; NK.starCd = 18; const q = W.cam.quaternion; NK.sb = [new THREE.Vector3(0, 0, -1).applyQuaternion(q), new THREE.Vector3(1, 0, 0).applyQuaternion(q), new THREE.Vector3(0, 1, 0).applyQuaternion(q), W.cam.position.clone()];
+  }
+  if (NK.starT < 0) { if (NK.star) NK.star.visible = false; return; }
+  NK.starT += dt; const k = NK.starT / 1.1, [bf, br, bu, b0] = NK.sb;
+  if (k >= 1) { NK.starT = -1; NK.star.visible = false; eggHit('forest_star', '咻——一顆流星劃過夜空。趕快許個願吧！'); return; }
+  // 從視線左上往右下劃過：移動方向（右 140、下 50）與 sprite 的旋轉角度一致
+  NK.star.visible = true; NK.star.position.copy(b0).addScaledVector(bf, 260).addScaledVector(br, -70 + k * 140).addScaledVector(bu, 35 - k * 50);
+  NK.star.scale.set(46, 2.2, 1); NK.star.material.opacity = Math.sin(Math.PI * k) * 1.2;
+}
+/* ---------- 海岸：潮池與寄居蟹、擱淺的小船（瓶中信）、海蝕岩拱、大海螺 ---------- */
+function nookTide(M) {
+  const kt = nookKit(), rd = seeded(91), crabs = [];
+  regEgg('coast_crab', '害羞的寄居蟹', '潮池邊的小貝殼會走路？放輕腳步慢慢靠近看看。');
+  [1, 2, 3].forEach(pi => {
+    const p = NOOK_DIG[pi], [cx, cz] = kk([p.x, p.z]), wy = p.w * K, rf = a => nookR(p, a) * K;
+    kt.add(M.water, nookDisc(cx, wy, cz, a => rf(a) * 1.03, ['#0f5f80', '#6fd3cf']), null);
+    // 圍成一圈的礁石（靠海那側比較大，擋住浪），石頭上有藤壺與海藻
+    const n = 9 + pi;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * PI2 + rd() * .3, sea = Math.max(0, Math.cos(a)), r = rf(a) * (1.06 + rd() * .1 + sea * .08), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, s = .3 + rd() * .26 + sea * .3, y = Math.max(H(x, z), wy - .2);
+      kt.add(M.flat, rk(120 + pi * 20 + i), ['#7b8591', '#8d96a0', '#6f7884'][i % 3], M4(x, y + s * .15, z, rd(), rd() * 6, rd() * .4, s * 1.2, s * .8, s));
+      if (i % 4 === 1) { const c = ['#fb7185', '#f97316', '#c084fc'][(i + pi) % 3]; for (let k = 0; k < 5; k++) kt.add(M.flat, new THREE.SphereGeometry(.06, 6, 4), c, M4(x + Math.cos(k * 1.257) * .09, y + s * .72, z + Math.sin(k * 1.257) * .09, 0, -k * 1.257, 0, 2.2, .45, 1)); } // 趴在礁石上曬太陽的海星
+      if (i % 2 === 0) kt.add(M.flat, new THREE.SphereGeometry(s * .7, 7, 4, 0, PI2, 0, Math.PI / 2), '#4d6b3c', M4(x, y + s * .62, z, 0, 0, 0, 1, .35, 1));
+      for (let k = 0; k < 3; k++) kt.add(M.flat, new THREE.ConeGeometry(.04, .05, 5), '#e7e5e4', M4(x + Math.cos(k * 2 + i) * s * .8, y + s * .25 + k * .05, z + Math.sin(k * 2 + i) * s * .8));
+    }
+    // 池底：海星、海葵、小貝殼、一叢叢海草
+    const bed = (x, z) => Math.min(H(x, z), wy - .05) + .02;
+    for (let i = 0; i < 2 + (pi % 2); i++) { const a = rd() * PI2, r = rf(a) * (.55 + rd() * .3), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, c = ['#fb7185', '#f97316', '#c084fc'][(i + pi) % 3]; for (let k = 0; k < 5; k++) kt.add(M.flat, new THREE.SphereGeometry(.07, 6, 4), c, M4(x + Math.cos(k * 1.257) * .1, bed(x, z), z + Math.sin(k * 1.257) * .1, 0, -k * 1.257, 0, 2.2, .45, 1)); }
+    for (let i = 0; i < 3; i++) { const a = rd() * PI2, r = rf(a) * (.6 + rd() * .3), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = bed(x, z); kt.add(M.flat, new THREE.CylinderGeometry(.05, .07, .1, 8), '#f472b6', M4(x, y + .05, z)); for (let k = 0; k < 6; k++) kt.add(M.flat, new THREE.ConeGeometry(.012, .09, 4), '#fbcfe8', M4(x + Math.cos(k) * .035, y + .13, z + Math.sin(k) * .035, Math.sin(k) * .5, 0, -Math.cos(k) * .5)); }
+    for (let i = 0; i < 4; i++) { const a = rd() * PI2, r = rf(a) * (.3 + rd() * .5), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = bed(x, z); for (let k = 0; k < 3; k++) kt.add(M.flat, new THREE.BoxGeometry(.04, .3 + k * .08, .01), '#3f6b3a', M4(x + k * .03, y + .15, z, 0, k * 1.1, (k - 1) * .25)); }
+    crabs.push(...[0, 1].slice(0, pi === 2 ? 2 : 1).map(k => ({ hx: cx + Math.cos(k * 3 + pi) * rf(0) * 1.6, hz: cz + Math.sin(k * 3 + pi) * rf(0) * 1.6, a: rd() * PI2, r: 1.1 + rd() * .6, sp: (rd() < .5 ? -1 : 1) * (.25 + rd() * .15), hide: 0, wave: 0, pause: 0 })));
+  });
+  // 沙灘上的貝殼與漂流木
+  const [tx, tz] = nw('tide');
+  for (let i = 0; i < 10; i++) { const x = tx + rnd(-9, 4), z = tz + rnd(-11, 11); if (nookWet(x, z)) continue; kt.add(M.flat, new THREE.SphereGeometry(.07, 8, 5, 0, PI2, 0, Math.PI / 2), pick(['#fde7d6', '#fbcfe8', '#fed7aa']), M4(x, H(x, z), z, 0, rd() * 6, 0, 1, .5, 1.3)); }
+  kt.seg(M.flat, new THREE.Vector3(tx - 6, H(tx - 6, tz + 5) + .1, tz + 5), new THREE.Vector3(tx - 3.6, H(tx - 3.6, tz + 6) + .12, tz + 6), .09, '#a8a29e', 6, .07);
+  kt.done(100);
+  // 寄居蟹：沿著潮池繞小圈走，有人大步靠近就縮進殼裡；潛行慢慢靠近，牠會探出頭來揮揮鉗子
+  const cg = nookMerge([[new THREE.SphereGeometry(.1, 10, 8), '#f5e6c8', M4(0, .11, -.03)], [new THREE.ConeGeometry(.075, .15, 8), '#e8c89a', M4(0, .17, -.09, -.9, 0, 0)], [new THREE.TorusGeometry(.07, .018, 5, 12), '#d6b98c', M4(0, .12, -.02, 0, Math.PI / 2, 0)], [new THREE.SphereGeometry(.055, 8, 6), '#ef4444', M4(0, .06, .07)], ...[-1, 1].flatMap(s => [[new THREE.CylinderGeometry(.008, .008, .07, 4), '#ef4444', M4(s * .025, .12, .1)], [new THREE.SphereGeometry(.014, 6, 4), '#111827', M4(s * .025, .16, .1)], [new THREE.SphereGeometry(.035, 7, 5), '#dc2626', M4(s * .06, .05, .12, 0, 0, 0, 1, .7, 1.3)], [new THREE.CylinderGeometry(.008, .008, .09, 4), '#ef4444', M4(s * .07, .03, .02, 0, 0, s * 1.1)], [new THREE.CylinderGeometry(.008, .008, .09, 4), '#ef4444', M4(s * .07, .03, -.02, 0, 0, s * 1.1)]])], true);
+  const im = new THREE.InstancedMesh(cg, M.soft, crabs.length); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false; chunkObj(im, 60, false, [tx, tz, 14]);
+  nkReg(tx, tz, 45, (dt, t) => {
+    crabs.forEach((c, i) => {
+      const cx = c.hx + Math.cos(c.a) * c.r, cz = c.hz + Math.sin(c.a) * c.r, d = Math.hypot(P.x - cx, P.z - cz);
+      if (d < 3.2 && !P.sneak && c.hide <= 0 && c.wave <= 0) { c.hide = 3.5; fx3(new THREE.Vector3(cx, H(cx, cz) + .6, cz), '！', '#fca5a5'); }
+      if (d < 1.6 && P.sneak && c.hide <= 0 && c.wave <= 0) { c.wave = 2; fx3(new THREE.Vector3(cx, H(cx, cz) + .6, cz), '♡', '#f9a8d4'); eggHit('coast_crab', '寄居蟹從殼裡探出頭，對你揮了揮鉗子。'); }
+      c.hide -= dt; c.wave -= dt; c.pause -= dt;
+      if (c.hide <= 0 && c.wave <= 0) { if (c.pause < -3 - (i % 3)) c.pause = 1 + (i % 2); if (c.pause <= 0) c.a += c.sp * dt / c.r; }
+      const yaw = Math.atan2(-Math.sin(c.a) * c.sp, Math.cos(c.a) * c.sp), hid = c.hide > 0, hop = c.wave > 0 ? Math.abs(Math.sin(c.wave * 9)) * .08 : 0;
+      NK.m.compose(NK.v.set(cx, H(cx, cz) - (hid ? .06 : 0) + hop, cz), NK.q.setFromEuler(NK.e.set(hid ? .25 : 0, c.wave > 0 ? Math.atan2(P.x - cx, P.z - cz) : yaw + Math.PI / 2 * Math.sign(c.sp), 0)), NK.s.set(1, 1, 1)); im.setMatrixAt(i, NK.m);
+    });
+    im.instanceMatrix.needsUpdate = true;
+  });
+}
+function nookBoat(M) {
+  const kt = nookKit(), [bx, bz] = nw('boat'), yaw = .6;
+  regEgg('coast_bottle', '瓶中信', '北邊沙灘上那艘擱淺的小船裡，好像有東西在反光。');
+  const SINK = .15, a = kt.at(bx, bz, -SINK, yaw), s = kt.at(bx, bz, 0, yaw), tilt = .55, hull = new THREE.SphereGeometry(1, 18, 8, 0, PI2, Math.PI / 2, Math.PI / 2);
+  // 船身側躺、半埋在沙裡（外殼褪色的藍、白色腰線、內側木板、斷掉的桅杆與破帆）；a＝船身的座標（往下埋一點）、s＝旁邊沙地上的東西
+  a(M.flat, new THREE.CylinderGeometry(.045, .06, 1.5, 6), '#7a5a3c', 0, .75, .1, tilt, 0, 0); a(M.flat, new THREE.BoxGeometry(1.05, .85, .02), '#f1ede4', .55, .92, .2, tilt + .25, 0, .12); a(M.flat, new THREE.BoxGeometry(1.06, .14, .025), '#e5484d', .55, 1.1, .29, tilt + .25, 0, .12);
+  a(M.soft, hull, '#5b84a0', 0, .6, 0, tilt, 0, 0, 2.1, .62, .82); a(M.flat, new THREE.TorusGeometry(1, .05, 5, 36), '#f1f5f9', 0, .6, 0, Math.PI / 2 + tilt, 0, 0, 2.1, .82, 1);
+  a(M.flat, new THREE.SphereGeometry(.97, 16, 7, 0, PI2, Math.PI / 2, Math.PI / 2), '#8b6544', 0, .6, 0, tilt, 0, 0, -2.04, .58, .78); // 內側：鏡像
+  [[-.5, 1.1], [.7, .9]].forEach(([px, w]) => a(M.flat, new THREE.BoxGeometry(.24, .06, w * 1.3), '#a07850', px, .55, -.08, tilt));
+  s(M.flat, new THREE.BoxGeometry(.9, .05, .18), '#7a5a3c', 1.9, .03, 1.2, 0, .7, .06); // 斷掉的木板
+  s(M.flat, new THREE.CylinderGeometry(.035, .035, 2, 6), '#a07850', -.6, .04, 1.5, 0, .2, Math.PI / 2); s(M.flat, new THREE.BoxGeometry(.5, .03, .18), '#a07850', -1.65, .04, 1.7, 0, .2, 0); // 船槳
+  s(M.flat, new THREE.TorusGeometry(.22, .05, 6, 16), '#d6c7a5', 1.2, .04, -1.3, Math.PI / 2); s(M.flat, new THREE.TorusGeometry(.15, .045, 6, 14), '#d6c7a5', 1.2, .11, -1.3, Math.PI / 2); // 一捲繩子
+  s(M.flat, new THREE.BoxGeometry(.5, .4, .45), '#9a7652', -1.7, .17, -1.1, 0, .4, 0); s(M.flat, new THREE.BoxGeometry(.52, .04, .47), '#7a5a3c', -1.7, .38, -1.1, 0, .4, 0);
+  // 船頭（船身最高的一端）停著一隻海鷗
+  { const gx = 1.85, gy = .82, gz = 0; a(M.soft, new THREE.SphereGeometry(.15, 10, 8), '#f8fafc', gx, gy, gz, 0, 0, 0, 1.4, .9, 1); a(M.soft, new THREE.SphereGeometry(.09, 10, 8), '#f8fafc', gx + .17, gy + .12, gz); a(M.flat, new THREE.ConeGeometry(.025, .1, 5), '#f59e0b', gx + .29, gy + .11, gz, 0, 0, -Math.PI / 2); a(M.flat, new THREE.BoxGeometry(.26, .03, .1), '#94a3b8', gx - .05, gy + .06, gz + .11, .3); a(M.flat, new THREE.BoxGeometry(.26, .03, .1), '#94a3b8', gx - .05, gy + .06, gz - .11, -.3); [-1, 1].forEach(k => a(M.soft, new THREE.SphereGeometry(.012, 5, 4), '#111827', gx + .23, gy + .15, gz + k * .05)); }
+  // 瓶子（綠玻璃、軟木塞、裡面捲著一張紙）躺在船底最低的地方
+  const BX = -.35, BY = .19, BZ = -.27, bp = new THREE.Vector3(BX, BY, BZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).add(new THREE.Vector3(bx, H(bx, bz) - SINK, bz)), br = -Math.PI / 2 + .15;
+  a(M.soft, new THREE.CylinderGeometry(.06, .06, .2, 10), '#34d399', BX, BY, BZ, 0, 0, br); a(M.soft, new THREE.CylinderGeometry(.025, .035, .08, 8), '#34d399', BX + .14, BY + .02, BZ, 0, 0, br); a(M.flat, new THREE.CylinderGeometry(.026, .026, .04, 6), '#a16207', BX + .19, BY + .03, BZ, 0, 0, br); a(M.flat, new THREE.CylinderGeometry(.03, .03, .13, 6), '#fef3c7', BX, BY, BZ, 0, 0, br);
+  kt.done(130);
+  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex(), color: '#ecfeff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 })); glint.position.copy(bp).add(new THREE.Vector3(0, .08, 0)); chunkObj(glint, 45, false, [bp.x, bp.z, 1]);
+  addCol({ x: bx, z: bz, r: 1.5 });
+  const hb = hitBox(.6, .5, .6, bp.x, bp.y, bp.z); W.scene.add(hb);
+  addInter(hb, 'nook', 'coast_bottle', '撿起瓶子看看', { act() { toast('瓶中信：「撿到這封信的人：月光谷的史萊姆捏起來，是全世界最療癒的聲音。——一個路過的水手」'); foundEgg('coast_bottle'); } });
+  nkReg(bp.x, bp.z, 45, (dt, t) => { const k = (t % 4.5) / 4.5, f = Math.max(0, Math.sin(k * Math.PI * 6)) * (k < .33 ? 1 : 0); glint.material.opacity = f * .9; glint.scale.setScalar(.25 + f * .45); });
+}
+function nookArch(M) {
+  const kt = nookKit(), [cx, cz] = nw('arch'), rd = seeded(97), top = Math.max(H(cx - 3.8, cz), H(cx + 3.8, cz)) + 5;
+  regEgg('coast_arch', '岩拱裡的夕陽', '黃昏時，走到南邊海岸那座岩拱底下看看海。');
+  const sand = ['#b8a68f', '#a39077', '#c2b29b', '#ad9a80'];
+  // 兩根岩柱（一根踩在沙灘、一根站在淺海裡，從海底一路疊上來）＋拱頂；水線一圈綠色海藻，頂上停著兩隻海鷗
+  [-1, 1].forEach(s => { const lx = cx + s * 3.8, gy = H(lx, cz); for (let i = 0, y = gy + .5; y < top; i++, y += 1.2) { const sz = 1.6 - Math.min(i, 4) * .08; kt.add(M.flat, rk(200 + i + (s > 0 ? 10 : 0)), sand[(i + (s > 0 ? 1 : 0)) % 4], M4(lx + (rd() - .5) * .3, y, cz + (rd() - .5) * .3, rd(), rd() * 6, rd(), sz, sz * .95, sz * 1.1)); }
+    kt.add(M.flat, new THREE.TorusGeometry(1.45, .22, 5, 14), '#3f6b3a', M4(lx, Math.max(gy, -.9 * K) + .25, cz, Math.PI / 2)); addCol({ x: lx, z: cz, r: 1.5 }); });
+  for (let i = 0; i <= 8; i++) { const a = .2 + i / 8 * (Math.PI - .4), x = cx - Math.cos(a) * 3.8, y = top - .4 + Math.sin(a) * 2.4; kt.add(M.flat, rk(230 + i), sand[i % 4], M4(x, y, cz + (rd() - .5) * .25, rd(), rd() * 6, rd(), 1.25 + rd() * .25, 1 + rd() * .2, 1.35)); }
+  [[-1.2, .3], [.9, -.2]].forEach(([px, pz]) => { const x = cx + px, y = top + 3.15; kt.add(M.soft, new THREE.SphereGeometry(.15, 10, 8), '#f8fafc', M4(x, y, cz + pz, 0, 0, 0, 1.4, .9, 1)); kt.add(M.soft, new THREE.SphereGeometry(.09, 10, 8), '#f8fafc', M4(x + .17, y + .12, cz + pz)); kt.add(M.flat, new THREE.ConeGeometry(.025, .1, 5), '#f59e0b', M4(x + .29, y + .11, cz + pz, 0, 0, -Math.PI / 2)); kt.add(M.flat, new THREE.BoxGeometry(.26, .03, .1), '#94a3b8', M4(x - .05, y + .06, cz + pz + .1, .3)); });
+  for (let i = 0; i < 7; i++) { const x = cx + rnd(-6, 6), z = cz + rnd(-5, 5), s = .3 + rd() * .6; if (Math.abs(x - cx) < 2.6 && Math.abs(z - cz) < 2) continue; kt.add(M.flat, rk(250 + i), sand[i % 4], M4(x, H(x, z) + s * .1, z, rd(), rd() * 6, 0, s * 1.2, s * .7, s)); }
+  kt.done(240);
+  nkReg(cx, cz, 10, () => { if (Math.abs(P.x - cx) < 2.6 && Math.abs(P.z - cz) < 2 && DN.dusk > .05) eggHit('coast_arch', '從岩拱望出去，整片海都被夕陽染成了橘色。'); });
+}
+function nookConch(M) {
+  const kt = nookKit(), [x, z] = nw('conch'), a = kt.at(x, z, 0, -.5, undefined, 1.7); // 整組放大 1.7 倍：從小徑上一眼就看得到
+  regEgg('coast_conch', '會唱歌的大海螺', '海岸小徑旁有一個大海螺，多吹幾次會怎樣呢？');
+  a(M.flat, rk(260), '#8b918a', 0, .12, 0, 0, .3, 0, 1, .38, .8);
+  // 大海螺：螺身＋尖塔＋幾圈螺紋＋粉紅色的開口
+  a(M.soft, new THREE.SphereGeometry(.22, 14, 10), '#f5e6c8', 0, .55, 0, 0, 0, 0, 1.5, 1, 1); a(M.soft, new THREE.ConeGeometry(.17, .38, 12), '#ead6b5', -.42, .58, 0, 0, 0, Math.PI / 2);
+  [-.18, -.3, -.42].forEach((px, i) => a(M.flat, new THREE.TorusGeometry(.17 - i * .04, .018, 5, 14), '#d6b98c', px, .57, 0, 0, Math.PI / 2, 0));
+  a(M.soft, new THREE.CylinderGeometry(.2, .07, .24, 14, 1, true), '#fbcfe8', .3, .55, 0, 0, 0, -Math.PI / 2 + .2); a(M.soft, new THREE.SphereGeometry(.12, 10, 8), '#f9a8d4', .2, .54, .05, 0, 0, 0, 1, .8, .6);
+  kt.done(90); addCol({ x, z, r: 1.3 });
+  const st = { n: 0, last: -9 }, MEL = [523.25, 659.25, 783.99, 1046.5], hb = hitBox(2, 1.3, 1.6, x, H(x, z) + .9, z); W.scene.add(hb);
+  addInter(hb, 'nook', 'coast_conch', '吹吹大海螺', { act() {
+    const t = W.t; st.n = t - st.last < 6 ? st.n + 1 : 1; st.last = t; nkSfx.conch(st.n - 1); fx3(new THREE.Vector3(x, H(x, z) + 1.8, z), st.n >= 3 ? '♪♫♪' : '嗚——', '#a5f3fc');
+    if (st.n >= 3) { st.n = 0; MEL.forEach((f, i) => setTimeout(() => nkSfx.bell(f, .8), 350 + i * 180)); setTimeout(() => eggHit('coast_conch', '大海螺唱出了一小段旋律，像是海浪在哼歌。'), 1100); }
+  } });
+}
+/* ---------- 火山：溫泉（溫泉蛋）、黑曜石尖柱林（鏡子裡的倒影）、冷卻的熔岩管（回音） ---------- */
+function nookSpring(M) {
+  const kt = nookKit(), p = NOOK_DIG[4], [cx, cz] = kk([p.x, p.z]), wy = p.w * K, rf = a => nookR(p, a) * K, rd = seeded(101);
+  regEgg('volcano_onsen', '泡溫泉', '火山西邊有個冒著熱氣的池子，走進去泡一下吧。');
+  regEgg('volcano_tamago', '溫泉蛋', '溫泉旁吊著一個竹籃……放進去以後，要有耐心等一下下。');
+  kt.add(M.water, nookDisc(cx, wy, cz, a => rf(a) * 1.03, ['#1f9fc0', '#a6e6ef']), null); // 帶一點乳白的藍：在火山的橘色天光下才不會變成黃綠色
+  // 池邊的黑色玄武岩（水線上結了一圈黃色硫磺），一段竹籬笆
+  for (let i = 0; i < 16; i++) { const a = i / 16 * PI2 + rd() * .25, r = rf(a) * (1.05 + rd() * .12), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, s = .35 + rd() * .4, y = Math.max(H(x, z), wy); kt.add(M.flat, rk(300 + i), i % 3 ? '#3a3533' : '#4a4442', M4(x, y + s * .05, z, rd(), rd() * 6, rd() * .3, s * 1.3, s * .75, s)); if (i % 3 === 0) kt.add(M.flat, new THREE.SphereGeometry(s * .5, 7, 4, 0, PI2, 0, Math.PI / 2), '#e8c547', M4(x, y + s * .1, z, 0, 0, 0, 1.4, .22, 1.1)); }
+  { const a0 = 3.6; for (let i = 0; i < 9; i++) { const a = a0 + i * .09, r = rf(a) * 1.4, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; kt.add(M.flat, new THREE.CylinderGeometry(.05, .05, 1.3 + (i % 2) * .15, 6), '#a3b86c', M4(x, H(x, z) + .65, z)); }
+    const x0 = cx + Math.cos(a0) * rf(a0) * 1.4, z0 = cz + Math.sin(a0) * rf(a0) * 1.4, a1 = a0 + .72, x1 = cx + Math.cos(a1) * rf(a1) * 1.4, z1 = cz + Math.sin(a1) * rf(a1) * 1.4;
+    [.45, 1.05].forEach(h => kt.seg(M.flat, new THREE.Vector3(x0, H(x0, z0) + h, z0), new THREE.Vector3(x1, H(x1, z1) + h, z1), .03, '#8a9a58', 5)); }
+  // 竹架子吊著裝蛋的籃子（伸到水面上）
+  const ta = .9, tx = cx + Math.cos(ta) * rf(ta) * .95, tz = cz + Math.sin(ta) * rf(ta) * .95, ox = cx + Math.cos(ta) * rf(ta) * 1.35, oz = cz + Math.sin(ta) * rf(ta) * 1.35, oy = H(ox, oz);
+  kt.seg(M.flat, new THREE.Vector3(ox - .4, oy, oz + .3), new THREE.Vector3(ox, oy + 1.4, oz), .032, '#a3b86c', 6); kt.seg(M.flat, new THREE.Vector3(ox + .4, oy, oz - .3), new THREE.Vector3(ox, oy + 1.4, oz), .032, '#a3b86c', 6);
+  kt.seg(M.flat, new THREE.Vector3(ox, oy + 1.36, oz), new THREE.Vector3(tx, wy + .95, tz), .026, '#a3b86c', 6); kt.seg(M.flat, new THREE.Vector3(tx, wy + .95, tz), new THREE.Vector3(tx, wy + .2, tz), .006, '#e7e5e4', 4);
+  kt.add(M.flat, new THREE.CylinderGeometry(.2, .15, .2, 10, 1, true), '#c4935a', M4(tx, wy + .1, tz)); kt.add(M.flat, new THREE.TorusGeometry(.2, .02, 4, 12), '#a8743f', M4(tx, wy + .2, tz, Math.PI / 2));
+  [[.06, .03], [-.06, .04], [0, -.07]].forEach(([px, pz]) => kt.add(M.flat, new THREE.SphereGeometry(.055, 8, 6), '#fdf6e3', M4(tx + px, wy + .17, tz + pz, 0, 0, 0, 1, 1.25, 1)));
+  // 木桶與水勺、疊好的毛巾
+  { const a = 2.1, x = cx + Math.cos(a) * rf(a) * 1.3, z = cz + Math.sin(a) * rf(a) * 1.3, y = H(x, z); kt.add(M.flat, new THREE.CylinderGeometry(.22, .19, .3, 12), '#a07850', M4(x, y + .15, z)); kt.add(M.flat, new THREE.TorusGeometry(.215, .015, 4, 14), '#4b5563', M4(x, y + .25, z, Math.PI / 2)); kt.seg(M.flat, new THREE.Vector3(x - .1, y + .2, z), new THREE.Vector3(x + .35, y + .55, z + .1), .015, '#d6b98c', 4); kt.add(M.flat, new THREE.CylinderGeometry(.06, .05, .08, 8), '#d6b98c', M4(x - .12, y + .2, z));
+    kt.add(M.flat, new THREE.BoxGeometry(.4, .08, .28), '#fbcfe8', M4(x + .55, y + .05, z - .3, 0, .3, 0)); kt.add(M.flat, new THREE.BoxGeometry(.38, .07, .26), '#f8fafc', M4(x + .55, y + .13, z - .3, 0, .4, 0)); }
+  // 「♨ 溫泉」小木牌
+  // 立在池子靠小徑那一側、牌面朝外：走過來先看到牌子，池子在牌子後面。柱子與木板併進場景網格（柱子在板子背面），
+  // 字是貼在板子正面的一張貼圖（只有一個網格；六面不同材質的箱子會變成六次繪製）
+  { const a = .3, x = cx + Math.cos(a) * rf(a) * 1.55, z = cz + Math.sin(a) * rf(a) * 1.55, y = H(x, z), f = Math.atan2(Math.cos(a), Math.sin(a)), b = kt.at(x, z, 0, f);
+    b(M.flat, new THREE.CylinderGeometry(.05, .06, 1.4, 6), '#6b4d33', 0, .7, -.08); b(M.flat, new THREE.BoxGeometry(.8, .62, .05), '#7d5c3a', 0, 1.45, 0);
+    const tx2 = artTex(256, 200, (c, w, h) => { woodBoard(c, w, h); artText(c, '♨', w / 2, 108, 92, '#fb923c', w - 40); artText(c, '溫泉', w / 2, 172, 46, '#fef3c7', w - 40); });
+    const pm = new THREE.Mesh(new THREE.PlaneGeometry(.8, .62), new THREE.MeshStandardMaterial({ map: tx2, roughness: .85 })); pm.position.set(x + Math.sin(f) * .032, y + 1.45, z + Math.cos(f) * .032); pm.rotation.y = f; chunkObj(pm, 70, false, [x, z, 1]); addCol({ x, z, r: .15 }); }
+  kt.done(130);
+  // 泡在溫泉裡的熔岩史萊姆（頭上頂著一條小毛巾），與慢慢升起的熱氣
+  const ba = 4.6, bxp = cx + Math.cos(ba) * rf(ba) * .55, bzp = cz + Math.sin(ba) * rf(ba) * .55;
+  const bath = new THREE.Mesh(nookMerge([[toyGeo('#fb923c', true), null], [new THREE.BoxGeometry(.32, .06, .24), '#f8fafc', M4(0, .74, 0, 0, .3, .1)]], true), M.toy); bath.position.set(bxp, wy - .17, bzp); bath.rotation.y = Math.atan2(cx - bxp, cz - bzp) + .4; bath.scale.setScalar(.6); chunkObj(bath, 60, false, [bxp, bzp, 1]);
+  const NS = LOW ? 18 : 34, sg = new THREE.BufferGeometry(), sp = new Float32Array(NS * 3), sl = [...Array(NS)].map((_, i) => ({ a: rnd(0, PI2), r: rnd(0, 1) * 4.2, k: i / NS }));
+  sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  const steam = new THREE.Points(sg, new THREE.PointsMaterial({ size: 2.4, map: dotTex(), color: '#f1f5f9', transparent: true, opacity: .2, depthWrite: false })); steam.frustumCulled = false; chunkObj(steam, 90, false, [cx, cz, 6]);
+  const egg = { t0: -1 }, hb = hitBox(.6, .6, .6, tx, wy + .15, tz); W.scene.add(hb);
+  addInter(hb, 'nook', 'volcano_tamago', '把蛋放進竹籃', { act() {
+    if (egg.t0 < 0) { egg.t0 = W.t; toast('把蛋放進溫泉裡……要等一下下才會好。'); fx3(new THREE.Vector3(tx, wy + .9, tz), '咕嘟咕嘟', '#fde68a'); return; }
+    const left = Math.ceil(40 - (W.t - egg.t0)); if (left > 0) { toast(`還沒好，再等 ${left} 秒左右。`); return; }
+    egg.t0 = -1; sfx.pop(); fx3(new THREE.Vector3(tx, wy + .9, tz), '熟了！', '#fde68a'); if (!eggHit('volcano_tamago', '溫泉蛋煮好了！蛋白軟嫩、蛋黃濃稠，好香。')) toast('又煮好一顆溫泉蛋，熱呼呼的。');
+  } });
+  nkReg(cx, cz, 70, (dt, t, d) => {
+    for (let i = 0; i < NS; i++) { const o = sl[i]; o.k += dt * .16; if (o.k > 1) { o.k -= 1; o.a = rnd(0, PI2); o.r = Math.sqrt(Math.random()) * 4.2; } sp[i * 3] = cx + Math.cos(o.a) * o.r + Math.sin(o.k * 5 + i) * .4; sp[i * 3 + 1] = wy + .2 + o.k * 3.2; sp[i * 3 + 2] = cz + Math.sin(o.a) * o.r; }
+    sg.attributes.position.needsUpdate = true; steam.material.opacity = .14 + DN.night * .06;
+    bath.position.y = wy - .17 + Math.sin(t * 1.3) * .025;
+    if (d < rf(Math.atan2(P.z - cz, P.x - cx)) * .8) eggHit('volcano_onsen', '泡進溫泉裡……好暖和，連腳趾都放鬆了。');
+  });
+}
+function nookObsidian(M) {
+  const kt = nookKit(), [cx, cz] = nw('obsid'), rd = seeded(113), face = Math.atan2(4 * K - cx, -72 * K - cz); // 鏡面朝小徑來的方向
+  regEgg('volcano_mirror', '黑曜石裡的倒影', '火山東邊的黑曜石林裡，有一塊磨得像鏡子的石頭，站到它正前方照照看。');
+  // 尖柱：六角柱＋尖頂，高高低低、有的歪向一邊；柱腳長出會在夜裡發光的紫色晶簇
+  const spire = (x, z, r, h, tx, tz) => { const y = H(x, z) - .3, m = M4(x, y, z, tx, rd() * 6, tz); kt.add(M.obs, new THREE.CylinderGeometry(r * .92, r, h, 6).translate(0, h / 2, 0), rd() < .5 ? '#1c1626' : '#2a2140', m); kt.add(M.obs, new THREE.ConeGeometry(r * .92, r * 1.8, 6).translate(0, h + r * .9, 0), '#3b2d5c', m); };
+  for (let i = 0; i < (LOW ? 12 : 18); i++) { const a = i / (LOW ? 12 : 18) * PI2 + rd() * .35, r = 3.4 + rd() * 6.5, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; if (Math.abs(wrapA(Math.atan2(x - cx, z - cz) - face)) < .45 && r < 7) continue; spire(x, z, .3 + rd() * .45, 2 + rd() * 6.5, (rd() - .5) * .45, (rd() - .5) * .45); }
+  for (let i = 0; i < 9; i++) { const a = rd() * PI2, r = 2.5 + rd() * 7, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = H(x, z); for (let k = 0; k < 4; k++) kt.add(M.night, new THREE.OctahedronGeometry(.12 + rd() * .1, 0), k % 2 ? '#a855f7' : '#c084fc', M4(x + (rd() - .5) * .4, y + .12, z + (rd() - .5) * .4, rd(), rd(), rd(), .7, 1.8, .7)); }
+  for (let i = 0; i < 22; i++) { const a = rd() * PI2, r = rd() * 10, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; kt.add(M.obs, new THREE.TetrahedronGeometry(.1 + rd() * .12), '#1c1626', M4(x, H(x, z) + .04, z, rd() * 3, rd() * 3, 0)); }
+  // 鏡石：一塊寬大的黑曜石板，正面磨得發亮
+  const mx = cx, mz = cz, my = H(mx, mz) - .1, mm = M4(mx, my, mz, 0, face, 0);
+  kt.add(M.obs, jit(new THREE.BoxGeometry(1.9, 3, .55, 2, 3, 1), .06, 5).translate(0, 1.5, 0), '#120e1a', mm);
+  kt.add(M.obs, new THREE.BoxGeometry(1.5, 2.3, .02).translate(0, 1.65, .29), '#0b0911', mm);
+  kt.done(200); addCol({ x: mx, z: mz, r: 1 });
+  // 鏡子裡的「倒影」：一張害羞的史萊姆臉（站在正前方、面對它一下子才會慢慢浮現）
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(128, 150, 6, 128, 150, 120); gr.addColorStop(0, 'rgba(216,180,254,.55)'); gr.addColorStop(1, 'rgba(216,180,254,0)'); g.fillStyle = gr; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = 'rgba(233,213,255,.85)'; g.beginPath(); g.moveTo(40, 200); g.bezierCurveTo(36, 120, 80, 70, 128, 70); g.bezierCurveTo(176, 70, 220, 120, 216, 200); g.quadraticCurveTo(128, 226, 40, 200); g.fill();
+  g.fillStyle = '#2e1065'; [96, 160].forEach(x => { g.beginPath(); g.ellipse(x, 142, 10, 14, 0, 0, PI2); g.fill(); }); g.strokeStyle = '#2e1065'; g.lineWidth = 5; g.lineCap = 'round'; g.beginPath(); g.arc(128, 160, 16, .25 * Math.PI, .75 * Math.PI); g.stroke();
+  g.fillStyle = 'rgba(244,114,182,.6)'; [74, 182].forEach(x => { g.beginPath(); g.ellipse(x, 168, 15, 8, 0, 0, PI2); g.fill(); });
+  const ft = new THREE.CanvasTexture(c); ft.colorSpace = THREE.SRGBColorSpace;
+  const fm = new THREE.MeshBasicMaterial({ map: ft, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const fp = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3), fm); fp.position.set(mx + Math.sin(face) * .32, my + 1.7, mz + Math.cos(face) * .32); fp.rotation.y = face; chunkObj(fp, 40, false, [mx, mz, 1]);
+  let stare = 0;
+  nkReg(mx, mz, 30, (dt, t, d) => {
+    const nx = Math.sin(face), nz = Math.cos(face), ox = P.x - mx, oz = P.z - mz, front = (ox * nx + oz * nz) / (Math.hypot(ox, oz) || 1), look = (-Math.sin(P.yaw) * -ox - Math.cos(P.yaw) * -oz) / (Math.hypot(ox, oz) || 1);
+    stare = d < 4 && front > .55 && look > .85 ? stare + dt : Math.max(0, stare - dt * 2);
+    fm.opacity = smooth(.4, 1.6, stare) * (.75 + Math.sin(t * 2) * .1);
+    if (stare > 1.8) eggHit('volcano_mirror', '黑曜石映出來的……怎麼是一張害羞的史萊姆臉？');
+  });
+}
+function nookTube(M) {
+  const kt = nookKit(), [cx, cz] = nw('tube'), L = 11, R1 = 2.6, R0 = 2.05, y = H(cx, cz) + .3, rd = seeded(127);
+  regEgg('volcano_tube', '熔岩管的回音', '在冷卻的熔岩管裡跳一下，聽聽看。');
+  kt.add(M.flat, jit(new THREE.CylinderGeometry(R1, R1 * 1.08, L, 16, 4, true), .1, 9), '#4a3a34', M4(cx, y, cz, 0, 0, Math.PI / 2));
+  kt.add(M.flat, jit(new THREE.CylinderGeometry(R0, R0, L, 16, 4, true), .05, 11), '#5a463c', M4(cx, y, cz, 0, 0, Math.PI / 2, 1, 1, -1)); // 內壁
+  [-1, 1].forEach(s => { kt.add(M.flat, jit(new THREE.RingGeometry(R0, R1 * 1.08, 16, 1), .08, 13), '#6b5246', M4(cx + s * L / 2, y, cz, 0, s * Math.PI / 2, 0));
+    [.5, 2.2].forEach(a => kt.add(M.lamp, new THREE.TorusGeometry((R0 + R1) / 2, .04, 3, 8, .7), '#d9541e', M4(cx + s * (L / 2 + .07), y, cz, 0, s * Math.PI / 2, a))); }); // 洞口邊緣還在發紅的裂縫
+  // 洞口崩落的石塊、內壁一道道還帶著餘溫的裂縫、垂下來的熔岩鐘乳石、深處發光的晶簇
+  for (let i = 0; i < 10; i++) { const s = i % 2 ? 1 : -1, x = cx + s * (L / 2 + .4 + rd() * 1.6), z = cz + (rd() - .5) * 5, sz = .3 + rd() * .5; kt.add(M.flat, rk(330 + i), '#3f3a38', M4(x, H(x, z) + sz * .2, z, rd(), rd() * 6, 0, sz * 1.2, sz * .8, sz)); }
+  for (let i = 0; i < 7; i++) { const a = .5 + rd() * 2.1, x = cx - L / 2 + 1 + rd() * (L - 2); kt.add(M.lamp, new THREE.BoxGeometry(1.2 + rd() * 1.4, .035, .035), '#b4441a', M4(x, y + Math.sin(a) * (R0 - .03), cz + Math.cos(a) * (R0 - .03), a, 0, 0)); }
+  for (let i = 0; i < 6; i++) { const x = cx - L / 2 + 1.5 + i * 1.6, h = .15 + rd() * .2, dz = (rd() < .5 ? -1 : 1) * (.5 + rd() * .5); kt.add(M.flat, new THREE.ConeGeometry(.07, h, 5), '#3a2c28', M4(x, y + Math.sqrt(R0 * R0 - dz * dz) - h / 2 + .03, cz + dz, Math.PI, 0, 0)); }
+  const my = H(cx, cz); for (let k = 0; k < 6; k++) kt.add(M.lamp, new THREE.OctahedronGeometry(.1 + rd() * .08, 0), k % 2 ? '#fb923c' : '#fdba74', M4(cx + 1.2 + (rd() - .5) * .5, my + .12, cz - 1.25 + (rd() - .5) * .4, rd(), rd(), 0, .7, 1.8, .7));
+  kt.done(110);
+  const sl = new THREE.Mesh(toyGeo('#ff7a59', true), M.toy); sl.position.set(cx + .6, my + .02, cz - 1.15); sl.rotation.y = -.3; sl.scale.setScalar(.55); chunkObj(sl, 50, false, [cx, cz, 2]);
+  addCol({ box: [cx - L / 2, cz + 1.8, cx + L / 2, cz + R1 + .3] }); addCol({ box: [cx - L / 2, cz - R1 - .3, cx + L / 2, cz - 1.8] });
+  let zz = 0;
+  nkReg(cx, cz, 30, (dt, t, d) => {
+    const inside = Math.abs(P.x - cx) < L / 2 - .3 && Math.abs(P.z - cz) < 1.8;
+    if (inside && NK.jumped) { nkSfx.echo(); fx3(new THREE.Vector3(P.x, P.y + 2.2, P.z), '哈囉——囉——囉——', '#fdba74'); eggHit('volcano_tube', '熔岩管把你的聲音一路傳到了好遠好遠。'); }
+    if (d < 5 && (zz -= dt) < 0) { zz = 2.4; fx3(new THREE.Vector3(sl.position.x, my + .8, sl.position.z), 'Zzz', '#fdba74'); }
+    sl.scale.y = .55 * (1 + Math.sin(t * 1.5) * .05);
+  });
+}
+/* ---------- 雪原：冰湖釣客的營地（冰屋、雪人一家、冰下的魚）、冰柱瀑布（冰柱音階） ---------- */
+function nookLake(M) {
+  const kt = nookKit(), p = NOOK_DIG[5], [cx, cz] = kk([p.x, p.z]), iy = p.w * K + .03, rf = a => nookR(p, a) * K, rd = seeded(141);
+  regEgg('snow_fish', '冰下的魚', '在結冰的湖面上連跳幾下，冰底下好像有誰在看你。');
+  regEgg('snow_igloo', '冰屋裡的午睡', '冰湖邊有一間小冰屋，輕輕走進去看看。');
+  regEgg('snow_turn', '會轉頭的雪人', '冰湖邊的雪人一家，最小的那個好像會偷看人？背對它一下再回頭。');
+  // 冰面：中心偏藍、岸邊偏白，加上一塊塊被風吹出來的霜
+  const c0 = new THREE.Color('#5ea9d6'), c1 = new THREE.Color('#c2e3f4'), cw = new THREE.Color('#ffffff');
+  kt.add(M.ice, nookDisc(cx, iy, cz, a => rf(a) * 1.02, null, LOW ? 40 : 56, LOW ? 3 : 5, (x, z, r, c) => c.copy(c0).lerp(c1, smooth(.25, 1, r)).lerp(cw, smooth(.55, .8, fbm(x * .3, z * .3, 9)) * .45)), null);
+  for (let i = 0; i < 9; i++) { const a = rd() * PI2, r = rf(a) * (.2 + rd() * .7), x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; kt.add(M.soft, new THREE.SphereGeometry(.6 + rd() * .9, 10, 6), '#f8fafc', M4(x, iy - .02, z, 0, rd() * 6, 0, 1, .05, .6 + rd() * .5)); }
+  // 冰釣洞：深藍的水、一圈碎冰、小板凳、釣竿與釣線、裝著魚的水桶
+  const [hx, hz] = kk([-136.2, -43]);
+  kt.add(M.flat, new THREE.CircleGeometry(.5, 18).rotateX(-Math.PI / 2), '#12324f', M4(hx, iy + .012, hz));
+  for (let i = 0; i < 9; i++) { const a = i / 9 * PI2; kt.add(M.flat, rk(360 + i), '#dbeafe', M4(hx + Math.cos(a) * .62, iy + .04, hz + Math.sin(a) * .62, rd(), rd() * 6, 0, .18, .09, .14)); }
+  const st = kt.at(hx + .95, hz + .55, 0, -2.2, iy); st(M.flat, new THREE.CylinderGeometry(.2, .2, .05, 10), '#8b6544', 0, .42, 0); [0, 2.1, 4.2].forEach(a => st(M.flat, new THREE.CylinderGeometry(.025, .025, .42, 5), '#6b4d33', Math.cos(a) * .13, .2, Math.sin(a) * .13));
+  kt.seg(M.flat, new THREE.Vector3(hx + .9, iy + .5, hz + .45), new THREE.Vector3(hx + .1, iy + 1.35, hz + .05), .02, '#7c5a3a', 5, .012); kt.seg(M.flat, new THREE.Vector3(hx + .1, iy + 1.35, hz + .05), new THREE.Vector3(hx + .05, iy - .3, hz + .02), .004, '#e2e8f0', 3);
+  kt.add(M.flat, new THREE.CylinderGeometry(.16, .13, .28, 10), '#64748b', M4(hx + 1.05, iy + .14, hz - .45)); kt.add(M.flat, new THREE.ConeGeometry(.07, .14, 4), '#fb923c', M4(hx + 1.05, iy + .32, hz - .45, 0, 0, Math.PI, 1.2, 1, .4));
+  // 冰屋：雪磚一層層堆成圓頂（外面亮白、裡面點著燭光很暖），入口通道朝向湖面
+  const [ix, iz] = nw('igloo'), face = Math.atan2(cx - ix, cz - iz), gy = NOOK_DIG[7].w * K, a = kt.at(ix, iz, 0, face, gy), R = 2.7, GAP = .62; // GAP：門洞左右各留多少弧度
+  // 下面兩層在入口方向（區域 +z，SphereGeometry 的 φ＝π/2）留一個門洞；上面兩層是完整的圓頂
+  const band = (mat, r, t0, t1, col, mir, n = 3) => { const open = t1 > .8, g = new THREE.SphereGeometry(r, 20, n, open ? Math.PI / 2 + GAP : 0, open ? PI2 - GAP * 2 : PI2, t0, t1 - t0); a(mat, g, col, 0, -.05, 0, 0, 0, 0, mir ? -1 : 1, 1, 1); };
+  [[0, .38], [.38, .76], [.76, 1.15], [1.15, Math.PI / 2]].forEach(([t0, t1], i) => { band(M.soft, R, t0, t1, i % 2 ? '#e6edf5' : '#f8fafc'); band(M.warm, R - .12, t0, t1, '#cfdbe8', true, 2); }); // 外牆＋內壁（鏡像）
+  for (let i = 0; i < 3; i++) { const th = .38 * (i + 1), low = i === 2; a(M.flat, new THREE.TorusGeometry(R * Math.sin(th) + .01, .025, 3, 32, low ? PI2 - GAP * 2 : PI2), '#cbd5e1', 0, R * Math.cos(th) - .05, 0, Math.PI / 2, 0, low ? Math.PI / 2 + GAP : 0); }
+  const TW = 1.25, TL = 1.6, TZ = R - .8;
+  [-1, 1].forEach(s => { a(M.soft, new THREE.BoxGeometry(.3, .62, TL), '#f1f5f9', s * (TW + .15), .26, TZ + TL / 2); a(M.warm, new THREE.BoxGeometry(.05, .62, TL), '#cfdbe8', s * (TW - .02), .26, TZ + TL / 2); });
+  a(M.soft, new THREE.CylinderGeometry(TW + .3, TW + .3, TL, 14, 1, true, Math.PI / 2, Math.PI), '#f1f5f9', 0, .57, TZ + TL / 2, Math.PI / 2, 0, 0);
+  a(M.warm, new THREE.CylinderGeometry(TW, TW, TL, 14, 1, true, Math.PI / 2, Math.PI), '#cfdbe8', 0, .57, TZ + TL / 2, Math.PI / 2, 0, 0, -1, 1, 1);
+  // 屋裡：毛毯、蓋著小被子睡覺的冰晶史萊姆、蠟燭、馬克杯
+  a(M.warm, new THREE.CylinderGeometry(1.3, 1.3, .03, 18), '#c08457', 0, .02, -.2); a(M.warm, new THREE.BoxGeometry(.7, .14, .45), '#f9a8d4', -.25, .09, -.75);
+  a(M.warm, new THREE.CylinderGeometry(.05, .05, .2, 8), '#fef9c3', .7, .12, -.3); a(M.lamp, new THREE.ConeGeometry(.03, .09, 6), '#fbbf24', .7, .27, -.3);
+  a(M.warm, new THREE.CylinderGeometry(.06, .055, .11, 10), '#ef4444', .55, .07, .1); a(M.warm, new THREE.TorusGeometry(.035, .01, 4, 8), '#ef4444', .62, .08, .1);
+  // 營火、雪橇與提燈、從冰屋走到冰釣洞的腳印
+  const fpos = new THREE.Vector3(-3.3, 0, 1.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), face).add(new THREE.Vector3(ix, 0, iz)), fyy = H(fpos.x, fpos.z); addCol({ x: fpos.x, z: fpos.z, r: .55 });
+  for (let i = 0; i < 8; i++) { const b = i / 8 * PI2; kt.add(M.flat, rk(380 + i), '#6b7280', M4(fpos.x + Math.cos(b) * .5, fyy + .06, fpos.z + Math.sin(b) * .5, 0, b, 0, .16, .12, .14)); }
+  [0, 1, 2].forEach(i => kt.add(M.flat, new THREE.CylinderGeometry(.05, .05, .7, 6), '#6b4d33', M4(fpos.x, fyy + .1, fpos.z, 0, i * 1.05, Math.PI / 2 - .25)));
+  kt.add(M.lamp, new THREE.ConeGeometry(.2, .45, 7), '#f97316', M4(fpos.x, fyy + .32, fpos.z)); kt.add(M.lamp, new THREE.ConeGeometry(.11, .3, 6), '#fde047', M4(fpos.x + .03, fyy + .3, fpos.z));
+  const sd = new THREE.Vector3(3.1, 0, 1.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), face).add(new THREE.Vector3(ix, 0, iz)), s2 = kt.at(sd.x, sd.z, 0, face + 1.4); addCol({ x: sd.x, z: sd.z, r: .55 });
+  [-1, 1].forEach(s => { s2(M.flat, new THREE.BoxGeometry(1.4, .05, .05), '#991b1b', 0, .06, s * .3); s2(M.flat, new THREE.TorusGeometry(.14, .025, 4, 8, Math.PI / 2), '#991b1b', .7, .2, s * .3); });
+  [-.45, -.1, .25].forEach(px => s2(M.flat, new THREE.BoxGeometry(.24, .05, .72), '#b45309', px, .2, 0));
+  s2(M.flat, new THREE.BoxGeometry(.18, .22, .18), '#334155', -.3, .35, 0); s2(M.lamp, new THREE.BoxGeometry(.12, .14, .12), '#fde68a', -.3, .36, 0);
+  { const from = new THREE.Vector3(0, 0, TZ + TL + .3).applyAxisAngle(new THREE.Vector3(0, 1, 0), face).add(new THREE.Vector3(ix, 0, iz)), to = new THREE.Vector3(hx + .7, 0, hz + .6), n = 14, dir = Math.atan2(to.x - from.x, to.z - from.z);
+    for (let i = 0; i < n; i++) { const k = i / (n - 1), x = from.x + (to.x - from.x) * k + Math.cos(dir) * (i % 2 ? .13 : -.13), z = from.z + (to.z - from.z) * k - Math.sin(dir) * (i % 2 ? .13 : -.13); kt.add(M.flat, new THREE.SphereGeometry(.07, 6, 4), '#a9bfd4', M4(x, Math.max(H(x, z), iy) + .005, z, 0, dir, 0, 1, .12, 1.6)); } }
+  // 雪人一家：爸爸戴高帽、媽媽戴紅毛帽，最小的那個的頭另外做（會偷偷轉頭）
+  const [sx, sz] = nw('snowmen'), sf = Math.atan2(cx - sx, cz - sz), sy0 = NOOK_DIG[8].w * K;
+  const man = (ox, s, hat, scarf, head = true) => { const b = kt.at(sx + Math.cos(sf) * ox, sz - Math.sin(sf) * ox, 0, sf, sy0); b(M.soft, new THREE.SphereGeometry(.6 * s, 16, 12), '#f8fafc', 0, .5 * s, 0); b(M.soft, new THREE.SphereGeometry(.44 * s, 16, 12), '#f1f5f9', 0, 1.25 * s, 0); b(M.flat, new THREE.TorusGeometry(.33 * s, .07 * s, 6, 16), scarf, 0, 1.55 * s, 0, Math.PI / 2); b(M.flat, new THREE.BoxGeometry(.13 * s, .4 * s, .05 * s), scarf, .16 * s, 1.36 * s, .3 * s, 0, 0, .2);
+    [0, 1, 2].forEach(i => b(M.flat, new THREE.SphereGeometry(.035 * s, 6, 5), '#111827', 0, (1.1 + i * .13) * s, (.43 - i * .02) * s)); [-1, 1].forEach(k => kt.seg(M.flat, new THREE.Vector3(sx + Math.cos(sf) * (ox + k * .4 * s), sy0 + 1.3 * s, sz - Math.sin(sf) * (ox + k * .4 * s)), new THREE.Vector3(sx + Math.cos(sf) * (ox + k * 1 * s), sy0 + 1.75 * s, sz - Math.sin(sf) * (ox + k * 1 * s)), .025, '#5b4030', 5));
+    if (!head) return; b(M.soft, new THREE.SphereGeometry(.32 * s, 16, 12), '#f8fafc', 0, 1.82 * s, 0); [-1, 1].forEach(k => b(M.flat, new THREE.SphereGeometry(.035 * s, 6, 5), '#111827', k * .1 * s, 1.9 * s, .28 * s)); b(M.flat, new THREE.ConeGeometry(.05 * s, .28 * s, 8), '#f97316', 0, 1.82 * s, .42 * s, Math.PI / 2);
+    if (hat === 'top') { b(M.flat, new THREE.CylinderGeometry(.21 * s, .23 * s, .34 * s, 14), '#1f2937', 0, 2.22 * s, 0); b(M.flat, new THREE.CylinderGeometry(.34 * s, .34 * s, .03 * s, 16), '#1f2937', 0, 2.07 * s, 0); b(M.flat, new THREE.CylinderGeometry(.235 * s, .235 * s, .06 * s, 14), '#b91c1c', 0, 2.12 * s, 0); }
+    else { b(M.soft, new THREE.SphereGeometry(.3 * s, 14, 6, 0, PI2, 0, Math.PI / 2), hat, 0, 1.98 * s, 0); b(M.soft, new THREE.SphereGeometry(.08 * s, 8, 6), '#ffffff', 0, 2.3 * s, 0); } };
+  man(-1.3, 1.15, 'top', '#2563eb'); man(0, 1, '#ef4444', '#16a34a'); man(1.1, .72, null, '#f59e0b', false);
+  kt.done(150);
+  // 小雪人的頭（藍色毛帽、紅臉頰），中心點在頭的正中央
+  const s = .72, hx2 = sx + Math.cos(sf) * 1.1, hz2 = sz - Math.sin(sf) * 1.1, hy2 = sy0 + 1.82 * s;
+  const head = new THREE.Mesh(nookMerge([[new THREE.SphereGeometry(.32 * s, 16, 12), '#f8fafc'], ...[-1, 1].flatMap(k => [[new THREE.SphereGeometry(.035 * s, 6, 5), '#111827', M4(k * .1 * s, .08 * s, .28 * s)], [new THREE.SphereGeometry(.05 * s, 6, 5), '#fda4af', M4(k * .19 * s, -.02 * s, .24 * s, 0, 0, 0, 1, .6, .5)]]), [new THREE.ConeGeometry(.05 * s, .28 * s, 8), '#f97316', M4(0, 0, .42 * s, Math.PI / 2)], [new THREE.SphereGeometry(.3 * s, 14, 6, 0, PI2, 0, Math.PI / 2), '#60a5fa', M4(0, .16 * s, 0)], [new THREE.TorusGeometry(.29 * s, .04 * s, 5, 16), '#93c5fd', M4(0, .17 * s, 0, Math.PI / 2)], [new THREE.SphereGeometry(.08 * s, 8, 6), '#ffffff', M4(0, .48 * s, 0)]], true), M.soft);
+  head.position.set(hx2, hy2, hz2); head.rotation.y = sf; head.castShadow = !LOW; chunkObj(head, 90, false, [hx2, hz2, 1]);
+  [[-1.3, .7], [0, .6], [1.1, .45]].forEach(([ox, r]) => addCol({ x: sx + Math.cos(sf) * ox, z: sz - Math.sin(sf) * ox, r }));
+  // 冰屋的牆：一圈碰撞圓，入口那一側留空；通道兩側也擋起來
+  for (let i = 0; i < 18; i++) { const b = i / 18 * PI2; if (Math.abs(wrapA(b)) < .5) continue; const lx = Math.sin(b) * (R - .1), lz = Math.cos(b) * (R - .1); addCol({ x: ix + lx * Math.cos(face) + lz * Math.sin(face), z: iz - lx * Math.sin(face) + lz * Math.cos(face), r: .4 }); }
+  [-1, 1].forEach(sg => [TZ + .3, TZ + TL - .2].forEach(lz => { const lx = sg * (TW + .2); addCol({ x: ix + lx * Math.cos(face) + lz * Math.sin(face), z: iz - lx * Math.sin(face) + lz * Math.cos(face), r: .3 }); }));
+  // 冰屋裡睡午覺的冰晶史萊姆
+  const nap = new THREE.Mesh(toyGeo('#bae6fd', true), M.toy), np = new THREE.Vector3(-.25, 0, -.95).applyAxisAngle(new THREE.Vector3(0, 1, 0), face);
+  nap.position.set(ix + np.x, gy + .05, iz + np.z); nap.rotation.y = face; nap.scale.setScalar(.6); chunkObj(nap, 50, false, [ix, iz, 3]);
+  // 冰下的魚：平常在湖裡繞大圈，連跳三下就會游過來圍著你
+  const fg = nookMerge([[new THREE.SphereGeometry(.13, 8, 5), '#1e3a5f', M4(0, 0, 0, 0, 0, 0, 1, .28, 2.4)], [new THREE.ConeGeometry(.12, .2, 3), '#1e3a5f', M4(0, 0, -.38, -Math.PI / 2, 0, 0, 1, .25, 1)]], true);
+  const fish = new THREE.InstancedMesh(fg, M.flat, 3); fish.instanceMatrix.setUsage(THREE.DynamicDrawUsage); fish.frustumCulled = false; chunkObj(fish, 70, false, [cx, cz, 12]);
+  const F = [0, 1, 2].map(i => ({ a: i * 2.1, r: 4 + i * 1.6, sp: .35 + i * .08 })), fy = p.w * K - .07, sm = { yaw: 0 }, jump = { n: 0, last: -9, come: 0 };
+  let zz = 0;
+  nkReg(cx, cz, 60, (dt, t, d) => {
+    const onIce = d < rf(Math.atan2(P.z - cz, P.x - cx)) * .92;
+    if (onIce && NK.jumped) { jump.n = t - jump.last < 6 ? jump.n + 1 : 1; jump.last = t; if (jump.n >= 3) { jump.come = 9; eggHit('snow_fish', '冰底下的魚群游了過來，隔著冰面好奇地看著你。'); } }
+    jump.come -= dt; const near = jump.come > 0 && onIce;
+    F.forEach((f, i) => {
+      f.a += f.sp * dt * (near ? 3 : 1) / (near ? 1 : f.r * .25); const ox = near ? P.x : cx, oz = near ? P.z : cz, rr = near ? .9 + i * .35 : f.r;
+      const x = ox + Math.cos(f.a) * rr, z = oz + Math.sin(f.a) * rr, yaw = Math.atan2(-Math.sin(f.a), Math.cos(f.a));
+      NK.m.compose(NK.v.set(x, fy, z), NK.q.setFromEuler(NK.e.set(0, yaw + Math.sin(t * 6 + i) * .15, 0)), NK.s.set(1, 1, 1)); fish.setMatrixAt(i, NK.m);
+    });
+    fish.instanceMatrix.needsUpdate = true;
+    // 冰屋：走進去就看得到在睡午覺的史萊姆
+    const dIg = Math.hypot(P.x - ix, P.z - iz); nap.scale.y = .6 * (1 + Math.sin(t * 1.4) * .05);
+    if (dIg < 1.9) eggHit('snow_igloo', '冰屋裡出乎意料地暖和，一隻冰晶史萊姆蓋著小被子，睡得正香。');
+    if (dIg < 4 && (zz -= dt) < 0) { zz = 2.3; fx3(new THREE.Vector3(nap.position.x, gy + .9, nap.position.z), 'Zzz', '#bae6fd'); }
+    // 小雪人：沒被盯著看的時候，偷偷把頭轉向你；被你看著就不動
+    const ds = Math.hypot(P.x - hx2, P.z - hz2), toP = wrapA(Math.atan2(P.x - hx2, P.z - hz2) - sf), vx = hx2 - P.x, vz = hz2 - P.z, look = (-Math.sin(P.yaw) * vx - Math.cos(P.yaw) * vz) / (Math.hypot(vx, vz) || 1);
+    if (look < .45) sm.yaw += clamp(wrapA((ds < 18 ? clamp(toP, -2.6, 2.6) : 0) - sm.yaw), -dt * 1.5, dt * 1.5);
+    head.rotation.y = sf + sm.yaw;
+    if (look > .9 && ds < 15 && Math.abs(wrapA(toP - sm.yaw)) < .35 && Math.abs(sm.yaw) > .9 && eggHit('snow_turn', '……剛剛那個小雪人，是不是轉頭看了你一眼？')) fx3(new THREE.Vector3(hx2, hy2 + .5, hz2), '？！', '#bae6fd');
+  });
+}
+function nookFalls(M) {
+  const kt = nookKit(), z0 = NOOK.falls[1] * K, rd = seeded(151);
+  regEgg('snow_icicle', '冰柱音階', '西邊懸崖結冰的瀑布下，有一排冰柱，每一根都敲敲看。');
+  // 冰瀑：沿著山坡往下的一片冰，中間鼓起幾道冰柱的紋路；頂端的岩唇垂著冰錐
+  { const NX = 24, NZ = 8, x0 = -171.4 * K, x1 = -160.6 * K, pos = [], col = [], cA = new THREE.Color('#dff3ff'), cB = new THREE.Color('#6fbbe6'), c = new THREE.Color();
+    const V = (i, j) => { const u = i / NX, v = j / NZ - .5, x = x0 + (x1 - x0) * u, w = (3 + 2 * u) * K, z = z0 + v * w, bul = (Math.cos(v * Math.PI) * .4 + Math.sin(j * 1.9 + i * .35) * .07) * (1 - Math.abs(v) * 1.7); c.copy(cA).lerp(cB, (j % 2) * .55 + .25 * Math.sin(i * .8 + j)); return [x, H(x, z) + .22 + bul, z, c.r, c.g, c.b]; };
+    for (let i = 0; i < NX; i++) for (let j = 0; j < NZ; j++) { const A = V(i, j), B = V(i, j + 1), C = V(i + 1, j), D = V(i + 1, j + 1); [A, B, C, C, B, D].forEach(q => { pos.push(q[0], q[1], q[2]); col.push(q[3], q[4], q[5]); }); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); kt.add(M.ice, g, null);
+    for (let i = 0; i < 12; i++) { const z = z0 + (rd() - .5) * 2.2 * K, x = x0 + .2, y = H(x, z), l = .5 + rd() * .9; kt.add(M.ice, new THREE.ConeGeometry(.08 + rd() * .06, l, 6), '#dff4ff', M4(x + .25, y - .1 - l / 2 + .3, z, Math.PI, 0, 0)); }
+    for (let i = 0; i < 7; i++) { const z = z0 + (i / 6 - .5) * 3.4 * K, x = x0 - .8, y = H(x, z); kt.add(M.flat, rk(400 + i), '#7f8c9e', M4(x, y, z, rd(), rd() * 6, 0, .9 + rd() * .5, .7, .9)); kt.add(M.soft, new THREE.SphereGeometry(.9, 10, 5, 0, PI2, 0, Math.PI / 2), '#f8fafc', M4(x, y + .35, z, 0, 0, 0, 1.1, .35, 1)); } }
+  // 瀑布下結冰的水潭
+  { const p = NOOK_DIG[6], [cx, cz] = kk([p.x, p.z]), rf = a => nookR(p, a) * K;
+    kt.add(M.ice, nookDisc(cx, p.w * K + .03, cz, a => rf(a) * 1.02, ['#5ea9d6', '#c8e6f5'], 32, 2), null);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * PI2 + rd() * .4, r = rf(a) * 1.15, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, s = .3 + rd() * .35; kt.add(M.flat, rk(420 + i), '#8492a6', M4(x, H(x, z), z, rd(), rd() * 6, 0, s * 1.2, s * .7, s)); kt.add(M.soft, new THREE.SphereGeometry(s, 8, 4, 0, PI2, 0, Math.PI / 2), '#f8fafc', M4(x, H(x, z) + s * .45, z, 0, 0, 0, 1.15, .4, 1.05)); } }
+  // 掛著冰柱的大岩石：上面一塊突出的石板，冰柱從石板邊緣垂下來（敲得到的高度）
+  const [bx, bz] = nw('icicle'), by = H(bx, bz), b = kt.at(bx, bz, 0, 0, by);
+  b(M.flat, rk(440), '#7f8c9e', -.6, 1.1, 0, .2, .5, 0, 1.5, 1.3, 1.5); b(M.flat, jit(new THREE.BoxGeometry(2.8, .38, 2.2, 3, 1, 3), .08, 3), '#8a97a8', .2, 2.45, 0); b(M.soft, new THREE.BoxGeometry(2.7, .1, 2.1), '#f8fafc', .2, 2.68, 0);
+  kt.done(200); addCol({ x: bx - .6, z: bz, r: 1.5 });
+  const IC = [1.05, .8, 1.25, .9, 1.15], NT = [523.25, 587.33, 659.25, 783.99, 880], ig = nookMerge([[new THREE.ConeGeometry(.1, 1, 7).rotateX(Math.PI).translate(0, -.5, 0), '#e0f7ff']], true);
+  const ice = new THREE.InstancedMesh(ig, M.ice, 5); ice.instanceMatrix.setUsage(THREE.DynamicDrawUsage); chunkObj(ice, 60, false, [bx, bz, 3]);
+  const top = by + 2.26, ex = bx + 1.45, wob = [0, 0, 0, 0, 0], tap = [-99, -99, -99, -99, -99];
+  const put = (i, t) => { NK.m.compose(NK.v.set(ex, top, bz + (i - 2) * .42), NK.q.setFromEuler(NK.e.set(Math.sin(t * 31 + i) * wob[i] * .12, 0, Math.sin(t * 27 + i) * wob[i] * .12)), NK.s.set(1, IC[i], 1)); ice.setMatrixAt(i, NK.m); ice.instanceMatrix.needsUpdate = true; };
+  IC.forEach((l, i) => { put(i, 0); const hb = hitBox(.32, l, .32, ex, top - l / 2, bz + (i - 2) * .42); W.scene.add(hb);
+    addInter(hb, 'nook', 'snow_icicle', '敲敲冰柱', { act() { const t = W.t; nkSfx.bell(NT[i]); wob[i] = 1; tap[i] = t; fx3(new THREE.Vector3(ex, top + .4, bz + (i - 2) * .42), '♪', '#bae6fd'); if (tap.every(v => t - v < 15)) { tap.fill(-99); NT.forEach((f, k) => setTimeout(() => nkSfx.bell(f, .7), 300 + k * 150)); setTimeout(() => eggHit('snow_icicle', '五根冰柱叮叮噹噹，連成了一段好聽的音階。'), 1100); } } }); });
+  nkReg(bx, bz, 30, (dt, t) => { for (let i = 0; i < 5; i++) if (wob[i] > 0) { wob[i] = Math.max(0, wob[i] - dt * 1.5); put(i, t); } });
+}
+/* ---------- 小徑沿途：每段路都有一兩個小東西可以看（信箱、史萊姆地藏、柴堆、漁網、警告牌、雪地提燈…）＋路邊的石頭 ---------- */
+// 沿著 PATH_LINES 第 li 條走 arc 公尺、往左（side=1）或右偏 off 公尺的位置，與面向小徑的角度
+function trailAt(li, arc, side, off) {
+  const pts = crPts(PATH_LINES[li], 10); let acc = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, az] = pts[i - 1], [bx, bz] = pts[i], d = Math.hypot(bx - ax, bz - az); if (acc + d < arc && i < pts.length - 1) { acc += d; continue; }
+    const k = clamp((arc - acc) / d, 0, 1), px = ax + (bx - ax) * k, pz = az + (bz - az) * k, nx = -(bz - az) / d * side, nz = (bx - ax) / d * side;
+    return { x: px + nx * off, z: pz + nz * off, face: Math.atan2(-nx, -nz) };
+  }
+  return null;
+}
+function buildTrails(M) {
+  // 每一區各自合併成一組網格（整張地圖只用一組的話，包圍盒太大，cullChunks 永遠剔除不掉）
+  const kits = {}, kitAt = (x, z) => { const k = Math.max(Math.abs(x), Math.abs(z)) / K < 42 ? 'plain' : domBiome(x, z); return kits[k] || (kits[k] = nookKit()); }, rd = seeded(171), band = (x, z) => { const r = Math.max(Math.abs(x), Math.abs(z)) / K; return r > 41 && r < 68.5; };
+  const free = (x, z, r) => { for (const c of colsNear(x, z)) { const d = c.box ? Math.hypot(x - clamp(x, c.box[0], c.box[2]), z - clamp(z, c.box[1], c.box[3])) : Math.hypot(x - c.x, z - c.z) - c.r; if (d < r) return false; } return !nookAvoid(x, z) && !band(x, z); };
+  const ITEM = {
+    mailbox(a) { a(M.flat, new THREE.BoxGeometry(.1, 1.1, .1), '#6b4d33', 0, .55, -.1); a(M.flat, new THREE.BoxGeometry(.34, .3, .5), '#dc2626', 0, 1.2, -.05); a(M.flat, new THREE.CylinderGeometry(.17, .17, .5, 10, 1, false, 0, Math.PI), '#dc2626', 0, 1.35, -.05, Math.PI / 2, 0, Math.PI / 2); a(M.flat, new THREE.BoxGeometry(.03, .22, .06), '#facc15', .19, 1.4, -.15); a(M.flat, new THREE.BoxGeometry(.03, .06, .14), '#facc15', .19, 1.5, -.08); a(M.flat, new THREE.BoxGeometry(.2, .12, .02), '#fef3c7', 0, 1.24, .21); return .4; },
+    pots(a) { [[-.35, 0, .3, '#f472b6'], [.1, .15, .24, '#fde047'], [.45, -.1, .28, '#a78bfa']].forEach(([x, z, r, c]) => { a(M.flat, new THREE.CylinderGeometry(r, r * .78, r * 1.1, 10), '#c2703d', x, r * .55, z); a(M.flat, new THREE.CylinderGeometry(r * .92, r * .92, .03, 10), '#5b4030', x, r * 1.1, z); for (let k = 0; k < 5; k++) a(M.soft, new THREE.SphereGeometry(.06, 6, 4), k % 2 ? c : '#ffffff', x + Math.cos(k * 1.26) * r * .45, r * 1.25, z + Math.sin(k * 1.26) * r * .45); }); return .7; },
+    jizo(a) { a(M.flat, rk(500), '#9ca3af', 0, .12, 0, 0, 0, 0, .5, .2, .45); a(M.soft, new THREE.SphereGeometry(.32, 14, 10), '#a8b0b8', 0, .55, 0, 0, 0, 0, 1, .82, .95); [-1, 1].forEach(s => a(M.soft, new THREE.SphereGeometry(.035, 8, 6), '#4b5563', s * .1, .63, .28)); a(M.flat, new THREE.CylinderGeometry(.27, .33, .16, 10, 1, true, -.9, 1.8), '#dc2626', 0, .44, .02); a(M.soft, new THREE.SphereGeometry(.07, 8, 6), '#6ee7a8', .3, .3, .25); a(M.flat, new THREE.CylinderGeometry(.08, .06, .05, 10), '#e7e5e4', .3, .25, .25); [-.32, .36].forEach(x => a(M.soft, new THREE.SphereGeometry(.05, 6, 4), '#fde047', x, .27, .18)); return .45; },
+    cairn(a) { let y = 0; [[.42, .14], [.34, .13], [.27, .12], [.2, .1], [.13, .09]].forEach(([r, h], i) => { a(M.flat, rk(510 + i), i % 2 ? '#8b918a' : '#a3a8a1', (i % 2 - .5) * .04, y + h / 2, 0, 0, i, 0, r, h * .8, r * .9); y += h; }); return .45; },
+    birdhouse(a) { a(M.flat, new THREE.BoxGeometry(.09, 1.7, .09), '#6b4d33', 0, .85, 0); a(M.flat, new THREE.BoxGeometry(.32, .32, .3), '#fde68a', 0, 1.85, 0); a(M.flat, new THREE.CylinderGeometry(.26, .26, .42, 3, 1), '#b45309', 0, 2.08, 0, Math.PI / 2, 0, 0, 1, 1, .62); a(M.flat, new THREE.CylinderGeometry(.06, .06, .02, 10), '#3f2a1c', 0, 1.88, .16, Math.PI / 2); a(M.soft, new THREE.SphereGeometry(.07, 8, 6), '#60a5fa', .12, 2.3, .05, 0, 0, 0, 1.3, 1, 1); a(M.flat, new THREE.ConeGeometry(.015, .05, 4), '#f59e0b', .21, 2.31, .05, 0, 0, -Math.PI / 2); return .3; },
+    woodpile(a) { for (let r = 0; r < 3; r++) for (let i = 0; i < 4 - r; i++) a(M.flat, new THREE.CylinderGeometry(.13, .13, 1.1, 8), r % 2 ? '#8b6544' : '#7a5a3c', (i - (3 - r) / 2) * .27, .13 + r * .23, 0, Math.PI / 2, 0, 0); for (let i = 0; i < 4 - 0; i++) a(M.flat, new THREE.CircleGeometry(.12, 8), '#d6b98c', (i - 1.5) * .27, .13, .56); a(M.flat, new THREE.CylinderGeometry(.25, .2, .3, 10), '#c4935a', .9, .15, .1); return .8; },
+    barrow(a) { a(M.flat, new THREE.BoxGeometry(.7, .28, .5), '#64748b', 0, .45, 0, 0, 0, .1); a(M.flat, new THREE.CylinderGeometry(.16, .16, .06, 12), '#1f2937', .45, .16, 0, Math.PI / 2); [-1, 1].forEach(s => a(M.flat, new THREE.BoxGeometry(.9, .04, .04), '#8b6544', -.35, .5, s * .2, 0, 0, .15)); [[-.1, 0], [.15, .08], [.05, -.12]].forEach(([x, z], i) => { a(M.soft, new THREE.SphereGeometry(.15, 10, 8), '#f97316', x, .7, z, 0, 0, 0, 1, .8, 1); a(M.flat, new THREE.CylinderGeometry(.015, .02, .08, 5), '#4d7c0f', x, .84, z); }); return .7; },
+    net(a) { [-1.1, 1.1].forEach(x => a(M.flat, new THREE.CylinderGeometry(.05, .06, 1.9, 6), '#8b6544', x, .95, 0)); a(M.flat, new THREE.CylinderGeometry(.03, .03, 2.3, 5), '#8b6544', 0, 1.82, 0, 0, 0, Math.PI / 2); for (let i = 0; i < 7; i++) a(M.flat, new THREE.BoxGeometry(.012, 1.1, .012), '#94a3b8', -.9 + i * .3, 1.25, .02, 0, 0, Math.sin(i) * .06); for (let i = 0; i < 4; i++) a(M.flat, new THREE.BoxGeometry(1.9, .012, .012), '#94a3b8', 0, .8 + i * .3, .02); [-.6, .4].forEach(x => a(M.soft, new THREE.SphereGeometry(.12, 10, 8), '#f97316', x, 1.62, .08)); return 1.2; },
+    crabpot(a) { [[0, 0], [.6, .1], [.3, .55]].forEach(([x, y], i) => { a(M.flat, new THREE.BoxGeometry(.55, .4, .5), i % 2 ? '#7c8a5a' : '#6b7a4d', x, .2 + y * .75, i === 2 ? .05 : 0); a(M.flat, new THREE.BoxGeometry(.58, .03, .53), '#4b5563', x, .41 + y * .75, i === 2 ? .05 : 0); }); a(M.soft, new THREE.SphereGeometry(.15, 10, 8), '#ef4444', -.55, .15, .25); a(M.soft, new THREE.SphereGeometry(.12, 10, 8), '#f8fafc', -.7, .12, -.15); return .7; },
+    warn(a) { a(M.flat, new THREE.BoxGeometry(.08, 1.3, .08), '#4b5563', 0, .65, -.08); a(M.flat, new THREE.CylinderGeometry(.46, .46, .05, 3), '#facc15', 0, 1.45, 0, Math.PI / 2, 0, 0); a(M.flat, new THREE.CylinderGeometry(.36, .36, .052, 3), '#1f2937', 0, 1.45, 0, Math.PI / 2, 0, 0); a(M.flat, new THREE.CylinderGeometry(.3, .3, .054, 3), '#facc15', 0, 1.45, 0, Math.PI / 2, 0, 0); a(M.flat, new THREE.BoxGeometry(.06, .2, .02), '#1f2937', 0, 1.49, .03); a(M.flat, new THREE.BoxGeometry(.06, .06, .02), '#1f2937', 0, 1.33, .03); return .3; },
+    cairnV(a) { let y = 0; [[.45, .2], [.36, .18], [.28, .16], [.2, .14]].forEach(([r, h], i) => { a(M.flat, new THREE.CylinderGeometry(r * .9, r, h, 6), i % 2 ? '#27272a' : '#3f3f46', 0, y + h / 2, 0, 0, i * .4, 0); y += h; }); a(M.lamp, new THREE.OctahedronGeometry(.08, 0), '#fb923c', 0, y + .06, 0); return .45; },
+    scarf(a) { [-1, 0, 1].forEach(i => a(M.flat, new THREE.CylinderGeometry(.06, .07, 1.1, 6), '#6b4d33', i * 1.1, .55, 0)); [.4, .85].forEach(y => a(M.flat, new THREE.BoxGeometry(2.3, .07, .05), '#8b6544', 0, y, 0)); [-1, 0, 1].forEach(i => a(M.soft, new THREE.SphereGeometry(.1, 8, 5, 0, PI2, 0, Math.PI / 2), '#f8fafc', i * 1.1, 1.1, 0, 0, 0, 0, 1, .6, 1)); a(M.flat, new THREE.TorusGeometry(.09, .04, 5, 10), '#ef4444', 1.1, .95, 0, Math.PI / 2); a(M.flat, new THREE.BoxGeometry(.1, .4, .03), '#ef4444', 1.18, .75, .06, 0, 0, .15); return 1.3; },
+    lantern(a) { a(M.flat, new THREE.BoxGeometry(.1, 1.9, .1), '#334155', 0, .95, 0); a(M.flat, new THREE.BoxGeometry(.5, .06, .06), '#334155', .2, 1.85, 0); a(M.flat, new THREE.BoxGeometry(.24, .3, .24), '#1f2937', .4, 1.58, 0); a(M.lamp, new THREE.BoxGeometry(.18, .22, .18), '#fde68a', .4, 1.58, 0); a(M.flat, new THREE.ConeGeometry(.2, .14, 4), '#1f2937', .4, 1.8, 0, 0, Math.PI / 4, 0); a(M.soft, new THREE.SphereGeometry(.12, 8, 4, 0, PI2, 0, Math.PI / 2), '#f8fafc', .4, 1.86, 0, 0, 0, 0, 1, .5, 1); return .3; },
+    snowslime(a) { a(M.soft, new THREE.SphereGeometry(.55, 16, 12), '#f8fafc', 0, .36, 0, 0, 0, 0, 1, .72, 1); [-1, 1].forEach(s => { a(M.soft, new THREE.SphereGeometry(.05, 8, 6), '#1f2937', s * .17, .45, .47); a(M.soft, new THREE.SphereGeometry(.06, 8, 5), '#fda4af', s * .3, .34, .43, 0, 0, 0, 1, .55, .35); }); a(M.flat, new THREE.ConeGeometry(.08, .22, 3), '#16a34a', .05, .8, 0, 0, 0, -.3, 1, 1, .4); a(M.flat, new THREE.ConeGeometry(.07, .2, 3), '#22c55e', -.08, .78, 0, 0, 0, .4, 1, 1, .4); return .6; },
+  };
+  const SPOTS = [[0, 12, 1, 4.2, 'mailbox'], [0, 25, -1, 4.4, 'pots'], [1, 14, -1, 4.2, 'jizo'], [1, 30, 1, 4.4, 'birdhouse'], [1, 44, -1, 4.2, 'cairn'], [3, 13, 1, 4.4, 'woodpile'], [3, 38, 1, 4.6, 'barrow'],
+    [0, 110, -1, 4.2, 'net'], [0, 130, 1, 4.4, 'crabpot'], [2, 22, 1, 3.8, 'warn'], [2, 40, -1, 4, 'cairnV'], [3, 102, 1, 4.2, 'scarf'], [3, 114, -1, 4.4, 'lantern'], [3, 128, 1, 4.6, 'snowslime']];
+  SPOTS.forEach(([li, arc, side, off, k]) => {
+    for (let tr = 0; tr < 5; tr++) { const s = trailAt(li, arc + tr * 3, side, off); if (!s || !free(s.x, s.z, 1.3)) continue; const r = ITEM[k](kitAt(s.x, s.z).at(s.x, s.z, -.02, s.face)); addCol({ x: s.x, z: s.z, r }); break; }
+  });
+  // 火山小徑：熱氣噴口旁插著一根烤得金黃的棉花糖
+  { const [vx, vz] = kk([2.7, -74.4]), x = vx + 1, z = vz + .6, y = H(x, z), kt = kitAt(x, z); kt.seg(M.flat, new THREE.Vector3(x, y, z), new THREE.Vector3(x - .5, y + .75, z - .25), .012, '#a16207', 4); kt.add(M.soft, new THREE.CylinderGeometry(.055, .055, .11, 10), '#f6d39b', M4(x - .52, y + .8, z - .26, 0, 0, .6)); }
+  // 史萊姆出沒注意（中央平地往海岸的路上）：菱形牌＋下面的字牌畫在同一張貼圖（透明處鏤空），只有一個網格；
+  // 柱子與背板放進小徑的合併網格、在牌面後面，牌面上什麼都不擋，字只在正面
+  { const s = [0, 3, 6, 9].map(o => trailAt(0, 38 + o, 1, 4.6)).find(q => q && free(q.x, q.z, 1.2));
+    if (s) { const y = H(s.x, s.z) - .02, b = kitAt(s.x, s.z).at(s.x, s.z, -.02, s.face);
+      const tx = artTex(256, 384, (c, w) => { c.fillStyle = '#facc15'; c.strokeStyle = '#1f2937'; c.lineWidth = 12; c.beginPath(); c.moveTo(128, 8); c.lineTo(248, 128); c.lineTo(128, 248); c.lineTo(8, 128); c.closePath(); c.fill(); c.stroke();
+        c.fillStyle = '#1f2937'; c.beginPath(); c.moveTo(78, 150); c.bezierCurveTo(74, 98, 102, 76, 128, 76); c.bezierCurveTo(154, 76, 182, 98, 178, 150); c.quadraticCurveTo(128, 162, 78, 150); c.fill();
+        c.fillStyle = '#facc15'; [110, 146].forEach(x => { c.beginPath(); c.arc(x, 118, 7, 0, PI2); c.fill(); }); artText(c, '小心', w / 2, 196, 34, '#1f2937', 120);
+        c.fillStyle = '#f8fafc'; c.fillRect(14, 290, w - 28, 88); c.strokeStyle = '#1f2937'; c.lineWidth = 8; c.strokeRect(18, 294, w - 36, 80); c.fillStyle = '#1f2937'; c.font = '800 42px "Noto Sans TC","Microsoft JhengHei",sans-serif'; c.textBaseline = 'middle'; c.fillText('史萊姆出沒', w / 2, 336, w - 64); });
+      b(M.flat, new THREE.CylinderGeometry(.04, .04, 2.2, 8), '#64748b', 0, 1.1, -.07); b(M.flat, new THREE.BoxGeometry(.62, .62, .02), '#94a3b8', 0, 1.92, 0, 0, 0, Math.PI / 4); b(M.flat, new THREE.BoxGeometry(.78, .3, .02), '#94a3b8', 0, 1.196, 0);
+      const pm = new THREE.Mesh(new THREE.PlaneGeometry(.9, 1.35), new THREE.MeshStandardMaterial({ map: tx, alphaTest: .5, roughness: .7 }));
+      pm.position.set(s.x + Math.sin(s.face) * .022, y + 1.695, s.z + Math.cos(s.face) * .022); pm.rotation.y = s.face; chunkObj(pm, 90, false, [s.x, s.z, 1]); addCol({ x: s.x, z: s.z, r: .15 }); } }
+  Object.values(kits).forEach(k => k.done(110));
+  // 路邊的小石頭：三五顆一組、隔一段留空（不是均勻灑），各區顏色不同
+  const edge = [], ec = { forest: ['#9ca3af', '#a8a29e'], coast: ['#e7dcc4', '#cbbf9f'], volcano: ['#3f3f46', '#27272a'], snow: ['#cbd5e1', '#e2e8f0'] };
+  PATH_LINES.forEach((l, li) => { const pts = crPts(l, 10); let acc = 0, run = 0, gap = 0;
+    for (let i = 1; i < pts.length; i++) { const [ax, az] = pts[i - 1], [bx, bz] = pts[i], d = Math.hypot(bx - ax, bz - az); acc += d; if (acc < 2.2) continue; acc = 0;
+      if (gap > 0) { gap--; continue; } if (++run > 3 + (i % 3)) { run = 0; gap = 2 + (i % 4); continue; }
+      [-1, 1].forEach(s => { if (rd() < .35) return; const nx = -(bz - az) / d * s, nz = (bx - ax) / d * s, o = 2.5 + rd() * .7, x = bx + nx * o, z = bz + nz * o; if (band(x, z) || Math.hypot(x, z) < 26 || nookAvoid(x, z)) return; const b = domBiome(x, z); edge.push({ x, y: H(x, z) - .04, z, s: .7 + rd() * .7, ry: rd() * 6, rx: rd() * .4, c: new THREE.Color(pick(ec[b])) }); }); } });
+  scatter(jit(new THREE.DodecahedronGeometry(.2, 0), .4, 33), fadeMat(new THREE.MeshStandardMaterial({ roughness: .9, flatShading: true }), LOW ? [32, 50] : [52, 78]), edge, false, { cell: LOW ? 64 : 44, far: (LOW ? 50 : 78) + 2 });
+}
+/* ---------- 地面細節與疏密節奏：成叢出現、叢與叢之間留空；四區各一種小物組合，靠近區域入口的地方混一點前一區的東西（交界不會一刀切） ---------- */
+function buildDetails(M) {
+  const rd = seeded(191), fG = LOW ? [32, 50] : [52, 78], sm = { cell: LOW ? 64 : 44, far: fG[1] + 2 };
+  // 每組只有幾十個面：平貼地面的小圓片（三葉草、落葉、海玻璃）比立體小球便宜很多，遠處本來就看不出差別
+  const dome = (r, c, x, z, sy, sz = 1) => [new THREE.SphereGeometry(r, 6, 2, 0, PI2, 0, Math.PI / 2), c, M4(x, -.02, z, 0, 0, 0, 1, sy, sz)], flat = (r, n, c, x, y, z, rz = 0) => [new THREE.CircleGeometry(r, n), c, M4(x, y, z, -Math.PI / 2, 0, rz)];
+  const C = {
+    forest: mergeParts([...[0, 1, 2].map(k => flat(.06, 5, '#4f9a45', Math.cos(k * 2.1) * .06, .02, Math.sin(k * 2.1) * .06, k)), [new THREE.CylinderGeometry(.015, .02, .08, 4, 1, true), '#f5efe6', M4(.22, .04, .05)], [new THREE.SphereGeometry(.05, 6, 2, 0, PI2, 0, Math.PI / 2), '#c98f5a', M4(.22, .08, .05)], [new THREE.CylinderGeometry(.012, .015, .05, 4, 1, true), '#f5efe6', M4(.28, .025, .1)], [new THREE.SphereGeometry(.035, 6, 2, 0, PI2, 0, Math.PI / 2), '#e5484d', M4(.28, .05, .1)], flat(.07, 4, '#d97706', -.2, .012, .15, .7), flat(.06, 4, '#eab308', -.12, .012, -.2, 2)]),
+    coast: mergeParts([...[0, 1, 2].map(k => [new THREE.PlaneGeometry(.035, .26 + k * .06), '#3f6b3a', M4(k * .04, .12, 0, 0, k * 1.2, (k - 1) * .3)]), [new THREE.OctahedronGeometry(.035, 0), '#5eead4', M4(.2, .02, .12)], [new THREE.OctahedronGeometry(.03, 0), '#fbbf24', M4(-.15, .02, .18)], dome(.05, '#fde7d6', .12, -.16, .5, 1.3), [new THREE.TetrahedronGeometry(.07), '#a8a29e', M4(-.2, .02, -.1, 1, 2, 0)]]),
+    volcano: mergeParts([dome(.28, '#57534e', 0, 0, .32, .8), ...[0, 1, 2].map(k => [new THREE.OctahedronGeometry(.05, 0), '#facc15', M4(.32 + k * .05, .04 + k * .02, .1 - k * .06, k, k, 0, .7, 1.6, .7)]), [new THREE.TetrahedronGeometry(.07), '#1c1917', M4(-.3, .03, .12, 1, 2, 0)], [new THREE.TetrahedronGeometry(.05), '#292524', M4(-.22, .02, -.2, 2, 1, 0)]]),
+    snow: mergeParts([dome(.35, '#f8fafc', 0, 0, .3, .75), ...[0, 1, 2, 3].map(k => [new THREE.ConeGeometry(.015, .3 + k * .04, 3, 1, true), k % 2 ? '#dbeafe' : '#c7d8e8', M4(.35 + Math.cos(k * 1.6) * .06, .14, .1 + Math.sin(k * 1.6) * .06, Math.cos(k) * .2, 0, Math.sin(k) * .2)]), [new THREE.OctahedronGeometry(.07, 0), '#bae6fd', M4(-.3, .05, .15, 0, 0, 0, .6, 1.5, .6)]]),
+    edgeS: mergeParts([...[0, 1, 2].map(k => [new THREE.ConeGeometry(.02, .3 + k * .05, 3, 1, true), '#5f9a4a', M4(Math.cos(k * 2.1) * .05, .15, Math.sin(k * 2.1) * .05, Math.cos(k) * .25, 0, Math.sin(k) * .25)]), dome(.12, '#f8fafc', .12, .05, .35, .8)]),
+    edgeV: mergeParts([...[0, 1, 2, 3].map(k => [new THREE.ConeGeometry(.018, .28 + k * .04, 3), k % 2 ? '#a3895a' : '#8d7650', M4(Math.cos(k * 1.6) * .05, .14, Math.sin(k * 1.6) * .05, Math.cos(k) * .3, 0, Math.sin(k) * .3)]), [new THREE.CylinderGeometry(.03, .04, .35, 5), '#1c1917', M4(.18, .1, -.05, 0, 0, 1.2)]]),
+  };
+  const L = { forest: [], coast: [], volcano: [], snow: [], edgeS: [], edgeV: [] }, N = LOW ? 150 : 330;
+  // 先決定「叢」的中心（彼此至少隔一段距離），每叢 3～6 個，留出空地
+  const cs = [];
+  for (let i = 0; i < N * 6 && cs.length < N; i++) {
+    const x = (rd() - .5) * 340 * K, z = (rd() - .5) * 340 * K, r = Math.max(Math.abs(x), Math.abs(z)) / K; if ((r > 41 && r < 66) || r > 165 || Math.hypot(x, z) < 26) continue;
+    if (cs.some(([px, pz]) => (px - x) ** 2 + (pz - z) ** 2 < 100)) continue; const h = H(x, z); if (h < -.3 || h > 22 * K) continue; cs.push([x, z]);
+  }
+  cs.forEach(([x0, z0]) => {
+    const b = domBiome(x0, z0), r = Math.max(Math.abs(x0), Math.abs(z0)) / K, n = 3 + Math.floor(rd() * 4);
+    // 區域入口附近（離山脊不遠）：雪原混著帶雪的綠草、火山混著乾枯的草，越往裡面越少
+    const edge = b === 'snow' && r < 82 && rd() < (82 - r) / 16 ? 'edgeS' : b === 'volcano' && r < 82 && rd() < (82 - r) / 16 ? 'edgeV' : b;
+    for (let k = 0; k < n; k++) {
+      const x = x0 + (rd() - .5) * 5, z = z0 + (rd() - .5) * 5, h = H(x, z); const rr = Math.max(Math.abs(x), Math.abs(z)) / K; if ((rr > 41.5 && rr < 68) || onPath(x, z) > .3 || nookAvoid(x, z) || h < -.35 || h > 22 * K) continue;
+      if (Math.abs(H(x + .7, z) - H(x - .7, z)) + Math.abs(H(x, z + .7) - H(x, z - .7)) > .9) continue;
+      L[edge].push({ x, y: h - .01, z, s: .8 + rd() * .6, ry: rd() * 6 });
+    }
+  });
+  const dm = fadeMat(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, side: THREE.DoubleSide }), fG);
+  Object.keys(L).forEach(k => scatter(C[k], dm, L[k], false, sm));
+}
+/* ---------- 建置與每幀更新 ---------- */
+function buildNooks() {
+  const M = nookMats();
+  nookPond(M); nookRing(M); nookPicnic(M); nookLog(M); nookRock(M);
+  regEgg('forest_star', '對流星許願', '晴朗的夜裡，在中央平地抬頭看天空久一點。');
+  nookTide(M); nookBoat(M); nookArch(M); nookConch(M);
+  nookSpring(M); nookObsidian(M); nookTube(M);
+  nookLake(M); nookFalls(M);
+  buildTrails(M); buildDetails(M);
+  W.anim.push(nookStep);
+}
+function nookStep(dt, t) {
+  if (!P || inCity()) return;
+  NK.jumped = P.vy > 4 && NK.vy <= 4; NK.vy = P.vy;
+  if (W.nk) W.nk.U.value = DN.night;
+  for (const n of NK.list) { const d = Math.hypot(n.x - P.x, n.z - P.z); if (d < n.r) n.fn(dt, t, d); }
+  starStep(dt);
 }
 
 /* ============================================================
@@ -3174,7 +3944,7 @@ function targetLabel(t) {
   if (t.type === 'station' && t.it.id.startsWith('info:')) return `${key}閱讀「${INFO[t.it.id.slice(5)].t}」的介紹`;
   if (t.type === 'station') { const h = held(); if (t.it.id === 'shelf' && h && h.t === 'prod') return `${key}把手上的${short(h.p.sp)}捏捏上架`; return `${key}使用${t.it.name}`; }
   if (t.type === 'gate') return `能量門 · 需解開「${GATES[t.it.id].title}」`;
-  if (t.type === 'puzzle') return `${key}${t.it.name}`;
+  if (t.type === 'puzzle' || t.type === 'nook') return `${key}${t.it.name}`; // nook：小場景裡可以互動的東西（樹洞、瓶子、冰柱…）
   return '';
 }
 /* ---------- 新手教學：畫面中央一步一步的提示（對準 → 捏 → 凝膠飛進手裡 → 手作台） ---------- */
@@ -3212,6 +3982,7 @@ function doActAt(t) {
   else if (t.type === 'avatar') giftGel(t.id);
   else if (t.type === 'npc') npcTalk(t.n);
   else if (t.type === 'puzzle') puzzleTap(t.it);
+  else if (t.type === 'nook') t.it.act(t.it);
   else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
 }
 
@@ -5326,6 +6097,7 @@ window.SlimeGame = {
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, tierOf, defPrice, demand, speedTxt, xpLevel, decoBonus,
   qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, pillarClues, pSp, pillarExtra, hintBlock, tideStepsHTML, cluesDone, mapImage, enter: ENTER,
+  eggs: eggList, // 月光谷的小秘密：[{ id, name, hint, found }]（手帳的探索日誌）
 };
 
 /* ---------- 啟動 ---------- */
