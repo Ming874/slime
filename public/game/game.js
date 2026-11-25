@@ -831,11 +831,13 @@ const PALETTE = {
   city: { main: '#8A96A8', sub: '#F2C14E', light: '#FFF1D0', mark: '鐘塔' },
   night: { main: '#26325C', sub: '#C7D2FE', light: '#B8C6FF', mark: '月亮' },
 };
+/* 地面色 pal：［低處, 稍高處, 高處（5～12 公尺）, 陡坡岩石, 山頂］；ht：［低處→稍高處的高度範圍, 山頂顏色的高度範圍］（世界座標公尺，buildTerrain 用）
+   第 4 堂：森林的山脊是暖灰褐的岩石＋綠色稜線（只有南方高山頂積雪）、海岸是砂岩與綠色山頂（不再是白色雪山）、火山是玄武岩與火山灰 */
 const ZONE3D = {
-  forest: { top: '#5ea7d6', fog: '#cfe6dc', sun: PALETTE.forest.light, hemiS: '#d8f0ff', hemiG: '#36405e', pal: ['#68ad69', '#4c8a52', '#5f7d58', '#707468', '#e2e8f0'] },
-  coast: { top: '#3f9fe0', fog: '#d4ecf8', sun: PALETTE.coast.light, hemiS: '#e0f4ff', hemiG: '#5a5870', pal: ['#e3d09a', '#79ad62', '#4f8a4f', '#8b9096', '#e2e8f0'] },
-  volcano: { top: '#2a0f12', fog: '#6b3324', sun: '#ffb27a', hemiS: '#ff9a6b', hemiG: '#140a08', pal: ['#3d2c27', '#2e221e', '#231a18', '#161112', '#4a332b'] },
-  snow: { top: '#7fa9d8', fog: '#e3edf7', sun: PALETTE.snow.light, hemiS: '#eef6ff', hemiG: '#8a96c0', pal: ['#f3f7fb', '#e5edf6', '#d7e3f0', '#7f8c9e', '#ffffff'] },
+  forest: { top: '#5ea7d6', fog: '#cfe6dc', sun: PALETTE.forest.light, hemiS: '#d8f0ff', hemiG: '#36405e', pal: ['#6fb56a', '#5a9f58', '#6b8c5a', '#8a8273', '#eef3f8'], ht: [.6, 3.5, 40, 54] },
+  coast: { top: '#3f9fe0', fog: '#d4ecf8', sun: PALETTE.coast.light, hemiS: '#e0f4ff', hemiG: '#5a5870', pal: ['#e4c68f', '#a8b86a', '#8fa862', '#c49368', '#79ad5e'], ht: [1.2, 2.6, 24, 36] },
+  volcano: { top: '#2a0f12', fog: '#6b3324', sun: '#ffb27a', hemiS: '#ff9a6b', hemiG: '#140a08', pal: ['#4b3c36', '#3e322e', '#332a28', '#2c2427', '#6a5a52'], ht: [.6, 3.5, 24, 40] },
+  snow: { top: '#7fa9d8', fog: '#e3edf7', sun: PALETTE.snow.light, hemiS: '#eef6ff', hemiG: '#8a96c0', pal: ['#f3f7fb', '#e7eef7', '#dbe6f2', '#7d8aa0', '#ffffff'], ht: [.6, 3.5, 14, 22] },
 };
 const BIOMES = ['forest', 'coast', 'volcano', 'snow'];
 const K = 1.6, CITY = { x: 4000, z: 0 }, kk = ([x, z]) => [x * K, z * K];
@@ -1047,19 +1049,25 @@ vec4 tBiome(vec2 p) { p /= ${K.toFixed(2)}; float c = smoothstep(44.0, 60.0, p.x
 vec3 tPerturb(vec3 sp, vec3 n, vec2 dh) { vec3 sx = dFdx(sp), sy = dFdy(sp), r1 = cross(sy, n), r2 = cross(n, sx); float det = dot(sx, r1); vec3 g = sign(det) * (dh.x * r1 + dh.y * r2); return normalize(abs(det) * n - g); }
 `;
 const WATER_Y = -.9 * K;
-/* 地表材質：
-   - 草地：多層草叢明暗、細碎凹凸
-   - 陡坡：沿高度的岩層紋理、裂縫與凹凸
-   - 小徑：泥土＋散落的小石子
-   - 海岸：沙紋、浪打濕的深色沙灘（較光亮）、水下的焦散光紋
-   - 雪原：會隨視角閃爍的冰晶；火山：在地面裂縫中隱隱發光的岩漿 */
+/* 地表材質（第 4 堂：各區地面的質感與交界）：
+   - 生態區權重、凹凸度（凹地／稜線）、岩層的起伏都在 buildTerrain 逐頂點算好（屬性 gw、gly），像素只做細節；
+     各區的細節只在該區權重 > 0 的地方計算（相鄰像素走同一個分支），比原本每個像素把四區全部算一遍省
+   - 草地：叢生的深色草、曬淡的黃綠斑塊、三葉草叢、緩坡的苔；森林裡一片片落葉堆（積在凹地，走近才看得到一片片葉子）、一小片一小片的野花
+   - 陡坡：岩層厚薄不一、隨地點起伏傾斜，每層顏色依區域不同（森林灰褐、海岸砂岩、火山玄武岩、雪原藍灰），
+     從層頂往下流的水痕打斷橫條紋，層頂一塊塊積著苔／沙／火山灰；雪原的岩壁大多被雪蓋住；草和岩石的交界不規則
+   - 小徑：邊緣不規則、中間踩得較淺，石子依區域不同（森林碎石、海岸碎貝殼、火山紅黑火山渣；雪地是踩實的雪與腳印）
+   - 海岸：一片片迎風緩、背風陡的沙紋，浪打濕的深色沙灘（只在海邊），來回的浪花線、漲潮線上的海草團與碎貝殼，水下的焦散光紋
+   - 火山：玄武岩地面、灰原與風吹的灰痕、鐵鏽色斑塊、從火山口放射狀流下的黑色舊熔岩流；火山錐上沿坡的溝紋與 9 道岩漿河（夜裡也看得到火山）；
+     火山口周圍與幾片熔岩原冷卻成一塊塊岩殼、縫隙透出一明一暗的岩漿光（小徑上沒有）
+   - 雪原：沿風向拉長的風紋、凹地偏藍、低窪平地偶爾一片光滑的冰面、會隨視角閃爍的冰晶
+   - LOW（沒有 T_HQ）：只留顏色（不做凹凸），省掉一片片的落葉、野花、岩殼（改成簡單的裂縫）、碎貝殼、浪花線、冰晶與焦散；岩漿河照樣有 */
 function terrainMat() {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 });
   if (!LOW) m.defines = { T_HQ: '' };
   m.onBeforeCompile = sh => {
     sh.uniforms.uPath = { value: PATH_TEX }; sh.uniforms.uTime = W.wind; sh.uniforms.uCvA = { value: CAVE_UA }; sh.uniforms.uCvB = { value: CAVE_UB }; sh.uniforms.uTnA = { value: TNL.A }; sh.uniforms.uTnB = { value: TNL.B };
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 dirt;\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt; vWP = position; vWN = normal;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nuniform vec4 uTnA;\nuniform vec4 uTnB;\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 dirt;\nattribute vec4 gw;\nattribute float gly;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt; vGW = gw; vLy = gly; vWP = position; vWN = normal;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nuniform vec4 uTnA;\nuniform vec4 uTnB;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
       .replace('#include <color_fragment>', `#include <color_fragment>
         // 山洞口：在洞口直段的斷面裡不畫地形（uCvA＝洞口地面中心＋直段長度、uCvB＝往洞裡的方向＋半寬＋高度；斷面形狀同 caves.js 的 caveProfile）
         for (int ci = 0; ci < 8; ci++) { vec4 ca = uCvA[ci]; if (ca.w <= 0.0) continue; vec4 cb = uCvB[ci]; vec2 cr = vWP.xz - ca.xz; float ct = dot(cr, cb.xy); if (ct < 0.0 || ct > ca.w) continue;
@@ -1068,69 +1076,204 @@ function terrainMat() {
         // 月光隧道的谷口：同一種挖法（斷面同 tubeGeo：直牆到 0.45、上面橢圓拱；uTnA＝洞口地面中心＋挖多深、uTnB＝往山裡的方向＋半寬＋高度）
         { vec2 tr = vWP.xz - uTnA.xz; float tt = dot(tr, uTnB.xy); if (tt >= 0.0 && tt <= uTnA.w) { float tl = abs(dot(tr, vec2(-uTnB.y, uTnB.x))), ty = (vWP.y - uTnA.y) / uTnB.w;
           if (ty > -0.03 && ty < 0.985) { float tf = ty < 0.45 ? 1.0 : sqrt(max(0.0, 1.0 - pow((ty - 0.45) / 0.55, 2.0))); if (tl < uTnB.z * tf) discard; } } }
-        vec2 wp = vWP.xz; float n1 = tN(wp * 0.85), n2 = tN(wp * 3.3), n3 = tN(wp * 0.11 + 7.0), n4 = tN(wp * 11.0);
-        float tDist = distance(vWP, cameraPosition), tNear = 1.0 - smoothstep(28.0, 70.0, tDist);
-        vec4 tB = tBiome(wp); float rockK = smoothstep(0.17, 0.42, 1.0 - clamp(normalize(vWN).y, 0.0, 1.0)), soil = 1.0 - rockK;
-        diffuseColor.rgb *= 0.87 + 0.15 * n1 + 0.07 * n2 + 0.05 * n4;
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.1, 1.05, 0.84), smoothstep(0.58, 0.8, n3) * 0.4);
-        // 草叢：較暗的叢生區與被曬淡的斑塊
-        float clump = tFbm(wp * 0.42), grassK = (tB.x + tB.y * 0.5) * soil * smoothstep(-0.5, 0.8, vWP.y);
-        diffuseColor.rgb *= mix(1.0, 0.84 + 0.3 * clump, grassK);
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.08, 0.8), smoothstep(0.62, 0.78, tN(wp * 0.23 + 3.0)) * grassK * 0.35);
-        float tHt = (n4 - 0.5) * 0.012 * soil + (n2 - 0.5) * 0.03 * soil + (clump - 0.5) * 0.08 * grassK;
-        // 岩壁：岩層＋裂縫（用兩個斜向平面取樣，避免垂直面上的雜訊被拉長）
-        float rn = tN(vec2(wp.x + wp.y, vWP.y * 1.4) * 0.8) * 0.5 + tN(vec2(wp.x - wp.y, vWP.y * 1.4) * 0.8 + 9.0) * 0.5;
-        float strata = sin(vWP.y * 2.3 + rn * 5.0 + tN(wp * 0.07) * 4.0);
-        float rf = tFbm(vec2(wp.x + wp.y, vWP.y * 1.2) * 1.7);
-        diffuseColor.rgb *= mix(1.0, 0.86 + 0.08 * strata + 0.14 * rn + 0.1 * rf, rockK);
-        float lyr = vWP.y / 1.8 + rn * 0.35, lyf = fract(lyr), lyi = floor(lyr);
-        float ledge = smoothstep(0.86, 0.97, lyf), under = 1.0 - smoothstep(0.0, 0.14, lyf), bandT = 0.9 + 0.14 * fract(sin(lyi * 12.9898) * 43758.5453);
-        diffuseColor.rgb *= mix(1.0, bandT * (1.0 + ledge * 0.2) * (1.0 - under * 0.3), rockK);
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.84, 0.87, 1.08), under * rockK);
-        tHt += rockK * (strata * 0.06 + (rn - 0.5) * 0.22 + (rf - 0.5) * 0.08);
-        // 小徑
-        float pm = texture2D(uPath, wp / ${MAP_SIZE.toFixed(2)} + 0.5).r;
-        float pe = smoothstep(0.05, 0.3, pm) * (1.0 - smoothstep(0.45, 0.8, pm)), pathK = smoothstep(0.22, 0.6, pm);
-        diffuseColor.rgb = mix(diffuseColor.rgb, vDirt * (0.82 + 0.2 * n2 + 0.1 * n4), pathK * 0.93);
-        diffuseColor.rgb *= 1.0 - pe * 0.14;
-        vec2 pc = floor(wp * 5.0), pf = fract(wp * 5.0) - 0.5 - (vec2(tH(pc + 3.1), tH(pc + 7.3)) - 0.5) * 0.45; float ph = tH(pc);
-        float peb = step(0.74, ph) * (1.0 - smoothstep(0.02, 0.19, length(pf * vec2(1.0, 1.3))));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.28, 0.25) * (0.75 + 0.6 * ph), peb * pathK * 0.85);
-        tHt += pathK * (peb * 0.035 - n2 * 0.02 - grassK * 0.0);
-        // 海岸：沙紋與潮濕沙灘
-        float beach = tB.y * soil * (1.0 - smoothstep(1.4, 2.8, vWP.y));
-        float rip = sin(dot(wp, vec2(0.8, 0.6)) * 4.4 + tN(wp * 0.35) * 6.0 + n2 * 1.5);
-        diffuseColor.rgb *= 1.0 + beach * rip * 0.035; tHt += beach * rip * 0.02;
-        float wet = tB.y * (1.0 - smoothstep(${(WATER_Y + .05).toFixed(2)}, ${(WATER_Y + .75).toFixed(2)}, vWP.y));
-        diffuseColor.rgb *= mix(1.0, 0.66, wet);
-        // 火山：地面裂縫透出岩漿光
-        // 兩層粗細不同、斷斷續續的岩漿裂縫，只出現在部分區域
-        float vk = tB.z * soil * smoothstep(0.45, 0.68, tN(wp * 0.06 + 11.0));
-        float emb = ((1.0 - smoothstep(0.0, 0.03, abs(tN(wp * 0.33 + 3.0) - 0.5))) * smoothstep(0.3, 0.55, tN(wp * 1.7 + 5.0))
-                  + (1.0 - smoothstep(0.0, 0.025, abs(tN(wp * 1.1 + 8.0) - 0.5))) * smoothstep(0.45, 0.7, tN(wp * 2.3 + 1.0)) * 0.7) * vk;
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.045, 0.04), emb * 0.85); tHt -= emb * 0.05;
-        vec3 tGlow = vec3(1.0, 0.32, 0.05) * emb * (0.5 + 0.4 * sin(uTime * 1.6 + wp.x * 0.3 + wp.y * 0.2));
-        // 雪原：柔和起伏
-        tHt += tB.w * soil * (tN(wp * 0.9) - 0.5) * 0.06;
+        vec2 wp = vWP.xz; float n1 = tN(wp * 0.85), n2 = tN(wp * 3.3), n3 = tN(wp * 0.11 + 7.0);
+        float tDist = distance(vWP, cameraPosition), tNear = 1.0 - smoothstep(28.0, 70.0, tDist), tMid = 1.0 - smoothstep(55.0, 110.0, tDist), tPx = length(fwidth(wp)); // tPx：這個像素涵蓋幾公尺（在分支外算，導數才可靠）
+        // 生態區權重與凹凸度來自頂點（交界沿山脊稜線彎曲，和頂點色一致；tCv：＋凹地、－稜線）
+        vec4 tB = vec4(max(0.0, 1.0 - vGW.x - vGW.y - vGW.z), vGW.xyz); float tCv = vGW.w;
+        vec2 cv2 = wp - vec2(0.0, ${(-130 * K).toFixed(1)}); float cvl = length(cv2), tCone = tB.z * (1.0 - smoothstep(50.0, 66.0, cvl)); // 火山錐（半徑約 57 公尺）
+        float tSl = 1.0 - clamp(normalize(vWN).y, 0.0, 1.0), rockK = smoothstep(0.17, 0.42, tSl + (n1 - 0.5) * 0.12), soil = 1.0 - rockK;
+        float tHt = (n2 - 0.5) * 0.03 * soil, wet = 0.0, tGloss = 0.0, n4 = 0.5; vec3 tGlow = vec3(0.0);
         #ifdef T_HQ
-          // 雪地冰晶閃光（隨相機移動而閃爍）
-          vec2 gc = floor(wp * 20.0); float gh = tH(gc), tw = fract(gh * 37.0 + dot(normalize(cameraPosition - vWP), vec3(9.1, 4.3, 7.7)));
-          tGlow += vec3(1.0, 0.98, 0.94) * tB.w * soil * step(0.965, gh) * smoothstep(0.82, 1.0, tw) * (1.0 - smoothstep(0.25, 0.4, length(fract(wp * 20.0) - 0.5))) * (1.0 - smoothstep(12.0, 40.0, tDist)) * 2.2;
-          // 淺水區的焦散光紋
-          float dep = ${WATER_Y.toFixed(2)} - vWP.y, ck = tB.y * smoothstep(0.05, 0.5, dep) * (1.0 - smoothstep(1.5, 5.0, dep));
-          vec2 cp = wp * 0.85; float ca = tN(cp + vec2(uTime * 0.33, uTime * 0.21)), cb = tN(cp * 1.37 - vec2(uTime * 0.27, uTime * 0.3) + 5.0);
-          tGlow += vec3(0.7, 1.0, 0.92) * pow(max(0.0, 1.0 - abs(ca - cb) * 2.2), 7.0) * ck * 0.45;
+          if (tNear > 0.0) { n4 = tN(wp * 11.0); tHt += (n4 - 0.5) * 0.012 * soil; } // 最細的顆粒只在近處（遠處只會閃爍）
         #endif
+        diffuseColor.rgb *= 0.9 + 0.13 * n1 + 0.06 * n2 + 0.05 * (n4 - 0.5) * tNear;
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.04, 0.86), smoothstep(0.58, 0.8, n3) * 0.35);
+        float pm = texture2D(uPath, wp / ${MAP_SIZE.toFixed(2)} + 0.5).r;
+        // 草地（森林與海岸的草坡：用頂點色的綠度判斷，沙、雪、岩石、火山灰都不會被當成草）
+        float grassK = smoothstep(0.025, 0.1, diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * soil;
+        if (grassK > 0.01) {
+          float clump = tFbm(wp * 0.42); vec3 tG = diffuseColor.rgb * (0.83 + 0.3 * clump);
+          tG = mix(tG, tG * vec3(1.15, 1.1, 0.72), smoothstep(0.62, 0.8, tN(wp * 0.23 + 3.0)) * 0.42); // 被曬淡的黃綠斑塊
+          tG = mix(tG, tG * vec3(0.8, 0.98, 1.02), smoothstep(0.64, 0.82, tN(wp * 0.37 + 21.0)) * 0.32); // 偏藍綠的三葉草叢
+          tG = mix(tG, vec3(0.05, 0.15, 0.025) * (0.8 + 0.5 * n2), tB.x * smoothstep(0.06, 0.2, tSl) * smoothstep(0.45, 0.7, n3) * 0.55); // 森林緩坡的苔
+          // 落葉：森林裡一片片暖褐色的落葉堆；走近（約 15 公尺內）才看得到一片片葉子（橘、黃、紅，方向與大小都不同）
+          float lp = tB.x > 0.3 ? smoothstep(0.64, 0.8, tN(wp * 0.11 + 50.0) + max(tCv, 0.0) * 0.25 - max(-tCv, 0.0) * 0.2) * tB.x : 0.0; // 落葉積在凹地、稜線上被風吹走
+          if (lp > 0.0) {
+            tG = mix(tG, vec3(0.3, 0.16, 0.05) * (0.8 + 0.4 * n2), lp * 0.4);
+            #ifdef T_HQ
+              float lnear = 1.0 - smoothstep(9.0, 16.0, tDist);
+              if (lnear > 0.0) {
+                vec2 lc = floor(wp * 2.6); float lh = tH(lc + 2.3), la = lh * 6.2832, ls = 0.75 + 0.45 * tH(lc + 13.7); vec2 lf = fract(wp * 2.6) - 0.5 - (vec2(tH(lc + 5.1), tH(lc + 8.9)) - 0.5) * 0.5;
+                vec2 lq = vec2(cos(la) * lf.x + sin(la) * lf.y, cos(la) * lf.y - sin(la) * lf.x); float ld = length(lq * vec2(1.0, 2.1)) / ls, lfw = tPx * 4.0 / ls + 0.004; // 邊緣依螢幕上的大小柔化（不會一格格的鋸齒）
+                float leaf = step(1.0 - 0.85 * lp, tH(lc + 11.0)) * (1.0 - smoothstep(0.17 - lfw, 0.17 + lfw, ld)) * lnear;
+                vec3 lcol = mix(vec3(0.5, 0.2, 0.04), vec3(0.55, 0.36, 0.06), fract(lh * 7.0)); lcol = mix(lcol, vec3(0.34, 0.07, 0.03), step(0.75, fract(lh * 13.0)));
+                tG = mix(tG, lcol * (0.8 + 0.3 * n2), leaf); tHt += leaf * 0.02;
+              }
+            #endif
+          }
+          #ifdef T_HQ
+            // 野花：草地上一小片一小片的白（黃花心）、淡黃、粉紅、淡紫小花，約 20 公尺內才畫；落葉堆、陡坡、小徑上沒有
+            float fz = smoothstep(0.62, 0.74, tN(wp * 0.08 + 60.0)) * (1.0 - lp) * (1.0 - smoothstep(14.0, 20.0, tDist)) * (1.0 - smoothstep(0.08, 0.2, tSl)) * (1.0 - smoothstep(0.1, 0.4, pm));
+            if (fz > 0.0) {
+              vec2 fc = floor(wp * 3.4); float fh = tH(fc + 19.1); vec2 ff = fract(wp * 3.4) - 0.5 - (vec2(tH(fc + 3.7), tH(fc + 6.1)) - 0.5) * 0.55;
+              float fd = length(ff), ffw = tPx * 5.0 + 0.004, fl = step(1.0 - 0.38 * fz, tH(fc + 27.3)) * (1.0 - smoothstep(0.13 - ffw, 0.13 + ffw, fd));
+              vec3 fcol = fh < 0.45 ? vec3(0.96, 0.95, 0.9) : fh < 0.7 ? vec3(0.98, 0.86, 0.42) : fh < 0.88 ? vec3(0.97, 0.7, 0.78) : vec3(0.78, 0.7, 0.95);
+              fcol = mix(fcol, vec3(1.0, 0.8, 0.25), (1.0 - smoothstep(0.035, 0.05, fd)) * step(fh, 0.45));
+              tG = mix(tG, fcol, fl * 0.92);
+            }
+          #endif
+          diffuseColor.rgb = mix(diffuseColor.rgb, tG, grassK); tHt += (clump - 0.5) * 0.08 * grassK;
+        }
+        // 陡坡的岩層：vLy＝頂點算好的起伏（同一層隨地點緩緩傾斜、彎曲），層厚隨高度厚薄不一（約 2～4 公尺），層與層的交界柔和；
+        // 有些地方岩層明顯、有些地方幾乎看不出來；從層頂往下流的水痕（森林是苔綠、火山是鐵鏽、雪原是冰）打斷橫條紋；層頂一塊塊積著苔／沙／火山灰／雪
+        if (rockK > 0.001) {
+          float rn = tN(vec2(wp.x + wp.y, vWP.y * 1.4) * 0.8) * 0.5 + tN(vec2(wp.x - wp.y, vWP.y * 1.4) * 0.8 + 9.0) * 0.5;
+          float yy = vWP.y + vLy, lyr = yy / 2.6 + 0.5 * sin(yy * 0.17) + 0.25 * sin(yy * 0.37 + 1.3) + rn * 0.3, lyf = fract(lyr), lyi = floor(lyr);
+          float bh = fract(sin(lyi * 12.9898 + 4.1) * 43758.5453), bh0 = fract(sin((lyi - 1.0) * 12.9898 + 4.1) * 43758.5453), strK = (0.3 + 0.7 * smoothstep(0.3, 0.7, tN(wp * 0.03 + 40.0))) * (1.0 - tB.w * 0.5) * (1.0 - tCone * 0.9); // 火山錐是一層層熔岩往下流堆成的，不是水平沉積：改畫溝紋（見火山段）
+          vec3 bA = tB.x * vec3(1.0, 0.97, 0.92) + tB.y * vec3(1.04, 0.95, 0.84) + tB.z * vec3(0.92, 0.9, 0.95) + tB.w * vec3(0.95, 0.98, 1.05);
+          vec3 bB = tB.x * vec3(0.84, 0.83, 0.8) + tB.y * vec3(1.2, 1.1, 0.95) + tB.z * vec3(0.72, 0.68, 0.74) + tB.w * vec3(0.82, 0.86, 0.95);
+          vec3 bC = tB.x * vec3(0.9, 0.98, 0.76) + tB.y * vec3(1.12, 0.86, 0.7) + tB.z * vec3(1.3, 0.78, 0.6) + tB.w * vec3(0.68, 0.72, 0.84); // 偶爾一層：苔綠／杏色／鐵鏽／深色
+          vec3 band = mix(mix(mix(bA, bB, step(0.5, bh0)), bC, step(0.84, bh0)), mix(mix(bA, bB, step(0.5, bh)), bC, step(0.84, bh)), smoothstep(0.0, 0.14, lyf));
+          float ledge = smoothstep(0.86, 0.98, lyf) * strK, under = (1.0 - smoothstep(0.0, 0.1, lyf)) * strK;
+          vec3 tR = diffuseColor.rgb * mix(vec3(1.0), band, strK) * (0.88 + 0.14 * rn) * (1.0 + ledge * 0.1) * (1.0 - under * 0.18);
+          tR *= mix(vec3(1.0), vec3(0.9, 0.92, 1.03), under); // 層與層之間的陰影偏冷色
+          vec3 an = abs(normalize(vWN)); float ru = mix(wp.x, wp.y, an.x / (an.x + an.z + 0.001)); // 沿著岩壁的水平座標
+          float tStk = smoothstep(0.6, 0.8, tN(vec2(ru * 1.3, lyi * 7.13))) * smoothstep(0.1, 0.9, lyf);
+          tR *= mix(vec3(1.0), tB.x * vec3(0.78, 0.88, 0.72) + tB.y * vec3(0.8, 0.72, 0.64) + tB.z * vec3(1.15, 0.82, 0.7) + tB.w * vec3(1.12, 1.14, 1.18), tStk * 0.6);
+          float cg = tN(vec2(ru * 0.3, lyi * 3.7)) * 0.7 + rn * 0.3, tCov = smoothstep(0.78 - 0.08 * tB.x, 0.9, lyf) * smoothstep(0.44 - 0.05 * tB.x, 0.6, cg); // 森林的岩壁苔長得多一點（山谷看起來比較綠意）
+          tCov = mix(tCov, max(smoothstep(0.3, 0.5, cg * 0.72 + lyf * 0.28), smoothstep(50.0, 140.0, tDist) * 0.7), tB.w); // 雪原：大多被雪蓋住，只露出不規則的岩塊；遠處幾乎全白（遠看不再是一條條白灰相間的橫紋）
+          vec3 covC = tB.x * vec3(0.09, 0.23, 0.055) + tB.y * vec3(0.62, 0.45, 0.22) + tB.z * vec3(0.11, 0.09, 0.08) + tB.w * vec3(0.9, 0.93, 0.98);
+          #ifdef T_HQ
+            float rf = tFbm(vec2(wp.x + wp.y, vWP.y * 1.2) * 1.7);
+            tR *= 0.94 + 0.12 * rf;
+            tHt += rockK * ((rn - 0.5) * 0.22 + (rf - 0.5) * 0.1 + (smoothstep(0.0, 0.12, lyf) * (1.0 - smoothstep(0.88, 1.0, lyf)) - 1.0) * 0.06 * strK); // 凹凸在層的交界連續（只是一道凹槽），不然導數會在交界畫出亮暗虛線
+          #endif
+          tR = mix(tR, covC * (0.85 + 0.3 * n2), tCov * 0.85);
+          diffuseColor.rgb = mix(diffuseColor.rgb, tR, rockK);
+        }
+        // 海岸：沙紋、浪打濕的沙灘、浪花線、漲潮線（只在海邊，內陸的低窪處不會出現）、水下的焦散
+        if (tB.y > 0.01) {
+          float sandK = tB.y * soil * (1.0 - grassK), wy = vWP.y - (${WATER_Y.toFixed(2)});
+          wet = tB.y * (1.0 - smoothstep(0.05, 0.75, wy)) * smoothstep(${(104 * K).toFixed(1)}, ${(118 * K).toFixed(1)}, wp.x); // 只在海邊（內陸的低窪處不是濕沙）
+          diffuseColor.rgb *= mix(1.0, 0.66, wet);
+          if (tMid > 0.0 && sandK > 0.01) {
+            // 沙紋：方向隨地點慢慢轉，迎風面緩、背風面陡（鋸齒狀），濕沙上變淡
+            vec2 rdir = normalize(vec2(0.8, 0.6) + (vec2(tN(wp * 0.035 + 2.0), tN(wp * 0.035 + 9.0)) - 0.5) * 0.9);
+            float ripP = smoothstep(0.3, 0.55, tN(wp * 0.04 + 77.0)) * (1.0 - smoothstep(0.03, 0.25, pm)); // 一片片被風吹出沙紋的地方（其餘是平滑的沙；小徑上踩平了）
+            float rp = fract(dot(wp, rdir) * 0.7 + tN(wp * 0.35) * 0.9 + n2 * 0.15), rip = rp < 0.72 ? rp / 0.72 : (1.0 - rp) / 0.28, ripK = sandK * tMid * (1.0 - wet * 0.7) * ripP;
+            float lee = smoothstep(0.73, 0.79, rp) * (1.0 - smoothstep(0.9, 1.0, rp)) * (1.0 - smoothstep(18.0, 45.0, tDist)); // 背風面的細陰影線（真的沙紋就是靠這條線看出來；遠處會疊成一條條平行的橫線，淡掉）
+            diffuseColor.rgb *= 1.0 + ((rip - 0.5) * 0.08 - lee * 0.12) * ripK; tHt += (rip - 0.5) * 0.06 * ripK;
+          }
+          float shore = smoothstep(${(110 * K).toFixed(1)}, ${(122 * K).toFixed(1)}, wp.x) * sandK;
+          if (shore > 0.01) {
+            // 漲潮線：沿著海岸彎彎曲曲的一條，上面一團團拉長的海草（深橄欖綠）與稀疏的碎貝殼（白、粉紅）
+            float wrack = (1.0 - smoothstep(0.0, 0.1, abs(wy - 1.0 - (tN(wp * 0.22 + 13.0) - 0.5) * 0.45))) * shore;
+            float weed = smoothstep(0.52, 0.68, tN(vec2(wp.x * 1.6, wp.y * 0.35) + 4.0)) * smoothstep(0.42, 0.6, tN(wp * 1.4 + 8.0)) * wrack; // 斷斷續續的一團團（連成一整條會像髒污）
+            diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 - wrack * 0.1), vec3(0.075, 0.07, 0.025) * (0.75 + 0.5 * n2), weed * 0.7); tHt += weed * 0.03;
+            #ifdef T_HQ
+              if (wrack > 0.01 && tNear > 0.0) {
+                vec2 kc = floor(wp * 4.0); float kh = tH(kc + 7.7); vec2 kf = fract(wp * 4.0) - 0.5 - (vec2(tH(kc + 1.3), tH(kc + 2.9)) - 0.5) * 0.4;
+                float bit = step(0.93, kh) * (1.0 - smoothstep(0.1, 0.18, length(kf)));
+                diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.88, 0.79, 0.72), vec3(0.87, 0.55, 0.52), step(0.97, kh)), bit * wrack * tNear * 0.9);
+              }
+              // 浪花線：濕沙上一條細細的白色泡沫，沿著海岸起伏、跟著浪慢慢上下
+              float swH = 0.4 + 0.17 * sin(uTime * 0.55 + wp.y * 0.045) + (tN(wp * 0.8 + vec2(uTime * 0.07, 0.0)) - 0.5) * 0.14;
+              float lace = (1.0 - smoothstep(0.0, 0.05, abs(wy - swH))) * smoothstep(0.3, 0.62, tN(wp * 2.4 + 3.0));
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.92), lace * shore * tMid * 0.7);
+            #endif
+          }
+          #ifdef T_HQ
+            float dep = ${WATER_Y.toFixed(2)} - vWP.y, ck = tB.y * smoothstep(0.05, 0.5, dep) * (1.0 - smoothstep(1.5, 5.0, dep));
+            if (ck > 0.0) { vec2 cp = wp * 0.85; float ca = tN(cp + vec2(uTime * 0.33, uTime * 0.21)), cb = tN(cp * 1.37 - vec2(uTime * 0.27, uTime * 0.3) + 5.0); tGlow += vec3(0.7, 1.0, 0.92) * pow(max(0.0, 1.0 - abs(ca - cb) * 2.2), 7.0) * ck * 0.45; }
+          #endif
+        }
+        // 火山：玄武岩、凹地積灰、鐵鏽斑；火山錐上沿坡往下的溝紋與岩漿河；熔岩原（只佔一部分、離小徑遠）冷卻成一塊塊岩殼，縫隙透出一明一暗的岩漿光
+        if (tB.z > 0.01) {
+          vec3 tV = diffuseColor.rgb; vec2 cdir = cv2 / max(cvl, 0.001); float coneK = tCone / tB.z, npm = 1.0 - smoothstep(0.05, 0.3, pm);
+          float ash = smoothstep(0.46, 0.7, tN(wp * 0.05 + 5.0) + max(tCv, 0.0) * 0.3) * soil * (1.0 - coneK); // 灰原（凹地積得多）
+          float aStk = smoothstep(0.55, 0.75, tN(vec2(dot(wp, vec2(0.8, -0.6)) * 0.08, dot(wp, vec2(0.6, 0.8)) * 0.6) + 2.0)) * soil; // 風吹出的一道道灰痕
+          tV = mix(tV, vec3(0.17, 0.145, 0.13) * (0.85 + 0.3 * n2), clamp(ash * 0.55 + aStk * 0.25, 0.0, 0.75));
+          tV *= mix(vec3(1.0), vec3(1.45, 0.92, 0.72), smoothstep(0.62, 0.86, tN(wp * 0.12 + 23.0)) * soil * 0.32); // 鐵鏽色斑塊（邊緣柔和）
+          // 火山錐：沿坡往下的一道道溝紋（粗細兩層，隨高度慢慢彎），稜深溝淺
+          if (coneK > 0.01) { float gul = tN(cdir * 14.0 + cvl * 0.035) * 0.6 + tN(cdir * 37.0 + cvl * 0.06 + 3.0) * 0.4; tV *= 1.0 + (gul - 0.5) * 0.5 * coneK; tHt += (gul - 0.5) * 0.3 * coneK; }
+          // 舊熔岩流：從火山口放射狀流下的一道道黑色岩舌（微亮），流到平地上才停
+          float flow = smoothstep(0.58, 0.7, tN(cdir * 5.0 + cvl * 0.03 + (n3 - 0.5) * 0.5)) * smoothstep(20.0, 40.0, cvl) * (1.0 - smoothstep(95.0, 135.0, cvl)) * soil * npm;
+          tV = mix(tV, vec3(0.03, 0.025, 0.028) * (0.85 + 0.3 * n2), flow * 0.8); tGloss = flow * 0.4 * tB.z;
+          // 岩漿河：從火山口沿坡流下的 9 道（約四分之一已經冷卻），上游亮、下游表面結殼只剩一段段透光，一波波往下游走；流到山腳變成黑色的舊熔岩流
+          // （角度換成「第幾道」：9 是整數，atan 在西側的接縫兩邊剛好差 9 道，彎曲量用方向向量取樣，所以沒有接縫）
+          float la = atan(cv2.y, cv2.x) * 1.4324 + (tN(cdir * 1.8 + cvl * 0.02) - 0.5) * 1.4, lid = floor(la + 0.5), lw = abs(la - lid) * 0.6981 * cvl; lid = mod(lid, 9.0); // lw：到河道中心線的距離（公尺）
+          float lh = tH(vec2(lid, 4.2)), lLen = 26.0 + 34.0 * lh, lW = (0.55 + 0.5 * tH(vec2(lid, 9.7))) * (0.8 + 0.6 * smoothstep(10.0, lLen, cvl));
+          float lch = (1.0 - smoothstep(lW, lW * 1.7, lw)) * smoothstep(6.0, 9.0, cvl) * (1.0 - smoothstep(lLen + 10.0, lLen + 40.0, cvl)) * npm;
+          if (lch > 0.01) {
+            tV = mix(tV, vec3(0.035, 0.03, 0.032) * (0.85 + 0.3 * n2), lch * 0.9); tGloss = max(tGloss, lch * 0.45 * tB.z); tHt -= lch * 0.05;
+            float core = 1.0 - smoothstep(lW * 0.15, lW * 0.8, lw), lHot = step(0.25, lh) * (1.0 - smoothstep(lLen * 0.5, lLen, cvl));
+            lHot *= mix(1.0, smoothstep(0.3, 0.6, tN(vec2(cvl * 0.4, lid * 5.3))), smoothstep(lLen * 0.25, lLen * 0.7, cvl));
+            tGlow += mix(vec3(1.0, 0.3, 0.05), vec3(1.0, 0.62, 0.2), core) * (core * 0.9 + lch * 0.25) * lHot * (0.7 + 0.3 * sin(cvl * 0.5 - uTime * 1.6 + lid * 1.7)) * 1.3 * tB.z;
+          }
+          float hot = 1.0 - smoothstep(14.0, 32.0, cvl); // 火山口周圍的上半山坡：還很燙的岩殼
+          float field = max(smoothstep(0.64, 0.74, tN(wp * 0.03 + 11.0)) * smoothstep(55.0, 65.0, cvl) * soil * (1.0 - ash * 0.8), hot) * npm;
+          if (field > 0.01) {
+            #ifdef T_HQ
+              vec2 vg = wp * 0.48, vi = floor(vg), vf = fract(vg), vid = vi; float d1 = 9.0, d2 = 9.0;
+              for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+                vec2 o = vec2(float(i), float(j)), q = o + 0.15 + 0.7 * vec2(tH(vi + o), tH(vi + o + 17.3)) - vf; float d = dot(q, q);
+                if (d < d1) { d2 = d1; d1 = d; vid = vi + o; } else if (d < d2) { d2 = d; }
+              }
+              float ve = sqrt(d2) - sqrt(d1), vfar = smoothstep(45.0, 95.0, tDist), seam = mix(1.0 - smoothstep(0.02, 0.07, ve), 0.06, vfar) * field;
+              tV *= (1.0 - (1.0 - smoothstep(0.04, 0.3, ve)) * field * 0.35 * (1.0 - vfar)) * (1.0 + (tH(vid + 3.3) - 0.5) * 0.2 * field); // 岩殼邊緣冷得快、較暗；每塊明暗不同
+              tV = mix(tV, vec3(0.05, 0.03, 0.025), seam * 0.85);
+              tGlow += vec3(1.0, 0.33, 0.06) * seam * max(step(0.4, tH(vid + 9.1)), hot) * (0.42 + 0.32 * sin(uTime * 1.3 + tH(vid) * 6.28)) * tB.z; // 約六成的縫還在發光
+              tHt += (smoothstep(0.0, 0.35, ve) * 0.04 - seam * 0.05) * field;
+            #else
+              float seam = (1.0 - smoothstep(0.0, 0.03, abs(tN(wp * 0.33 + 3.0) - 0.5))) * field;
+              tV = mix(tV, vec3(0.05, 0.03, 0.025), seam * 0.85);
+              tGlow += vec3(1.0, 0.33, 0.06) * seam * (0.5 + 0.35 * sin(uTime * 1.6 + wp.x * 0.3 + wp.y * 0.2)) * tB.z;
+            #endif
+          }
+          diffuseColor.rgb = mix(diffuseColor.rgb, tV, tB.z);
+        }
+        // 雪原：沿風向拉長的風紋、低窪平地偶爾一片光滑的冰（凹地偏藍已在頂點色）
+        if (tB.w > 0.01) {
+          vec3 tS = diffuseColor.rgb; vec2 sq = vec2(dot(wp, vec2(0.94, 0.34)), dot(wp, vec2(-0.34, 0.94)));
+          float sas = tN(vec2(sq.x * 0.28, sq.y * 2.4) + n1 * 1.2);
+          tS *= mix(vec3(1.0), vec3(0.88, 0.94, 1.05), (1.0 - sas) * 0.6 * soil * tMid) * (1.0 + (sas - 0.5) * 0.07 * soil * tMid); tHt += (sas - 0.5) * 0.12 * soil;
+          float ice = smoothstep(0.66, 0.74, tN(wp * 0.05 + 31.0) + max(tCv, 0.0) * 0.2) * (1.0 - smoothstep(0.06, 0.16, tSl)) * soil * (1.0 - smoothstep(0.05, 0.3, pm)); // 被風吹得光亮的淡藍冰殼（比冰湖淡，不會被當成可以走上去的湖）
+          tS = mix(tS, vec3(0.56, 0.74, 0.9) * (0.92 + 0.16 * n2), ice * 0.5); tGloss = max(tGloss, ice * tB.w);
+          diffuseColor.rgb = mix(diffuseColor.rgb, tS, tB.w);
+          #ifdef T_HQ
+            // 雪地冰晶閃光（隨相機移動而閃爍）
+            vec2 gc = floor(wp * 20.0); float gh = tH(gc), tw = fract(gh * 37.0 + dot(normalize(cameraPosition - vWP), vec3(9.1, 4.3, 7.7)));
+            tGlow += vec3(1.0, 0.98, 0.94) * tB.w * soil * step(0.965, gh) * smoothstep(0.82, 1.0, tw) * (1.0 - smoothstep(0.25, 0.4, length(fract(wp * 20.0) - 0.5))) * (1.0 - smoothstep(12.0, 40.0, tDist)) * 2.2;
+          #endif
+        }
+        // 小徑：邊緣不規則（草往路上長）、中間踩得較淺；石子依區域不同，雪地上沒有石子（踩實的雪）
+        float pr = pm + (n2 - 0.5) * 0.2 + (n1 - 0.5) * 0.12, pe = smoothstep(0.05, 0.3, pr) * (1.0 - smoothstep(0.45, 0.8, pr)), pathK = smoothstep(0.24, 0.58, pr);
+        if (pm > 0.004) {
+          diffuseColor.rgb = mix(diffuseColor.rgb, vDirt * (0.84 + 0.18 * n2 + 0.1 * (n4 - 0.5)) * (0.93 + 0.12 * smoothstep(0.55, 0.95, pm)), pathK * 0.93);
+          diffuseColor.rgb *= 1.0 - pe * 0.12;
+          if (tNear > 0.0) {
+            vec2 pc = floor(wp * 5.0), pf = fract(wp * 5.0) - 0.5 - (vec2(tH(pc + 3.1), tH(pc + 7.3)) - 0.5) * 0.45; float ph = tH(pc);
+            float peb = step(0.74 + 0.16 * tB.y, ph) * (1.0 - smoothstep(0.02, 0.19, length(pf * vec2(1.0, 1.3)))) * (1.0 - tB.w) * pathK * tNear;
+            vec3 pebC = tB.x * vec3(0.3, 0.28, 0.25) * (0.75 + 0.6 * ph) + tB.y * mix(vec3(0.85, 0.78, 0.7), vec3(0.86, 0.55, 0.5), step(0.93, ph)) + tB.z * mix(vec3(0.22, 0.06, 0.035), vec3(0.03, 0.03, 0.035), step(0.88, ph));
+            diffuseColor.rgb = mix(diffuseColor.rgb, pebC, peb * 0.85); tHt += peb * 0.035;
+            if (tB.w > 0.01) { // 雪地：踩實的雪上一個個淺淺的腳印
+              vec2 fc = floor(wp * 3.2); float fh = tH(fc + 5.5), fa = fh * 6.2832; vec2 ff = fract(wp * 3.2) - 0.5 - (vec2(tH(fc + 1.1), tH(fc + 6.6)) - 0.5) * 0.3;
+              float fp = step(0.3, fh) * (1.0 - smoothstep(0.12, 0.22, length(vec2(cos(fa) * ff.x + sin(fa) * ff.y, cos(fa) * ff.y - sin(fa) * ff.x) * vec2(1.0, 1.8)))) * tB.w * pathK * tNear;
+              diffuseColor.rgb *= mix(vec3(1.0), vec3(0.84, 0.89, 0.98), fp); tHt -= fp * 0.012;
+            }
+          }
+          tHt -= pathK * n2 * 0.02;
+        }
         tHt *= tNear;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.34, wet); roughnessFactor = mix(roughnessFactor, 0.7, tB.w * soil * 0.7);`)
+        roughnessFactor = mix(roughnessFactor, 0.34, wet); roughnessFactor = mix(roughnessFactor, 0.7, tB.w * soil * 0.7); roughnessFactor = mix(roughnessFactor, 0.14, tGloss);`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         #ifdef T_HQ
           normal = tPerturb(-vViewPosition, normal, vec2(dFdx(tHt), dFdy(tHt)));
         #endif`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += tGlow;');
   };
-  m.customProgramCacheKey = () => 'terrain4'; return m;
+  m.customProgramCacheKey = () => 'terrain5'; return m;
 }
 /* 風：草、花、蕨類、樹冠依高度擺動（每株相位不同） */
 /* 遠處縮小淡出：草、花、碎石這類小物件在 fade[0]～fade[1] 公尺之間縮進地面，
@@ -1233,23 +1376,42 @@ function buildTerrain() {
   const p = geo.attributes.position, n = p.count, hs = new Float32Array(n), row = N + 1, cell = size / N;
   for (let i = 0; i < n; i++) { hs[i] = Hx(p.getX(i), p.getZ(i)); p.setY(i, hs[i]); }
   HF = { hs, n: N, row, cell, half: size / 2 };
-  const pal = BIOMES.map(b => ZONE3D[b].pal.map(c => new THREE.Color(c))), cols = new Float32Array(n * 3), dirt = new Float32Array(n * 3), c = new THREE.Color(), t = new THREE.Color(), wet = new THREE.Color('#a8956a');
-  const DIRT = ['#9a7a55', '#d9c08f', '#4a3a33', '#c3cedc'].map(x => new THREE.Color(x)), moss = new THREE.Color('#4f7a3a');
+  /* 頂點色（第 4 堂：各區地面的質感與交界）
+     - 顏色用的生態區權重 groundW：交界沿著山脊稜線，再用雜訊扭成彎彎曲曲的界線（原本是沿座標軸與對角線的一條直線漸層）；
+       只影響地面的顏色與細節，分區（biomeW、domBiome：天色、史萊姆、音樂、提示）不變
+     - 高度門檻各區不同（ZONE3D.ht）：森林只有南方高山頂積雪（山脊不再是一圈白）、海岸山頂是綠的、火山頂是火山灰；陡坡一律留著岩石
+     - 凹凸度（約 4.5 公尺範圍的地形曲率）：森林凹地濃綠、稜線乾黃；海岸凹地微濕、稜線曬白；火山凹地積灰、稜線深色；雪原凹地偏藍
+     - 另外每個頂點存給地表材質用的 gw（海岸、火山、雪原權重＋凹凸度）與 gly（岩層的起伏），像素著色器不必再算這些低頻的東西 */
+  const pal = BIOMES.map(b => ZONE3D[b].pal.map(c => new THREE.Color(c))), HT = BIOMES.map(b => ZONE3D[b].ht), cols = new Float32Array(n * 3), dirt = new Float32Array(n * 3), gw = new Float32Array(n * 4), gly = new Float32Array(n), c = new THREE.Color(), t = new THREE.Color(), wet = new THREE.Color('#a8956a');
+  const DIRT = ['#9b7752', '#c9a877', '#6e6058', '#a3b4cc'].map(x => new THREE.Color(x)), moss = new THREE.Color('#4f7a3a');
+  const TINT = [[[.86, .97, .84], [1.14, 1.1, .82]], [[.9, .89, .84], [1.07, 1.05, .98]], [[1.55, 1.42, 1.36], [.78, .74, .76]], [[.86, .92, 1.04], [1.02, 1.02, 1.02]]]; // 各區［凹地, 稜線］的色調倍率
+  const groundW = (x, z) => { // 基礎單位
+    const X = x + (fbm(x * .03, z * .03, 61) - .47) * 16, Z = z + (fbm(x * .03, z * .03, 67) - .47) * 16, ax = Math.abs(X), az = Math.abs(Z);
+    // 交界的中心在稜線外側一點（約 55）：從中央平地看過去，山脊內側整面是森林的岩壁，雪、砂岩、玄武岩從稜線才開始（原本 47～58 讓內側上半已經染了一半雪白）
+    const cc = smooth(50, 61, X) * smooth(-5, 5, X - az), v = smooth(50, 61, -Z) * smooth(-5, 5, -Z - ax), s = smooth(50, 61, -X) * smooth(-5, 5, -X - az), f = Math.max(0, 1 - cc - v - s), tt = f + cc + v + s;
+    return [f / tt, cc / tt, v / tt, s / tt];
+  };
+  const cd = Math.max(1, Math.round(4.5 / cell)), hAt = (i, j) => hs[Math.min(N, Math.max(0, j)) * row + Math.min(N, Math.max(0, i))];
   for (let i = 0; i < n; i++) {
     const ix = i % row, iz = (i / row) | 0, x = p.getX(i), z = p.getZ(i), h = hs[i];
-    const sl = (Math.abs(hs[iz * row + Math.min(row - 1, ix + 1)] - hs[iz * row + Math.max(0, ix - 1)]) + Math.abs(hs[Math.min(row - 1, iz + 1) * row + ix] - hs[Math.max(0, iz - 1) * row + ix])) / (2 * cell);
-    const w = biomeW(x, z); let r = 0, g = 0, b = 0, dr = 0, dg = 0, db = 0;
+    const sl = (Math.abs(hAt(ix + 1, iz) - hAt(ix - 1, iz)) + Math.abs(hAt(ix, iz + 1) - hAt(ix, iz - 1))) / (2 * cell);
+    const cv = clamp((hAt(ix + cd, iz) + hAt(ix - cd, iz) + hAt(ix, iz + cd) + hAt(ix, iz - cd) - 4 * h) / (4 * (cd * cell) ** 2) * 9, -1, 1), cvA = Math.abs(cv) * (1 - smooth(.5, 1, sl)) * .45;
+    const hN = h + (vnoise(x * .12, z * .12, 5) - .5) * 1.2; // 低處→草地的界線不是等高線：海岸的沙丘上一塊塊草地
+    const w = groundW(x / K, z / K); let r = 0, g = 0, b = 0, dr = 0, dg = 0, db = 0;
     for (let k = 0; k < 4; k++) {
-      if (w[k] < .01) continue; const P = pal[k];
-      t.copy(P[0]).lerp(P[1], smooth(.6, 3.5, h)).lerp(P[2], smooth(5, 12, h)).lerp(P[3], smooth(.7, 1.5, sl)).lerp(P[4], smooth(16, 24, h));
+      if (w[k] < .01) continue; const P = pal[k], ht = HT[k], tn = TINT[k][cv > 0 ? 0 : 1];
+      t.copy(P[0]).lerp(P[1], smooth(ht[0], ht[1], hN)).lerp(P[2], smooth(5, 12, h)).lerp(P[3], smooth(.7, 1.5, sl)).lerp(P[4], smooth(ht[2], ht[3], h) * (1 - smooth(.8, 1.5, sl) * .85));
       if (k === 0) t.lerp(moss, smooth(.5, .9, sl) * (1 - smooth(1.2, 1.6, sl)) * .5);
-      if (k === 1) t.lerp(wet, smooth(-.1, -1.2, h));
+      if (k === 1) t.lerp(wet, smooth(-.1, -1.2, h) * smooth(104, 118, x / K)); // 濕沙只在海邊（內陸低窪處原本也被染成一塊塊灰褐色）
+      t.r *= 1 + (tn[0] - 1) * cvA; t.g *= 1 + (tn[1] - 1) * cvA; t.b *= 1 + (tn[2] - 1) * cvA;
       r += t.r * w[k]; g += t.g * w[k]; b += t.b * w[k]; dr += DIRT[k].r * w[k]; dg += DIRT[k].g * w[k]; db += DIRT[k].b * w[k];
     }
-    c.setRGB(r, g, b).multiplyScalar(.88 + vnoise(x * .7, z * .7, 7) * .24);
+    c.setRGB(r, g, b).multiplyScalar(.9 + vnoise(x * .7, z * .7, 7) * .2);
     cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b; dirt[i * 3] = dr; dirt[i * 3 + 1] = dg; dirt[i * 3 + 2] = db;
+    gw[i * 4] = w[1]; gw[i * 4 + 1] = w[2]; gw[i * 4 + 2] = w[3]; gw[i * 4 + 3] = cv;
+    gly[i] = (fbm(x * .008, z * .008, 71) - .47) * 10; // 岩層的起伏（公尺）：同一層岩石隨地點緩緩傾斜、彎曲，不再是整圈等高的水平條紋
   }
-  geo.setAttribute('color', new THREE.BufferAttribute(cols, 3)); geo.setAttribute('dirt', new THREE.BufferAttribute(dirt, 3)); geo.computeVertexNormals();
+  geo.setAttribute('color', new THREE.BufferAttribute(cols, 3)); geo.setAttribute('dirt', new THREE.BufferAttribute(dirt, 3)); geo.setAttribute('gw', new THREE.BufferAttribute(gw, 4)); geo.setAttribute('gly', new THREE.BufferAttribute(gly, 1)); geo.computeVertexNormals();
   /* 切成 T×T 塊共用同一份頂點資料（只各自有索引）：視野外、霧外的地形塊不繪製。
      原本整片 21 萬個三角形不論看向哪裡都全部畫出 */
   const mat = terrainMat(), T = LOW ? 6 : 8; W.terrain = [];
