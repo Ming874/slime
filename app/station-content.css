@@ -1,6 +1,6 @@
 /* =====================================================================
    工作站內容（React，components/stations/）
-   顏色一律用變數（--tx、--sub、--card、--line、--acc…），放進手帳、型錄、電腦等道具時會跟著換；
+   顏色一律用變數（--tx、--sub、--card、--line、--acc…），放進手帳、筆記本、電腦等道具時會跟著換；
    版面用容器查詢，依頁面寬度（手帳半頁、整台螢幕、手機）調整欄數。
    ===================================================================== */
 .rx{container-type:inline-size}
@@ -177,7 +177,7 @@
 #gui[data-prop="monitor"] .rx-stamp,#gui[data-prop="vitrine"] .rx-stamp{mix-blend-mode:normal;background:color-mix(in srgb,var(--red) 14%,transparent)}
 
 /* =====================================================================
-   型錄（大城市）與網購（電腦）
+   網購（工作電腦）：商品卡片、價格吊牌、等級刻度
    ===================================================================== */
 .rx-shop-intro{display:flex;align-items:flex-start;gap:12px;margin-bottom:4px}
 .rx-shop-intro p{flex:1;margin:0;color:var(--sub);font-size:13px;line-height:1.7}
@@ -211,12 +211,6 @@
 .rx-price::before{content:"";position:absolute;left:6px;top:50%;width:6px;height:6px;margin-top:-3px;border-radius:50%;background:var(--bg);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 45%,transparent)}
 .rx-decos{display:flex;flex-wrap:wrap;gap:4px 12px}
 .rx-decos>small{flex-basis:100%;color:var(--sub)}
-/* 型錄：亮面紙張、商品照片框 */
-#gui[data-prop="catalog"] .rx-prod{background:#fff;border-color:#ece6d8;box-shadow:0 1px 0 #0000000a}
-#gui[data-prop="catalog"] .rx-prod-body h4{font-size:16.5px}
-#gui[data-prop="catalog"] .rx-shopart{border-radius:6px;background:linear-gradient(160deg,#fff,color-mix(in srgb,var(--ic) 16%,#fff));box-shadow:inset 0 0 0 1px #0000000f,0 6px 12px -8px #0005}
-#gui[data-prop="catalog"] .rx-price{background:#fff7e6;border-color:#f3c77a}
-#gui[data-prop="catalog"] .rx-pips i.on{background:var(--acc)}
 /* 網購（電腦）：商城頁 */
 .rx-eshop-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .rx-search{flex:1;min-width:180px;padding:8px 14px 8px 34px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--sub);font-size:13px;position:relative}
@@ -597,6 +591,33 @@
 .pp-receipt.ink .pp-l{clip-path:inset(0 0 100% 0)}
 #gui.shown .pp-receipt.ink .pp-l{animation-name:pp-print}
 @keyframes pp-print{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+/* 撕碎的紙條拼回去：牛皮紙卡上三格（虛線框＝還沒撿到），碎片歪歪地貼上去、兩端紙膠帶；剛撿到的那片從右上「啪」地貼上，貼好才寫字。最後一行鉛筆（湊齊是紅筆） */
+.pp-scrap{display:flex;flex-direction:column;gap:12px;background:#eadfc8;padding:22px 26px 34px;font-size:18px;line-height:1.45}
+.pp-sc-slot{position:relative;flex:1 1 0;min-height:calc(2.9em + 22px)} /* 至少放得下兩行字＋上下各 11 px：撕邊最多往內咬 8 px（scrapEdge），字不會被撕邊切掉；真的塞不下時整張紙捲動，不會裁字 */
+.pp-sc-slot::before{content:"";position:absolute;inset:0;border:2px dashed #6e54385c;border-radius:4px}
+.pp-sc-slot.on::before{display:none} /* 貼好的碎片底下不露出虛線框；剛貼上的那片等落定才淡掉 */
+#gui.shown .pp.ink .pp-sc-slot.nw::before{animation:pp-sc-out .2s .5s both}
+@keyframes pp-sc-out{to{opacity:0}}
+.pp-sc-p{position:absolute;inset:0;display:flex;align-items:center;padding:6px 22px;background:#fffdf6;transform:rotate(var(--r,0deg))}
+.pp-sc-tape{position:absolute;z-index:2;width:40px;height:14px;background:var(--pp-tape);transform:rotate(-14deg);pointer-events:none}
+.pp-sc-tape.a{left:-10px;top:-3px}.pp-sc-tape.b{right:-10px;bottom:-3px}
+.pp-sc-last{flex:none;font-size:17px;line-height:1.35;color:#6b7280}
+.pp-sc-last.red{color:var(--pp-pen)}
+.pp.ink .pp-sc-p.new,.pp.ink .pp-sc-tape.new{opacity:0}
+#gui.shown .pp.ink .pp-sc-p.new{animation:pp-sc-drop .42s cubic-bezier(.2,.9,.3,1.2) .08s both}
+#gui.shown .pp.ink .pp-sc-tape.new{animation:pp-sc-tape .16s .48s ease-out both}
+@keyframes pp-sc-drop{from{opacity:0;transform:translate(46px,-58px) rotate(calc(var(--r,0deg) + 16deg)) scale(1.08)}35%{opacity:1}to{opacity:1;transform:rotate(var(--r,0deg))}}
+@keyframes pp-sc-tape{from{opacity:0;transform:rotate(-14deg) scale(1.4)}to{opacity:1;transform:rotate(-14deg)}}
+@media (max-width:480px),(max-height:520px){.pp-scrap{gap:9px;padding:16px 20px 30px;font-size:16px;line-height:1.4}.pp-sc-slot{min-height:calc(2.8em + 22px)}.pp-sc-p{padding:4px 18px}.pp-sc-last{font-size:15px}}
+/* 告示牌的導覽小卡：白卡、圓角、頂端地標色帶，標題、三行重點打勾、補充故事 */
+.pp-guide{background:#fffdf6;border-radius:10px;padding:40px 26px 30px;font-size:18px;line-height:1.5}
+.pp-gd-band{position:absolute;left:0;right:0;top:0;height:26px;border-radius:10px 10px 0 0}
+.pp-gd-t{font-size:24px;line-height:1.3;margin-bottom:6px!important;color:#2f2418}
+.pp-gd-l{list-style:none;margin:0 0 10px;padding:0}
+.pp-gd-l li{position:relative;padding-left:24px}
+.pp-gd-l li::before{content:"✓";position:absolute;left:1px;color:var(--pp-pen)}
+.pp-gd-more{font-size:16px;line-height:1.6;color:#5b4b3a}
+@media (max-width:480px),(max-height:520px){.pp-guide{padding:36px 20px 28px;font-size:16px}.pp-gd-t{font-size:21px}.pp-gd-more{font-size:15px;line-height:1.5}}
 /* 傳單：亮黃紙、四周 10 px 紅白斜紋邊、正中對摺痕（和 game.js 的 paperArt 同位置）；吊牌左右交錯歪一點；騎士史萊姆依紙的高度縮放（手機橫拿也放得下） */
 .pp-flyer{background:#fde68a;padding:10px}
 .pp-flyer::before{content:"";position:absolute;inset:0;border:10px solid #0000;border-image:repeating-linear-gradient(45deg,#dc2626 0 8px,#fff 8px 16px) 10;pointer-events:none}
@@ -655,8 +676,8 @@
 .rx-clip-p{position:relative;display:block;height:64px;margin:0 auto;background:#fffaf0;box-shadow:0 3px 7px -2px #0006}
 .rx-clip-p::before{content:"";position:absolute;left:50%;top:-6px;z-index:1;width:36px;height:12px;margin-left:-18px;background:var(--pp-tape2);transform:rotate(-5deg)}
 .rx-clip-p img{display:block;width:100%;height:100%;object-fit:cover}
-.rx-clip small{display:block;margin-top:6px;font:400 12px/1.3 var(--pp-hand);text-align:center}
-.rx-clip small span{display:inline-block} /* 名字照「：」分段、整段換行 */
+.rx-clip small{display:block;margin-top:6px;font:400 12px/1.3 var(--pp-hand);text-align:center;text-wrap:balance} /* balance：兩行時對半分（「月光巨木／導覽小卡」），不會剩一個字自己一行 */
+.rx-clip small span{display:inline-block} /* 「東方海角燈塔｜導覽小卡」「奶奶的筆記：…」各自一塊：只在兩塊之間換行 */
 .rx-clip.gn small span:first-child:not(:last-child){color:var(--pp-ink2);font-size:11px} /* 八張都叫「奶奶的筆記：…」：前綴淡一點，一眼看到的是後面那一段 */
 .rx-clip em{position:absolute;right:-6px;top:-9px;z-index:2;width:24px;height:24px;border-radius:50%;background:#dc2626;color:#fff;font:700 12px/24px var(--pp-hand);font-style:normal;text-align:center;transform:rotate(12deg);box-shadow:0 1px 3px #0005}
 .rx-clip.v-letter .rx-clip-p i{position:absolute;inset:0;background:linear-gradient(to bottom right,#0000 calc(50% - 1px),#d6c7a6 0 calc(50% + 1px),#0000 0) left/50% 62% no-repeat,linear-gradient(to bottom left,#0000 calc(50% - 1px),#d6c7a6 0 calc(50% + 1px),#0000 0) right/50% 62% no-repeat}
@@ -670,6 +691,10 @@
 .rx-clip.v-note .rx-clip-p i{position:absolute;inset:16px 10px 10px;background:repeating-linear-gradient(#0000 0 7px,#3b2f2a33 7px 8px)}
 .rx-clip.v-receipt .rx-clip-p{width:40px;background:#fbfaf7;-webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/8px 100%;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/8px 100%}
 .rx-clip.v-receipt .rx-clip-p i{position:absolute;inset:8px 6px 10px;background:repeating-linear-gradient(#0000 0 5px,#3b2f2a40 5px 6px)}
+.rx-clip.v-scrap .rx-clip-p{width:70px;background:#eadfc8}
+.rx-clip.v-scrap .rx-clip-p i{position:absolute;inset:8px 7px;background:linear-gradient(#fffdf6 0 0) 0 0/100% 27% no-repeat,linear-gradient(#fffdf6 0 0) 2px 50%/96% 27% no-repeat,linear-gradient(#fffdf6 0 0) 0 100%/100% 27% no-repeat}
+.rx-clip.v-guide .rx-clip-p{width:76px;border-radius:5px;background:linear-gradient(var(--acc,#cbd5e1) 0 0) 0 0/100% 12px no-repeat,#fffdf6}
+.rx-clip.v-guide .rx-clip-p i{position:absolute;inset:20px 9px 9px;background:repeating-linear-gradient(#0000 0 7px,#3b2f2a33 7px 8px)}
 .rx-clip.v-flyer .rx-clip-p{width:56px;background:#fde68a;outline:3px dashed #dc2626;outline-offset:-3px}
 .rx-clip.v-flyer .rx-clip-p i{position:absolute;left:10px;right:10px;top:12px;height:8px;background:#b91c1c;border-radius:2px;box-shadow:0 14px 0 -1px #fffaf0,0 24px 0 -1px #fffaf0}
 /* 手帳：旅行速寫（第一次到一區時，換區的地名字卡收進來的那一頁，game.js 的 zcShow）。縮圖是速寫本的一頁、上緣一排線圈孔、鉛筆線稿；
@@ -697,13 +722,15 @@
 .rx-clipview[data-v="letter"] .rx-clipview-in{width:min(420px,92%);height:min(520px,88%)}
 .rx-clipview[data-v="postcard"] .rx-clipview-in{width:min(480px,92%);height:auto;aspect-ratio:3/2}
 .rx-clipview[data-v="receipt"] .rx-clipview-in{width:min(280px,82%);height:min(370px,88%)}
+.rx-clipview[data-v="scrap"] .rx-clipview-in{width:min(420px,92%);height:min(400px,88%)}
+.rx-clipview[data-v="guide"] .rx-clipview-in{width:min(420px,92%);height:min(300px,88%)}
 .rx-clipview[data-v="flyer"] .rx-clipview-in{width:min(340px,82%);height:min(440px,88%)}
-.rx-clipview .pp{font-size:18px}
+.rx-clipview .pp:not(.pp-scrap){font-size:18px} /* 撕碎的紙條照自己的字級（手機 16 px）：三片疊著，18 px 在手機橫拿時塞不下 */
 .rx-clipview[data-v="note"] .rx-clipview-in{height:auto;max-height:80%}
 .rx-clipview .pp-note{height:auto;min-height:170px;max-height:100%}.rx-clipview .pp-note.pp-gift{padding-bottom:72px}.rx-clipview .pp-note.pp-gn{padding-bottom:18px} /* 便條、紙條高度跟著字（便條下面留給小切片機的塗鴉） */
 .rx-clipview .pp-flipbtn{bottom:-52px}
 .rx-clipview-tip{position:absolute;left:0;right:0;bottom:8px;text-align:center;font:400 13px/1.3 var(--pp-hand);color:var(--pp-ink2)}
 @media (max-aspect-ratio:3/4){.rx-clipview[data-v="postcard"] .rx-clipview-in{width:min(320px,86%);aspect-ratio:2/3}}
-@media (max-height:500px){.rx-clipview{padding:8px 20px 30px}.rx-clipview[data-v="note"] .rx-clipview-in{max-height:100%}.rx-clipview[data-v="receipt"]{padding:10px 20px 26px}.rx-clipview[data-v="receipt"] .rx-clipview-in{height:100%}} /* 手機橫拿：紙的下緣留 30 px 給「點一下放回」（不會疊在紙上）；收據用滿手帳的高度，條碼不會被裁掉 */
+@media (max-height:500px){.rx-clipview{padding:8px 20px 30px}.rx-clipview[data-v="note"] .rx-clipview-in{max-height:100%}.rx-clipview[data-v="receipt"],.rx-clipview[data-v="scrap"]{padding:10px 20px 26px}.rx-clipview[data-v="receipt"] .rx-clipview-in,.rx-clipview[data-v="scrap"] .rx-clipview-in{height:100%}.rx-clipview .pp-scrap{padding-bottom:14px}} /* 手機橫拿：紙的下緣留 30 px 給「點一下放回」；收據與撕碎的紙條用滿手帳的高度，條碼與三片紙條的字不會被裁掉 */
 @keyframes rx-clip-in{from{opacity:0;transform:scale(.7)}}
 @media (prefers-reduced-motion:reduce){.pp .pp-l,.pp-egg,.lv-rcpt,.rx-gift,.rx-clipview,.pp-card{animation:none!important;clip-path:none!important;transition:none!important}}

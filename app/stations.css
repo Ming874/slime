@@ -38,31 +38,31 @@
 #gui[data-mode="face"][data-prop="monitor"].closing .st-boot,#gui[data-mode="face"][data-prop="monitor"].closing .st-boot::before{animation-duration:.3s} /* 關機的亮線在鏡頭收回（FACE_OUT 0.3 秒）之內縮完 */
 #game.gblur #worldCv{filter:blur(2.5px) saturate(.88);transition-duration:.35s}
 /* 貼在物件表面上的紙類介面：夜裡跟著環境一起暗一點（--night 由 game.js 設定，0～1） */
-#gui[data-mode="face"]:is([data-prop="mat"],[data-prop="parchment"],[data-prop="catalog"],[data-prop="cork"]) .gwin::after{
+#gui[data-mode="face"]:is([data-prop="mat"],[data-prop="parchment"],[data-prop="cork"]) .gwin::after{
   content:"";position:absolute;inset:0;z-index:9;border-radius:inherit;pointer-events:none;background:#24305e;mix-blend-mode:multiply;opacity:calc(var(--night,0) * .18)}
 
-/* ---------- 紙類道具共用：手帳、筆記本、型錄、羊皮紙、切割墊上的紙 ---------- */
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"]) .gwin,
+/* ---------- 紙類道具共用：手帳、筆記本、羊皮紙、切割墊上的紙 ---------- */
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"]) .gwin,
 #gui[data-prop="mat"] .gbody{
   --bg:#f3ead6;--bg2:#fbf5e6;--card:#fffdf6;--line:#dccdab;--tx:#33291d;--sub:#7b6a52;--acc:#0e7c74;--good:#15803d;--warn:#b45309;--red:#be123c;
   color:var(--tx)
 }
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) :is(.btn:not(.ghost),.btn.red){color:#fff}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot{background:#0000000f}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot.sel{border-color:var(--acc);background:#0e7c741a;box-shadow:none}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot .k{color:#0007}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .invgrid{background:#e6d6b0;border-color:#cbb68a}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .zbtn.on{background:#0e7c741a}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .item.sel{box-shadow:0 0 0 2px #0e7c7433}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) :is(.btn:not(.ghost),.btn.red){color:#fff}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot{background:#0000000f}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot.sel{border-color:var(--acc);background:#0e7c741a;box-shadow:none}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .gbody .slot .k{color:#0007}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .invgrid{background:#e6d6b0;border-color:#cbb68a}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .zbtn.on{background:#0e7c741a}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"],#gui[data-prop="mat"]) .item.sel{box-shadow:0 0 0 2px #0e7c7433}
 /* 手帳裡的探索日誌：像夾在頁間的紫色便條 */
 :is(#gui[data-prop="journal"],#gui[data-prop="notebook"]) .quest{background:#efe7fb;border-color:#c9b8ef;box-shadow:2px 3px 0 #0000000f}
 :is(#gui[data-prop="journal"],#gui[data-prop="notebook"]) .quest b{color:#5b21b6}
 /* 紙上的分頁：墨水字＋底線 */
 :is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) #gtabs button{background:transparent;border:0;border-radius:0;color:var(--sub);padding:6px 10px;border-bottom:2px solid transparent;font-weight:700}
 :is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) #gtabs button.on{color:var(--tx);border-bottom-color:var(--acc);background:transparent}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"]) .gclose{background:transparent;border-color:#0000;color:var(--sub)}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"]) .gclose:hover{color:var(--tx);background:#0000000d}
-:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="catalog"],#gui[data-prop="parchment"]) #gtitle{font-family:"Noto Serif TC","Songti TC",serif;letter-spacing:1px}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) .gclose{background:transparent;border-color:#0000;color:var(--sub)}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) .gclose:hover{color:var(--tx);background:#0000000d}
+:is(#gui[data-prop="journal"],#gui[data-prop="notebook"],#gui[data-prop="parchment"]) #gtitle{font-family:"Noto Serif TC","Songti TC",serif;letter-spacing:1px}
 
 /* =====================================================================
    手帳（背包＋圖鑑）：皮革書皮翻開，左頁扉頁、右頁內容；換分頁時翻頁
@@ -308,34 +308,6 @@
 @keyframes st-mat-out{to{transform:translateY(70px) rotateX(30deg) scale(.95);opacity:0}}
 
 /* =====================================================================
-   型錄（大城市商店）：封面翻開，每家店一種顏色，換店時翻頁
-   ===================================================================== */
-#gui[data-prop="catalog"] .gwin{width:min(880px,100%);height:min(700px,100%);overflow:visible;border:0;border-radius:3px 10px 10px 3px;transform-style:preserve-3d;
-  background:#fffefb;box-shadow:4px 4px 0 #ece6d8,8px 8px 0 #ddd5c3,12px 12px 0 #cfc6b1,0 34px 70px -20px #000;--acc:#0e7c74}
-#gui[data-prop="catalog"][data-tab="mach"] .gwin{--acc:#2563eb}
-#gui[data-prop="catalog"][data-tab="gear"] .gwin{--acc:#db2777}
-#gui[data-prop="catalog"][data-tab="mall"] .gwin{--acc:#15803d}
-#gui[data-prop="catalog"][data-tab="arms"] .gwin{--acc:#b91c1c}
-#gui[data-prop="catalog"] .st-band{order:-1;position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:10px;flex:none;height:54px;padding:0 22px;border-radius:3px 10px 0 0;
-  background:linear-gradient(100deg,var(--acc),color-mix(in srgb,var(--acc) 65%,#000));color:#fff;transition:background .3s}
-#gui[data-prop="catalog"] .st-band b{font:900 italic 19px/1 Inter,sans-serif;letter-spacing:2px}
-#gui[data-prop="catalog"] .st-band span{font-size:12.5px;opacity:.85}
-#gui[data-prop="catalog"] .ghead{background:transparent;border-bottom:2px solid color-mix(in srgb,var(--acc) 25%,#fff);padding:10px 18px}
-#gui[data-prop="catalog"] #gtabs button{border:1px solid var(--line);background:#fff;color:var(--sub);font-weight:700}
-#gui[data-prop="catalog"] #gtabs button.on{background:var(--acc);border-color:var(--acc);color:#fff}
-#gui[data-prop="catalog"] .gbody{padding:14px 18px 20px}
-#gui[data-prop="catalog"] .st-cover{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:40px;border-radius:3px 10px 10px 3px;transform-origin:0 50%;backface-visibility:hidden;opacity:0;color:#fff;
-  background:radial-gradient(70% 60% at 75% 25%,#ffffff33,#0000 60%),linear-gradient(135deg,var(--acc),color-mix(in srgb,var(--acc) 50%,#000))}
-#gui[data-prop="catalog"] .st-cover small{font-size:13px;letter-spacing:3px;opacity:.85}
-#gui[data-prop="catalog"] .st-cover b{font-size:min(96px,18vw);line-height:1;font-weight:900;letter-spacing:6px}
-#gui[data-prop="catalog"] .st-cover span{font:900 italic 20px/1 Inter,sans-serif;letter-spacing:4px}
-#gui[data-prop="catalog"].opening .st-cover{animation:st-cover-open .8s cubic-bezier(.45,.05,.25,1) both}
-#gui[data-prop="catalog"].closing .st-cover{animation:st-cover-close .38s cubic-bezier(.5,0,.75,0) both}
-#gui[data-prop="catalog"].opening .gwin{animation:st-lift .35s ease-out}
-#gui[data-prop="catalog"].closing .gwin{animation:st-drop .38s ease-in forwards}
-#gui[data-prop="catalog"] .st-flip{left:0;border-radius:3px 10px 10px 3px;background:linear-gradient(90deg,#e7e2d6,#fffefb 14%,#fffefb 70%,#f1ece0)}
-
-/* =====================================================================
    羊皮紙（古地圖石台）：從上方的捲軸往下展開
    ===================================================================== */
 #gui[data-prop="parchment"] .gwin{width:min(820px,100%);max-height:calc(100% - 40px);overflow:visible;border:0;border-radius:2px;
@@ -420,8 +392,10 @@
 #gui[data-prop="paper"][data-v="note"] .gwin{width:min(440px,calc(100vw - 48px));height:min(330px,calc(100dvh - 140px))}
 #gui[data-prop="paper"][data-v="postcard"] .gwin{width:min(600px,calc(100vw - 40px),calc((100dvh - 120px) * 1.5));aspect-ratio:3/2;height:auto}
 #gui[data-prop="paper"][data-v="flyer"] .gwin{width:min(420px,calc(100vw - 40px));height:min(540px,calc(100dvh - 110px))}
+#gui[data-prop="paper"][data-v="scrap"] .gwin{width:min(480px,calc(100vw - 40px));height:min(420px,calc(100dvh - 130px))} /* 撕碎的紙條拼回去：三片疊著，比一般的便條高 */
+#gui[data-prop="paper"][data-v="guide"] .gwin{width:min(460px,calc(100vw - 40px));height:min(320px,calc(100dvh - 120px))} /* 告示牌的導覽小卡 */
 #gui[data-prop="paper"][data-v="receipt"] .gwin{width:min(320px,calc(100vw - 60px));height:min(calc(150px + 30px * var(--pp-n,7)),calc(100dvh - 120px))}
-@media (max-height:500px){#gui[data-prop="paper"][data-v="receipt"] .gwin{height:min(360px,calc(100dvh - 40px))}#gui[data-prop="paper"][data-v="note"] .gwin{height:min(300px,calc(100dvh - 60px))}} /* 手機橫拿：收據長、奶奶的筆記有塗鴉和章，都可以蓋過上方的 HUD，整張不用捲 */
+@media (max-height:500px){#gui[data-prop="paper"][data-v="receipt"] .gwin{height:min(360px,calc(100dvh - 40px))}#gui[data-prop="paper"][data-v="note"] .gwin{height:min(300px,calc(100dvh - 60px))}#gui[data-prop="paper"][data-v="scrap"] .gwin{height:min(420px,calc(100dvh - 60px))}} /* 手機橫拿：收據長、奶奶的筆記有塗鴉和章、撕碎的紙條三片疊著，都可以蓋過上方的 HUD，整張不用捲 */
 @media (max-aspect-ratio:3/4){#gui[data-prop="paper"][data-v="postcard"] .gwin{width:min(400px,calc(100vw - 40px),calc((100dvh - 120px) * .667));aspect-ratio:2/3}}
 #gui[data-mode="held"][data-prop="paper"].dim{background:radial-gradient(120% 100% at 50% 45%,#0000 42%,#05070d6b 100%)}
 #gui[data-prop="paper"][data-mode="card"]{background:radial-gradient(120% 100% at 50% 45%,#0000 42%,#05070d6b 100%)}

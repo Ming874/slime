@@ -20,7 +20,6 @@ body.touch #talk{--tkfs:17px}
 #talk .tx i{font-style:normal;opacity:0;transition:opacity .07s} /* 還沒打出來的字透明：泡泡大小與換行一開始就固定 */
 #talk .tx i.on{opacity:1}
 #talk .tx i.p,#talk .tb b.p{color:var(--pen);font-weight:inherit} /* 「」裡的名字與 ¥ 金額 */
-#talk .sig{display:block;text-align:right;color:var(--pen);margin-top:2px}
 #talk .nx{display:inline-block;margin-left:.45em;padding:0 7px;border-radius:999px;background:var(--ink);color:#fff;font:700 11px/17px Inter,var(--tkf);vertical-align:.12em;white-space:nowrap;opacity:0}
 #talk .tb.done .nx{opacity:1;transition:opacity .12s .16s;animation:tkNx 1.2s ease-in-out .28s infinite}
 @keyframes tkNx{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
@@ -47,14 +46,6 @@ body.touch #talk{--tkfs:17px}
 #talk .dots{font-size:18px;letter-spacing:.06em}
 #talk .hk{display:inline-block;width:16px;height:18px;margin-left:6px;border:1.5px solid var(--ink);border-radius:4px;background:#fff;color:var(--ink);font:700 11px/15px Inter,sans-serif;text-align:center;vertical-align:2px}
 @keyframes tkBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
-
-/* 紙：告示牌的牛皮紙便條（紅圖釘）、拿在手上的紙（下緣撕邊）。整頁一次出現 */
-#talk .tb.note{max-width:min(22em,86vw);line-height:1.6}
-#talk .tb.kraft{--kp:color-mix(in srgb,#f3e2bf,#24305e calc(var(--night) * 14%));background:var(--kp);color:#3b2a1a;border:2px solid #6b4a2b;border-radius:3px 5px 3px 4px;padding:14px 16px 12px}
-#talk .tb.kraft::before{content:"";position:absolute;left:50%;top:-8px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:radial-gradient(circle at 35% 32%,#fee2e2 0 2px,#ef4444 3px 60%,#b91c1c);box-shadow:0 2px 1px #0006}
-#talk .tb.hand{--hp:color-mix(in srgb,#fff6dc,#24305e calc(var(--night) * 14%));background:var(--hp);border:0;border-radius:4px 5px 0 0;padding:14px 18px 10px;box-shadow:0 2px 0 #22314f22,0 14px 22px -12px #0008}
-#talk .tb.hand::after{content:"";position:absolute;left:0;right:0;top:100%;height:6px;background:conic-gradient(from -40deg at 50% 100%,var(--hp) 80deg,#0000 0) 0 0/10px 6px repeat-x}
-#talk.low .tb.hand{box-shadow:0 2px 0 #22314f22}
 
 /* 一句話（道別、店員）：泡泡的小版本、沒有名牌 */
 #talk .tb.bark{font-size:max(15px,calc(var(--tkfs) * .88));padding:6px 11px 7px;max-width:min(14em,70vw)}

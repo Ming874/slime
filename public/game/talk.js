@@ -9,11 +9,12 @@
    - E 永遠不花錢：只有標 e:1 的免費、可反悔選項能用 E 選；花錢、交出東西一定要按數字或點卡。
    - 這個檔案在 game.js 之前載入（同 caves.js）：最上層只放資料與函式，用到的 game.js 全域（S、W、P、TARGET、GUI…）都在函式被呼叫時才讀。
    - 新增一個說話者＝寫一個 who＋一組拍子：talk(who, beats, o)。這裡不寫任何店名或座標（店家的 who 在 game.js）。
+   - 這裡只管「說話」：紙條、信、瓶中信、告示牌的導覽小卡都是從世界裡拿起來的一張紙（game.js 的 openPaper，讀完收進手帳），不走對話泡泡。
    ============================================================ */
 
 /* ---------- 資料 ---------- */
 // 時間軸（毫秒）：彈出、打字、回話卡、收起……
-const TKT = { pop: 160, popUp: 110, popFade: 90, type0: 90, swap: 140, swapType: 70, cap: 1300, g0: 200, gRev: 250, ask: 150, arm: 350, rise: 200, rise2: 40, fly: 220, wait: 240, drop: 140, out: 160, outQ: 100, rm: 120, unfold: 200, hint: 120, hintOut: 100, hintGap: 600, nudge: 320, stamp: 400 };
+const TKT = { pop: 160, popUp: 110, popFade: 90, type0: 90, swap: 140, swapType: 70, cap: 1300, g0: 200, gRev: 250, ask: 150, arm: 350, rise: 200, rise2: 40, fly: 220, wait: 240, drop: 140, out: 160, outQ: 100, rm: 120, hint: 120, hintOut: 100, hintGap: 600, nudge: 320, stamp: 400 };
 // 主泡泡的狀態。st：type（打字中）→ read（整頁出現）→ ask（回話卡舉著）→ fly（卡片飛出去）→ wait（對方點頭）
 const TK = { on: false, who: null, mw: null, q: [], i: -1, pg: [''], pi: 0, st: '', t0: 0, p0: 0, tt: 0, ch: 0, vc: 0, vt: 0, doneT: 0, ty: false, sch: [], chs: [], txs: [],
   n: 0, max: 0, more: null, none: null, end: null, egg: '', byed: false, dmin: 0, d: 0, fade: 1, a: null, cards: null, cg: [], armT: 0, guardT: 0, idle: 0, waitT: 0, syncT: 0, after: null,
@@ -29,24 +30,23 @@ const GEST = { wave: 1000, nod: 520, tilt: 900, hop: 640 }; // 居民的小動�
 const NPC_FX = { hi: { g: 'wave' }, 'c:night': { emo: 'zz' }, 'c:late': { emo: 'zz' }, 'c:live': { emo: 'heart' }, 'c:fans': { emo: 'heart' }, 'f:x': { emo: 'heart' }, 'c:frozen': { emo: 'sweat' }, 'c:pg': { emo: 'sweat' }, 'c:rich': { emo: 'star' }, 'c:river': { emo: 'star', g: 'tilt' }, 'c:mkt': { emo: 'note' }, 'f:hi': { emo: 'bang', g: 'hop', egg: 'city_fan' } };
 const EMO_URL = {}; // 貼紙：emoTex 的畫布轉成 dataURL，每種只轉一次
 const TK_MUTE = /[\s，、。！？；：…～「」『』（）—·・,.!?;:~()'"\-]/; // 打字時不出聲的字
-const TK_C = [['ar', 0, 0], ['al', 0, 0], ['r', 0, 0], ['l', 0, 0]], TK_CK = [['c', 0, 0], ...TK_C]; // 泡泡的四個候選位置（右上、左上、頭的右邊、頭的左邊）；告示牌的便條先試正上方
+const TK_C = [['ar', 0, 0], ['al', 0, 0], ['r', 0, 0], ['l', 0, 0]]; // 泡泡的四個候選位置（右上、左上、頭的右邊、頭的左邊）
 const tkLen = s => [...String(s == null ? '' : s)].length;
-const tkB = b => typeof b === 'string' ? { t: b } : Object.assign({}, b); // 一拍：'字串' 或 { t, emo, g, sig, egg, opt, last }
+const tkB = b => typeof b === 'string' ? { t: b } : Object.assign({}, b); // 一拍：'字串' 或 { t, emo, g, egg, opt, last }
 
 /* ---------- 聲音：都走 master（跟著音效音量），關掉音效就全部安靜 ---------- */
 function tkPlay(f) { if (!S || !S.sound) return; try { const ac = audio(); f(ac, ac.currentTime); } catch (e) { } }
 const tkSnd = {
   pop: (k = 1) => tkPlay((ac, t) => { noise(ac, t, .04, 2200, 1.2, .05 * k, 'bandpass'); tone(880, t, .05, .02 * k, 'triangle'); }),
   blip: (p = 1) => tkPlay((ac, t) => { tone(560 * p * (.96 + Math.random() * .08), t, .035, .01, 'triangle'); noise(ac, t, .02, 1800 * p, 2, .004, 'bandpass'); }),
-  paper: () => tkPlay((ac, t) => noise(ac, t, .08, 2600, .8, .03, 'bandpass')),
   fwip: () => tkPlay((ac, t) => { sweep(1400, 600, t, .08, .03, 'triangle'); noise(ac, t, .06, 2600, 1, .04, 'bandpass'); }),
   no: () => tkPlay((ac, t) => tone(240, t, .2, .035, 'triangle')),
   stamp: () => tkPlay((ac, t) => { tone(140, t, .07, .06); noise(ac, t, .06, 300, .8, .08, 'lowpass'); }),
 };
 
 /* ---------- 說話的人（who） ----------
-   k：say（居民、店家：打字、有尾巴、有說話聲）｜note（告示牌、紙條、信：整頁出現、翻紙聲、沒有尾巴）｜self（自己的想法雲，只用在一句話）
-   at(v)／mouth(v)：泡泡錨點與尾巴尖（世界座標，寫進 v）；null＝拿在手上。xz()、r：量距離的位置、離開多遠一定結束。
+   k：say（居民、店家、司機：打字、有尾巴、有說話聲）｜self（自己的想法雲，只用在一句話）
+   at(v)／mouth(v)：泡泡錨點與尾巴尖（世界座標，寫進 v）。xz()、r：量距離的位置、離開多遠一定結束。
    vo：[音高, 每字毫秒]。tg(t)：準心目標是不是他（E＝繼續，還是先收起再去做別的事） */
 function npcWho(n) {
   if (n.who) return n.who; const d = n.d, m = n.m, kid = d.kid || 1;
@@ -59,18 +59,10 @@ function npcWho(n) {
 function spotWho(id, name, at, mouth, o = {}) {
   return Object.assign({ id, k: 'say', name, role: '', col: '#e2e8f0', at: v => v.set(at[0], at[1], at[2]), mouth: v => v.set(mouth[0], mouth[1], mouth[2]), xz: () => [mouth[0], mouth[2]], r: 8, vo: [1, 32], bye: '', tg: t => !!t && !!t.it && t.it.id === id }, o);
 }
-// 告示牌：木牌上方攤開一張牛皮紙便條（名牌是告示牌的標題與顏色）
-function signWho(it, I) {
-  const p = it.hit.getWorldPosition(new THREE.Vector3()), at = v => v.set(p.x, p.y + 1.15, p.z);
-  return { id: 'sign:' + it.id, k: 'note', kraft: true, name: I.t, col: I.c, at, mouth: at, xz: () => [p.x, p.z], r: 7, tg: t => !!t && t.it === it };
-}
-// 拿在手上讀的紙（紙條、信）：跟著第一人稱的手，可以邊走邊讀。o.src＝紙是從哪個東西拿出來的（準心還對著它時 E＝翻頁／收起，不會收起又馬上重新打開）
-function noteWho(name, o = {}) { return Object.assign({ id: 'note:' + name, k: 'note', hand: true, name, col: '#fde68a', at: null, mouth: null, xz: null, r: Infinity, tg: t => !!o.src && !!t && t.it === o.src }, o); }
-
 /* ---------- 文字：切頁、筆色、打字時間表 ---------- */
-// 先照「｜」硬切 → 切句 → 貪心裝進頁（一般 30 字、紙 40 字，窄螢幕少一點；問句一律 40 字＝最多 3 行）→ 單句太長從最靠近中間的逗號切 → 還太長才硬切
-function tkSplit(s, note) {
-  const narrow = innerWidth < 420, max = note === 'ask' ? 40 : note ? (narrow ? 30 : 40) : (narrow ? 24 : 30), out = [];
+// 先照「｜」硬切 → 切句 → 貪心裝進頁（一般 30 字，窄螢幕 24；問句一律 40 字＝最多 3 行）→ 單句太長從最靠近中間的逗號切 → 還太長才硬切
+function tkSplit(s, ask) {
+  const narrow = innerWidth < 420, max = ask ? 40 : narrow ? 24 : 30, out = [];
   const cut = x => {
     const a = [...x]; if (a.length <= max) return [x]; let b = -1;
     a.forEach((c, i) => { if ('，、：'.includes(c) && i < a.length - 1 && (b < 0 || Math.abs(i + 1 - a.length / 2) < Math.abs(b + 1 - a.length / 2))) b = i; });
@@ -130,16 +122,16 @@ function talk(who, beats, o = {}) {
     byed: false, st: 'type', t0: now, guardT: now + TKT.g0, idle: 0, after: null, stampTxt: '', hs: 0, hk: '', hw: null, fade: 1, safeN: 0 });
   const p = who.xz && who.xz(); TK.dmin = TK.d = p ? Math.hypot(p[0] - P.x, p[1] - P.z) : 0;
   if (!fromHint) { TK.placed = false; TK.pl = ''; TK.plBad = 0; TK.tbase = null; }
-  const el = TK.el; el.hidden = false; el.className = 'tkw' + (who.k === 'note' ? ' paper' : ''); TK.offOn = false;
+  const el = TK.el; el.hidden = false; el.className = 'tkw'; TK.offOn = false;
   TK.nmT.textContent = who.name || ''; TK.nmS.textContent = who.role || ''; TK.nmA.textContent = ''; TK.nm.style.setProperty('--c', who.col || '#e2e8f0');
   document.body.classList.add('talk');
   if (who.n) who.n.talk = Math.max(who.n.talk || 0, 2); // 居民停下、轉身面對你
-  if (who.k !== 'note') tkSnd.pop();
+  tkSnd.pop();
   tkBeat(); if (!TK.on) return true;
-  tkAnimStart(who.k === 'note' ? 'unfold' : 'in', who.k === 'note' ? TKT.unfold : TKT.pop);
+  tkAnimStart('in', TKT.pop);
   return true;
 }
-// 下一拍；拍子用完時居民再聊一句（未滿 max 句），再說道別句；店家、紙直接收起
+// 下一拍；拍子用完時居民再聊一句（未滿 max 句），再說道別句；店家直接收起
 function tkBeat() {
   const who = TK.who; TK.i++;
   if (TK.i >= TK.q.length) {
@@ -148,7 +140,7 @@ function tkBeat() {
     else return tkEnd('done');
   }
   const b = TK.q[TK.i]; if (b.last) TK.byed = true; else TK.n++;
-  TK.pg = tkSplit(b.t, b.opt ? 'ask' : who.k === 'note'); TK.nfb = null; // 問句的一頁長一點（最多 3 行）：選卡時整個問題都還看得到
+  TK.pg = tkSplit(b.t, !!b.opt); TK.nfb = null; // 問句的一頁長一點（最多 3 行）：選卡時整個問題都還看得到
   if (who.n) npcGest(who.n, tkGest(b, who));
   tkPage(0, TK.i > 0, b);
 }
@@ -159,26 +151,23 @@ function tkGest(b, who) {
 }
 // 畫一頁：每個字一個 <i>（還沒打出來的字透明，所以泡泡大小與換行一開始就固定）
 function tkPage(i, swap, b) {
-  b = b || TK.q[TK.i] || { t: '' }; const who = TK.who, now = tkNow(), note = who.k === 'note', last = i === TK.pg.length - 1, a = [...(TK.pg[i] || '')], pen = tkPen(a);
+  b = b || TK.q[TK.i] || { t: '' }; const who = TK.who, now = tkNow(), last = i === TK.pg.length - 1, a = [...(TK.pg[i] || '')], pen = tkPen(a);
   TK.pi = i; TK.p0 = now; TK.idle = 0; TK.ch = 0; TK.vc = 0; TK.vt = -1e9; TK.chs = a;
   let h = '<span class="tx">' + a.map((c, k) => (pen[k] ? '<i class="p">' : '<i>') + esc(c) + '</i>').join('') + '</span>';
-  if (b.sig && last) h += '<span class="sig">' + esc(b.sig) + '</span>';
-  const nx = (b.opt && last) || TK.st === 'ask' ? '' : tkNx(b, last, who); if (nx) h += '<span class="nx">' + nx + '</span>'; // 卡片舉著時 E 是「先不用」，泡泡上不放「E ▼」
+  const nx = (b.opt && last) || TK.st === 'ask' ? '' : tkNx(b, last); if (nx) h += '<span class="nx">' + nx + '</span>'; // 卡片舉著時 E 是「先不用」，泡泡上不放「E ▼」
   if (TK.stampTxt) h += '<span class="tks still">' + esc(TK.stampTxt) + '</span>';
-  TK.tb.className = 'tb ' + (note ? 'note ' + (who.kraft ? 'kraft' : 'hand') : 'say'); TK.tb.innerHTML = h; TK.txs = TK.tb.firstChild.children;
+  TK.tb.className = 'tb say'; TK.tb.innerHTML = h; TK.txs = TK.tb.firstChild.children;
   if (b.emo) { TK.emo.src = EMO_URL[b.emo] || (EMO_URL[b.emo] = emoTex(b.emo).image.toDataURL()); TK.emo.hidden = false; } else TK.emo.hidden = true;
-  TK.el.classList.toggle('nm1', note || (TK.i === 0 && i === 0)); // 名牌：對話第一頁、每張紙每頁（貼邊時一定有）
+  TK.el.classList.toggle('nm1', TK.i === 0 && i === 0); // 名牌：對話第一頁（貼邊時一定有）
   const tip = who.k === 'say' && (S.tipTalk || 0) < 2; TK.el.classList.toggle('tip1', tip); TK.tip.hidden = !tip; if (tip) TK.tip.textContent = TOUCH ? '點畫面繼續・走開就結束' : 'E 繼續・走開就結束'; TK.tipW = 0;
   tkMeasure();
   const o = swap ? TKT.swapType : TKT.type0; TK.tt = now + o; TK.sch = tkSched(a, who.vo ? who.vo[1] : 32, TKT.cap - o - 20); TK.ty = true; if (TK.st !== 'ask') TK.st = 'type'; // 從開口算起 1300ms 內一定打完
   if (swap) tkAnimStart('swap', TKT.swap);
-  if (note) tkSnd.paper();
-  if (note || RM() || !a.length) tkReveal(now); // 紙與減少動態：整頁一次出現
+  if (RM() || !a.length) tkReveal(now); // 減少動態：整頁一次出現
 }
-// 右下角的小膠囊：居民還能再聊＝「E 再聊」，紙的最後一頁＝「E 收起」，其他＝「E ▼」；觸控只有「▼」
-function tkNx(b, last, who) {
+// 右下角的小膠囊：居民還能再聊＝「E 再聊」，其他＝「E ▼」；觸控只有「▼」
+function tkNx(b, last) {
   if (b.last) return ''; if (TOUCH) return '▼';
-  if (who.k === 'note') return last ? 'E 收起' : 'E ▼';
   return last && TK.i === TK.q.length - 1 && TK.more && TK.n < TK.max ? 'E 再聊' : 'E ▼';
 }
 function tkType(now) {
@@ -204,7 +193,7 @@ function tkRead(dt, now) {
   if (b.opt && last) { if (now - TK.doneT >= TKT.ask) tkAsk(b.opt); return; } // 問句打完 150ms 後手舉起回話卡
   TK.idle += dt; // 閒置用 dt 累加：分頁切走再回來不會一回來就收掉
   if (b.last && last) { if (TK.idle > clamp(1.2 + .09 * TK.chs.length, 1.6, 3)) tkEnd('done'); return; } // 道別句讀完自己收起
-  if (TK.idle > (TK.who.k === 'note' ? 25 : 14)) tkEnd('idle');
+  if (TK.idle > 14) tkEnd('idle');
 }
 // 收起：why＝done／walk（走開）／switch（換人或做別的事）／quiet（開介面、彈窗、主選單、說話的人不見了）／idle／ride…
 function tkEnd(why, fast) {
@@ -281,10 +270,9 @@ function tkFit1(x, y, w, h, sf, obs) {
   if (!best) for (let i = 0; i <= 6; i++) for (let j = 0; j <= 8; j++) tryAt(sf.l + (sf.r - sf.l - w) * i / 6, sf.t + (sf.b - sf.t - h) * j / 8);
   return best;
 }
-function tkCand(A, M, bw, bh, s, mid) {
-  if (mid) { TK_CK[0][1] = A.x - bw / 2; TK_CK[0][2] = A.y - bh - 8; }
+function tkCand(A, M, bw, bh, s) {
   const C = TK_C; C[0][1] = A.x - 28 * s; C[0][2] = A.y - bh - 8; C[1][1] = A.x - bw + 28 * s; C[1][2] = A.y - bh - 8;
-  C[2][1] = M.x + 44 * s; C[2][2] = M.y - .6 * bh; C[3][1] = M.x - bw - 44 * s; C[3][2] = M.y - .6 * bh; return mid ? TK_CK : C;
+  C[2][1] = M.x + 44 * s; C[2][2] = M.y - .6 * bh; C[3][1] = M.x - bw - 44 * s; C[3][2] = M.y - .6 * bh; return C;
 }
 // 從四個候選挑第一個整塊在安全區裡、不碰障礙的；目前的位置還可以就不換，失效超過 250ms 才換（居民轉身、走動時泡泡不會左右亂跳）
 // tp＝嘴巴在畫面上的位置（一句話的泡泡才給）：尾巴會穿過畫面上另一個泡泡（obs 裡 bub 的）的位置也不要，換下一個候選
@@ -317,26 +305,19 @@ function tkHandPt(o) {
   if (VM.g && VM.g.visible && VM.palm) { VM.palm.getWorldPosition(tkV3); tkProj(tkV3, o); if (o.z > 0) return o; }
   o.x = innerWidth * .72; o.y = innerHeight * .74; o.z = 1; return o;
 }
-// 拿在手上的紙：桌機跟著手掌（紙的右下角在手掌左上方 36px）；觸控置中，從快捷列上方往上找第一個不碰拇指的位置
-function tkHandSpot(sf, bw, bh) {
-  if (!TOUCH) { const h = tkHandPt(PH), x = clamp(h.x - 36 - bw, sf.l, Math.max(sf.l, sf.r - bw)), y = clamp(h.y - 36 - bh, sf.t, Math.max(sf.t, sf.b - bh)); return tkFit(x, y, bw, bh, sf) || [x, y]; }
-  const x = clamp((innerWidth - bw) / 2, sf.l, Math.max(sf.l, sf.r - bw)); for (let y = sf.b - bh; y >= sf.t; y -= 12) if (!tkHit(x, y, bw, bh, sf.obs)) return [x, y]; return tkFit(x, sf.t, bw, bh, sf) || [x, sf.t];
-}
 // 主泡泡（對話或提示）的位置、大小、透明度與尾巴。每格只寫 transform、opacity 與尾巴的 path
 function tkPlace(dt, now) {
-  const who = TK.mw, el = TK.el; if (!who || !el || el.hidden) return;
+  const who = TK.mw, el = TK.el; if (!who || !who.at || !el || el.hidden) return;
   const A = tkAV(TK.a, now); if (A && A[3]) { const k = TK.a.k; TK.a = null; if (k === 'out') { el.hidden = true; TK.mw = null; TK.ki.style.transform = ''; TK.kiT = ''; TK.trs = ''; return; } }
   if (--TK.safeN <= 0 || !TK.safe) { TK.safeN = 30; TK.safe = tkSafe(); }
   const sf = TK.safe; let s = 1;
   if (who.xz) { const p = who.xz(); s = clamp(2.6 / Math.max(.3, Math.hypot(p[0] - P.x, p[1] - P.z)), .9, 1.06); } // 近一點字大一點，遠一點小一點
   s = Math.max(s, 15.5 / (TK.fs || 17)); TK.s = s; // 實際字級最小 15.5px
   const bw = TK.w * s, bh = TK.h * s; let x, y, off = false, dir = null;
-  if (who.at) {
-    who.at(tkV); tkProj(tkV, PA); who.mouth(tkV); tkProj(tkV, PM);
-    off = PA.z < .05 || PA.x < -40 || PA.x > innerWidth + 40 || PA.y < -40 || PA.y > innerHeight + 40;
-    const obs = TK.cards && TK.crect ? sf.obs.concat([TK.crect]) : sf.obs; // 回話卡舉著時也要讓開
-    if (off) { const r = tkPin(PA, sf, bw, bh, obs); x = r[0]; y = r[1]; dir = [r[2], r[3]]; } else [x, y] = tkChoose(TK, tkCand(PA, PM, bw, bh, s, who.kraft), sf, bw, bh, now, obs);
-  } else [x, y] = tkHandSpot(sf, bw, bh);
+  who.at(tkV); tkProj(tkV, PA); who.mouth(tkV); tkProj(tkV, PM);
+  off = PA.z < .05 || PA.x < -40 || PA.x > innerWidth + 40 || PA.y < -40 || PA.y > innerHeight + 40;
+  const obs = TK.cards && TK.crect ? sf.obs.concat([TK.crect]) : sf.obs; // 回話卡舉著時也要讓開
+  if (off) { const r = tkPin(PA, sf, bw, bh, obs); x = r[0]; y = r[1]; dir = [r[2], r[3]]; } else [x, y] = tkChoose(TK, tkCand(PA, PM, bw, bh, s), sf, bw, bh, now, obs);
   if (!TK.placed || Math.abs(x - TK.x) > 160 || Math.abs(y - TK.y) > 160) { TK.x = x; TK.y = y; TK.placed = true; } // 快速轉頭：直接跳過去
   else { const k = 1 - Math.exp(-18 * dt); TK.x += (x - TK.x) * k; TK.y += (y - TK.y) * k; }
   const tr = 'translate3d(' + TK.x.toFixed(1) + 'px,' + TK.y.toFixed(1) + 'px,0) scale(' + s.toFixed(3) + ')'; if (tr !== TK.trs) { TK.trs = tr; el.style.transform = tr; }
@@ -345,7 +326,7 @@ function tkPlace(dt, now) {
   if (off !== TK.offOn) { TK.offOn = off; el.classList.toggle('off', off); }
   const ar = off ? (Math.abs(dir[0]) >= Math.abs(dir[1]) ? (dir[0] < 0 ? '←' : '→') : (dir[1] < 0 ? '↑' : '↓')) : ''; if (ar !== TK.nmA.textContent) TK.nmA.textContent = ar; // 貼邊時名牌標方向：「← 美美」
   let d = '';
-  if (who.at && who.k === 'say') {
+  if (who.k === 'say') {
     let tx, ty; if (off) { const cx = TK.bx + TK.bw / 2, cy = TK.by + TK.bh / 2, k = Math.min(TK.bw / 2 / Math.max(1e-3, Math.abs(dir[0])), TK.bh / 2 / Math.max(1e-3, Math.abs(dir[1]))); tx = cx + dir[0] * (k + 30); ty = cy + dir[1] * (k + 30); }
     else { tx = (PM.x - TK.x) / s; ty = (PM.y - TK.y) / s; }
     const tl = tkTail(TK, tx, ty, off, TK.hs && !TK.on ? 48 : 110 * Math.max(1, innerHeight / 800)); if (tl) { d = tl.d; TK.tbase = [tl.bx, tl.by]; } // 提示「…」的尾巴短一點，不要劃過說話的人的臉；大螢幕上人比較大，尾巴上限跟著放長
@@ -392,13 +373,12 @@ function tkTail(L, tx, ty, pin, max = 110) {
 // 泡泡的彈出、換句、收起：套在內層 .tki，transform-origin 在尾巴根部（看起來是從嘴邊長出來）。用 tkNow 算，TK.fz 停得住
 function tkAnimStart(k, d) {
   const rm = RM(); if (rm && k === 'swap') return; TK.a = { k, t0: tkNow(), d: rm ? TKT.rm : d, rm };
-  TK.ki.style.transformOrigin = k === 'unfold' ? '50% 15px' : TK.tbase ? TK.tbase[0].toFixed(1) + 'px ' + TK.tbase[1].toFixed(1) + 'px' : '30% 100%';
+  TK.ki.style.transformOrigin = TK.tbase ? TK.tbase[0].toFixed(1) + 'px ' + TK.tbase[1].toFixed(1) + 'px' : '30% 100%';
 }
 function tkAV(a, now) { // → [scaleX, scaleY, opacity, 結束了沒]
   if (!a) return null; const e = Math.max(0, now - a.t0), k = clamp(e / a.d, 0, 1), done = k >= 1;
   if (a.rm) return [1, 1, a.k === 'out' ? 1 - k : k, done]; // 減少動態：只淡入淡出
   if (a.k === 'in') { const s = e < TKT.popUp ? .55 + .49 * (1 - (1 - e / TKT.popUp) ** 2) : 1.04 - .04 * clamp((e - TKT.popUp) / (a.d - TKT.popUp), 0, 1); return [s, s, clamp(e / TKT.popFade, 0, 1), done]; }
-  if (a.k === 'unfold') { const u = 1 - (1 - k) ** 3; return [1, .2 + .8 * u, clamp(e / 80, 0, 1), done]; } // 紙攤開
   if (a.k === 'swap') { const sy = e < 70 ? 1 - .06 * (e / 70) : .94 + .06 * clamp((e - 70) / 70, 0, 1); return [1, sy, 1, done]; }
   const s = 1 - .45 * k; return [s, s, 1 - k, done]; // out：縮回尾巴根部
 }
@@ -466,8 +446,8 @@ function tkPick(i) {
 }
 function tkNudge() { const now = tkNow(); (TK.cards || []).forEach(c => { if (!c.fly) c.nud = now; }); }
 function tkCardsHide() { const now = tkNow(); TK.cg.forEach(c => { if (!c.fly && !c.drop) c.drop = now; }); TK.cards = null; const n = TK.cEl && TK.cEl.querySelector('.tkn'); if (n) n.remove(); }
-// 第一人稱的手：舉著回話卡＝fan、讀手上的紙＝hold（這兩種時手上拿的東西縮進掌心）
-function tkPose() { return TK.cards && (TK.st === 'ask' || TK.st === 'fly') ? 'fan' : TK.on && TK.who && TK.who.k === 'note' && !TK.who.at ? 'hold' : ''; }
+// 第一人稱的手：舉著回話卡＝fan（手上拿的東西縮進掌心）；拿著紙的手勢歸 game.js 的手上的紙
+function tkPose() { return TK.cards && (TK.st === 'ask' || TK.st === 'fly') ? 'fan' : ''; }
 
 /* ---------- 一句話、想法雲、章 ---------- */
 // 不佔按鍵的一句話：最多 2 個，新的擠掉最舊的。o：{ egg（章要蓋在這裡）, stamp（直接附章）, quiet（不出聲）, pin（說話的人在畫面外時貼在邊上，不消失：店員在你背後回答） }
@@ -525,7 +505,7 @@ function barkStep(dt, now) {
     if (d !== b.pd) { b.pd = d; b.path.setAttribute('d', d); }
   }
 }
-// 彩蛋的章「✦ 小秘密 n/28」：蓋在手上的紙（奶奶的筆記，墨水寫完才蓋）、旁白的想法雲、正在讀的紙條或說話的人的泡泡上（400ms 後蓋下去）；都沒有就冒一朵只有一行的想法雲
+// 彩蛋的章「✦ 小秘密 n/28」：蓋在手上的紙（奶奶的筆記，墨水寫完才蓋）、旁白的想法雲或說話的人的泡泡上（400ms 後蓋下去）；都沒有就冒一朵只有一行的想法雲
 function tkStamp(id, txt, name) {
   setTimeout(() => { // 等目前這段程式跑完（例如 Leo 認出你之後馬上開口）再找要蓋在哪裡
     if (typeof paperStampOn === 'function' && paperStampOn(id, txt)) return; // 手上拿著的就是這張紙（奶奶的筆記）：章蓋在紙上（game.js）
@@ -574,7 +554,8 @@ function tkMouth(t) {
 function tkWhoOf(t) {
   if (!t) return null; const key = t.n || t.it; if (!key) return null;
   if (TK.wk === key && TK.wn-- > 0) return TK.wv; let w = null; // 以目標物件當快取鍵，每 30 次重算一次（計程車要看你站在哪一側）
-  if (t.type === 'npc') w = t.n.d.shop && typeof WARE !== 'undefined' && WARE.h ? null : npcWho(t.n); // 拿著商品對準店員：提示交給 wareLabel（E 結帳） else if (t.type === 'station' && typeof TALK_AT !== 'undefined' && TALK_AT[t.it.id]) w = TALK_AT[t.it.id]();
+  if (t.type === 'npc') w = t.n.d.shop && typeof WARE !== 'undefined' && WARE.h ? null : npcWho(t.n); // 拿著商品對準店員：提示交給 wareLabel（E 結帳）
+  else if (t.type === 'station' && typeof TALK_AT !== 'undefined' && TALK_AT[t.it.id]) w = TALK_AT[t.it.id](); // 咖啡館、市集、醫院、計程車（這一行之前被併進上一行的註解裡，頭上的「…」一直沒出現）
   TK.wk = key; TK.wv = w; TK.wn = 30; return w;
 }
 const tkSeen = w => { w.at(tkV); tkProj(tkV, PA); return PA.z > .05 && PA.x >= 0 && PA.x <= innerWidth && PA.y >= 0 && PA.y <= innerHeight; };

@@ -5,7 +5,7 @@
    奶奶的筆記（gn）是便條的一種：筆記本撕下來的一頁，右上頁碼、左下一個小塗鴉（和字一起用墨水畫出來），找到時蓋上小秘密的章（stamp）。
    塗鴉與章排在字下面的同一排（.pp-gn-ft，不用絕對定位）：手機橫拿時字多一行也只是把這一排往下推，章不會蓋到簽名、塗鴉不會壓到字。 */
 import type { CSSProperties, ReactNode } from 'react';
-import { G, type PaperData, type Rcpt } from './game';
+import { G, type PaperData, type Rcpt, type Scrap } from './game';
 
 export default function Paper() {
   const p = G().paper?.();
@@ -38,7 +38,7 @@ export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hin
   } else if (p.v === 'note') {
     body = (
       <>
-        <i className="pp-tape" aria-hidden="true" />
+        {!p.roll && <i className="pp-tape" aria-hidden="true" />}{/* 捲著的瓶中信沒有紙膠帶 */}
         {p.gn && p.pg > 0 && <div className="pp-pg" aria-hidden="true">第 {p.pg} 頁</div>}
         <div className="pp-txt">
           {p.b.map((t, i) => <p key={i} className="pp-l" style={L(i)}>{p.gn ? ph(t) : t}</p>)}{/* 奶奶的筆記和明信片一樣照逗號分段：窄的手機上「滑一滑，」不會斷成「滑／一滑，」 */}
@@ -86,6 +86,18 @@ export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hin
         </div>
       </>
     );
+  } else if (p.v === 'scrap' && p.sc) {
+    body = <ScrapBody sc={p.sc} live={!!live && ink === ' ink'} />;
+  } else if (p.v === 'guide') {
+    // 告示牌的導覽小卡：頂端地標色帶、標題、三行重點（打勾）、補充故事
+    body = (
+      <>
+        <i className="pp-gd-band" style={{ background: p.acc || '#cbd5e1' }} aria-hidden="true" />
+        <p className="pp-l pp-gd-t" style={L(0)}>{p.head}</p>
+        <ul className="pp-gd-l">{p.b.map((t, i) => <li key={i} className="pp-l" style={L(i + 1)}>{t}</li>)}</ul>
+        {p.sig && <p className="pp-l pp-gd-more" style={L(p.b.length + 1)}>{p.sig}</p>}
+      </>
+    );
   } else if (p.v === 'receipt') {
     body = <Receipt d={p.d || { n: 0, inc: 0, tip: 0, fan: 0, sec: 0, t: 0 }} />;
   } else if (p.v === 'flyer') {
@@ -100,6 +112,31 @@ export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hin
     );
   }
   return <div className={cls} role="dialog" aria-label={p.name}>{body}{tip}</div>;
+}
+
+// 撕碎的紙條拼回去：三格照謎語的順序（虛線框＝還沒撿到），撿到的碎片歪歪地貼在格子上、兩端貼紙膠帶；剛撿到的那片（new）從手上「啪」地貼上去，之後才寫字。
+// 撕邊的鋸齒點由 game.js 的 scrapView 給（3D 的紙用同一組點畫，交接時對得上）
+function ScrapBody({ sc, live }: { sc: Scrap; live: boolean }) {
+  let n = 0; // 墨水的順序：先寫已經貼著的碎片，剛撿到的那片貼好之後再寫，最後一行最後
+  const clip = (pc: Scrap['pcs'][number]) => `polygon(${pc.top.map(([x, d]) => `${(x * 100).toFixed(1)}% ${d.toFixed(1)}px`).join(',')},${[...pc.bot].reverse().map(([x, d]) => `${(x * 100).toFixed(1)}% calc(100% - ${d.toFixed(1)}px)`).join(',')})`;
+  return (
+    <>
+      {sc.pcs.map((pc, i) => {
+        const nw = live && i === sc.pi;
+        return (
+          <div key={i} className={`pp-sc-slot${pc.on ? (nw ? ' nw' : ' on') : ''}`}>
+            {pc.on && (
+              <>
+                <div className={`pp-sc-p${nw ? ' new' : ''}`} style={{ '--r': `${pc.r}deg`, clipPath: clip(pc) } as CSSProperties}><p className="pp-l" style={L(nw ? 4 : n++)}>{pc.t}</p></div>
+                <i className={`pp-sc-tape a${nw ? ' new' : ''}`} aria-hidden="true" /><i className={`pp-sc-tape b${nw ? ' new' : ''}`} aria-hidden="true" />
+              </>
+            )}
+          </div>
+        );
+      })}
+      <p className={`pp-l pp-sc-last${sc.all ? ' red' : ''}`} style={L(5)}>{sc.last}</p>
+    </>
+  );
 }
 
 function Receipt({ d }: { d: Rcpt }) {

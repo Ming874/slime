@@ -49,15 +49,17 @@ export type Game = {
 // 手帳的「今天」（game.js 的 note）：玩家沒在做事時發生的事；k＝web／webAway／trend／shop／shopLeft／corp／corpLate／farm，n＝併成一行的件數
 export type TodayRow = { t: number; k: string; m: string; n: number; inc: number };
 export type Today = { d: number; log: TodayRow[]; web: number; inc: number };
-// 手上的紙（game.js 的 paperView）：v＝letter／note／postcard／receipt／flyer／sketch；b＝內文每一行；rev＝字已經寫好；live＝要跑墨水；hint＝右下按鍵提示的透明度；art＝速寫的線稿（SVG 字串）
+// 手上的紙（game.js 的 paperView）：v＝letter／note／postcard／receipt／flyer／sketch／scrap（撕碎的紙條拼回去）／guide（告示牌的導覽小卡）；b＝內文每一行；rev＝字已經寫好；live＝要跑墨水；hint＝右下按鍵提示的透明度；art＝速寫的線稿（SVG 字串）
 export type Rcpt = { n: number; inc: number; tip: number; fan: number; sec: number; t: number; torn?: number };
+// 撕碎的紙條（scrapView）：pcs＝三格（on＝撿到了、r＝歪幾度、top／bot＝撕邊的鋸齒點 [x 比例, 往內縮幾 px]），pi＝剛撿到的那片，last＝最後一行
+export type Scrap = { pi: number; all: boolean; last: string; pcs: { t: string; on: boolean; r: number; top: [number, number][]; bot: [number, number][] }[] };
 export type PaperData = {
-  id: string; v: string; name: string; head: string; b: string[]; sig: string; zone: string; zoneName: string; acc: string; art?: string; gift: boolean; torn?: boolean; d: Rcpt | null;
+  id: string; v: string; name: string; head: string; b: string[]; sig: string; zone: string; zoneName: string; acc: string; art?: string; gift: boolean; torn?: boolean; roll?: boolean; sc?: Scrap | null; d: Rcpt | null;
   gn: boolean; pg: number; dd: string; stamp: string; // 奶奶的筆記：筆記本的一頁、頁碼、左下的小塗鴉、蓋在紙上的小秘密章
   who: string; day: string; touch: boolean; rm: boolean; rev: number; flip: number; live: number; hint: number | boolean; seq: number;
 };
 // 手帳剪貼區的一張（i＝S.papers 的索引，新的在前）
-export type PaperRow = { i: number; id: string; v: string; name: string; zone: string; gift: boolean; torn?: boolean; gn?: boolean; t: number; isNew: boolean };
+export type PaperRow = { i: number; id: string; v: string; name: string; zone: string; acc?: string; gift: boolean; torn?: boolean; gn?: boolean; t: number; isNew: boolean };
 // 付了錢、還沒演的到貨（氣球木箱）；商品狀態（城市與網購共用的規則）
 export type Ship = { k: string; via: 'city' | 'web'; at: number };
 export type WareState = { id: string; t: string; k: string; name: string; cost: number; can: boolean; why: '' | 'has' | 'max' | 'need' | 'poor'; d: number; lv: number; max: number; need: string; go: 'ship' | 'bag' | 'wear' };

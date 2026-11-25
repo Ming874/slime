@@ -1,16 +1,11 @@
 'use client';
-/* 大城市商店（型錄）與網購（工作電腦）：每樣商品一張卡片，有插圖、價格吊牌、等級刻度，
-   買過或滿級會蓋章。購買按鈕帶 data-act（buyOwn／buyUp／buyPack），由 game.js 扣錢、加設備。 */
+/* 工作電腦的網購（電腦的「網購」分頁）：每樣商品一張卡片，有插圖、價格吊牌、等級刻度，買過或滿級會蓋章。
+   購買按鈕帶 data-act（buyOwn／buyUp／buyPack），由 game.js 扣錢、加設備。
+   大城市的四間店不再用型錄：走進店裡拿起來看、到櫃台結帳（game.js 的 WARE）；保暖衣、長劍只在武器店買得到，所以這裡只列機器、設備、升級與零件包。 */
 import { G } from './game';
 import { Pips, ShopArt } from './Art';
 
-const INTRO: Record<string, string> = {
-  mach: '加工機器與機器升級。買了才會出現在基地的產線上，每台機器對應一道加工流程。',
-  gear: '直播設備、裝飾桌與裝飾零件。',
-  mall: '倉儲、網站伺服器與生活用品。',
-  arms: '武器與防具。保暖衣是進入雪原的必備品；長劍目前只供收藏，之後會派上用場。',
-  eshop: '下單後，箱子會綁著氣球從大城市飛來，降落在擺放的位置。保暖衣、長劍要到大城市的武器店買。',
-};
+const INTRO = '下單後，箱子會綁著氣球從大城市飛來，降落在擺放的位置。保暖衣、長劍要到大城市的武器店買。';
 
 // 說明文字裡的 **粗體**
 const rich = (t: string) => t.split(/\*\*([^*]+)\*\*/g).map((x, i) => (i % 2 ? <b key={i}>{x}</b> : x));
@@ -36,22 +31,20 @@ function Card({ k, art, name, desc, price, act, label, disabled, stamp, state, e
 }
 
 export default function Shop() {
-  const g = G(), S = g.S, kind = INTRO[g.tab] ? g.tab : 'mall', eshop = kind === 'eshop';
-  const owns = Object.keys(g.OWN).filter((k) => (eshop ? ['mach', 'gear'].includes(g.OWN[k].shop) : g.OWN[k].shop === kind));
-  const ups = eshop ? [...g.SHOP_UPS.mach, ...g.SHOP_UPS.gear, ...g.SHOP_UPS.mall] : g.SHOP_UPS[kind] || [];
-  const packs = kind === 'gear' || eshop ? Object.keys(g.PACKS) : [];
-  const buy = eshop ? '立即購買' : '購買';
+  const g = G(), S = g.S;
+  const owns = Object.keys(g.OWN).filter((k) => ['mach', 'gear'].includes(g.OWN[k].shop));
+  const ups = [...g.SHOP_UPS.mach, ...g.SHOP_UPS.gear, ...g.SHOP_UPS.mall];
+  const packs = Object.keys(g.PACKS);
+  const buy = '立即購買';
 
   return (
-    <div className={`rx-shop${eshop ? ' rx-eshop' : ''}`} data-kind={kind}>
-      {eshop && (
-        <div className="rx-eshop-bar" aria-hidden="true">
-          <span className="rx-search">搜尋機器、設備、零件…</span>
-          <span className="rx-ship">氣球宅配・關上電腦就降落</span>
-        </div>
-      )}
+    <div className="rx-shop rx-eshop">
+      <div className="rx-eshop-bar" aria-hidden="true">
+        <span className="rx-search">搜尋機器、設備、零件…</span>
+        <span className="rx-ship">氣球宅配・關上電腦就降落</span>
+      </div>
       <div className="rx-shop-intro">
-        <p>{INTRO[kind]}</p>
+        <p>{INTRO}</p>
         <span className="rx-wallet">錢包 <b>{g.fmt(S.money)}</b></span>
       </div>
 

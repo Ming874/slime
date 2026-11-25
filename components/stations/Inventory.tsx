@@ -161,8 +161,10 @@ function Eggs() {
   );
 }
 
-// 收到的信與明信片（手上的紙收起來的地方）：迷你的紙交錯旋轉、貼一條紙膠帶，新的貼紅色「新」；點一下就在手帳中央抽出來重讀，再點一下或按 E 放回
+// 信、卡片與紙條（手上的紙收起來的地方：信、明信片、便條、撕碎的紙條、導覽小卡、收據、傳單）：迷你的紙交錯旋轉、貼一條紙膠帶，新的貼紅色「新」；點一下就在手帳中央抽出來重讀，再點一下或按 E 放回
 const CLIP_R = (id: string) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 997; return (h % 9) - 4; };
+// 小標兩行時只在「地名｜導覽小卡」之間換行（balance 不認得中文的詞，會把「燈塔」拆成兩行）
+const clipName = (n: string) => { if (n.includes("：")) return n.split("：").map((t, i, a) => <span key={i}>{t}{i < a.length - 1 ? "：" : ""}</span>); const m = /^(.+?)(導覽小卡|的明信片)$/.exec(n); return m ? <><span>{m[1]}</span><span>{m[2]}</span></> : n; };
 function Clips() {
   // 只有手帳開著時才把重讀的紙畫進 #gwin：#gwin 是所有介面共用的框，換成別的介面時不能留著；旅行速寫另外一區（Sketches），抽出來看也走這裡
   const g = G(), list = (g.papers?.() ?? []).filter((c) => c.v !== 'sketch'), ci = g.kind === 'inv' ? g.clip?.() ?? -1 : -1, cur = ci >= 0 ? g.paperAt?.(ci) : null;
@@ -175,12 +177,12 @@ function Clips() {
   if (!list.length) return view;
   return (
     <div className="rx-clips">
-      <div className="rx-clips-hd"><b>收到的信與明信片</b><span>{list.length} 張</span></div>
+      <div className="rx-clips-hd"><b>信、卡片與紙條</b><span>{list.length} 張</span></div>
       <div className="rx-clip-row">
         {list.map((c) => (
-          <button key={c.i} type="button" className={`rx-clip v-${c.v}${c.gift ? ' gift' : ''}${c.torn ? ' torn' : ''}${c.gn ? ' gn' : ''}${c.isNew ? ' new' : ''}`} data-act="clipOpen" data-k={c.i} style={{ '--r': `${CLIP_R(c.id + c.t)}deg` } as CSSProperties} aria-label={`重讀：${c.name}`}>
+          <button key={c.i} type="button" className={`rx-clip v-${c.v}${c.gift ? ' gift' : ''}${c.torn ? ' torn' : ''}${c.gn ? ' gn' : ''}${c.isNew ? ' new' : ''}`} data-act="clipOpen" data-k={c.i} style={{ '--r': `${CLIP_R(c.id + c.t)}deg`, ...(c.acc ? { '--acc': c.acc } : {}) } as CSSProperties} aria-label={`重讀：${c.name}`}>
             <span className="rx-clip-p" aria-hidden="true">{c.v === 'postcard' && g.postcardImg ? <img src={g.postcardImg(c.zone)} alt="" draggable={false} /> : <i />}</span>
-            <small>{c.name.split('：').map((t, i, a) => <span key={i}>{t}{i < a.length - 1 ? '：' : ''}</span>)}</small>{/* 「奶奶的筆記：發光的苔蘚」：冒號前後各自一段、整段換行，不會斷成「發／光的苔蘚」 */}
+            <small>{clipName(c.name)}</small>
             {c.isNew && <em>新</em>}
           </button>
         ))}

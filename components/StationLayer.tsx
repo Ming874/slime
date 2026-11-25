@@ -7,9 +7,8 @@ import { createPortal } from 'react-dom';
 
 type State = { open: boolean; kind: string; prop: string; tab: string; flip: number };
 
-// 各分頁在「電腦」裡的網址、在「型錄」裡的店名
+// 各分頁在「電腦」裡的網址（大城市的四間店是走進店裡拿起來看、到櫃台結帳，沒有型錄介面）
 const URLS: Record<string, string> = { web: 'shop.squish.tw/my-store', weekly: 'squish.tw/weekly', eshop: 'buy.squish.tw', branch: 'squish.tw/business', codex: 'wiki.squish.tw/slimes' };
-const STORES: Record<string, string> = { mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店' };
 
 export default function StationLayer() {
   const [st, setSt] = useState<State>({ open: false, kind: '', prop: '', tab: '', flip: 0 });
@@ -23,8 +22,6 @@ export default function StationLayer() {
     };
     const onTab = (e: Event) => {
       const d = (e as CustomEvent<{ tab: string; flip: boolean }>).detail;
-      const gui = document.getElementById('gui');
-      if (gui) gui.dataset.tab = d.tab; // 型錄依店家換顏色（stations.css）
       setSt((s) => ({ ...s, tab: d.tab, flip: d.flip ? s.flip + 1 : s.flip }));
     };
     addEventListener('slime:gui', onGui);
@@ -63,14 +60,6 @@ function Decor({ prop, tab, flip, kind }: State) {
           <div className="st-spine" aria-hidden="true" />
           <div className="st-ribbon" aria-hidden="true" />
           <div className="st-cover" aria-hidden="true"><span>工坊手帳</span></div>
-          {flip > 0 && <div className="st-flip" key={flip} aria-hidden="true" />}
-        </>
-      );
-    case 'catalog': // 大城市商店：櫃台上的型錄，封面翻開，換店時翻頁
-      return (
-        <>
-          <div className="st-band" data-store={tab} aria-hidden="true"><b>CITY CATALOG</b><span>{STORES[tab] || '大城市'} · 第 {Object.keys(STORES).indexOf(tab) + 1 || 1} 頁</span></div>
-          <div className="st-cover" aria-hidden="true"><small>2026 冬季號</small><b>大城市</b><span>型錄 CATALOG</span></div>
           {flip > 0 && <div className="st-flip" key={flip} aria-hidden="true" />}
         </>
       );
