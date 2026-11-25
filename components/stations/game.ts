@@ -11,7 +11,7 @@ export type Order = { id: number; sp: string; cut: string | null; n: number; min
 export type Review = { s: number; who: string; t: string; sp: string };
 export type State = {
   money: number; fans: number; earned: number; xp: number; gel: Record<string, number>; stock: Product[]; web: Product[]; show: Product[];
-  zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number }>;
+  zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number; a?: number }>; // a＝親手做的 A 級以上件數（熟練代工）
   ship?: Ship[]; wish?: Record<string, number>; shopSeen?: Record<string, number>;
   moon?: { l: number; b: number }; // 第二幕「月光回來」（public/game/story.js）：遺跡四根石柱亮了哪幾根（位元）、巨樹開過花沒
   reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number; vol?: { music: number; sfx: number }; quality?: string; avatar?: string;
@@ -20,7 +20,7 @@ type Up = { name: string; desc: string; max: number; mach?: number; need?: strin
 type Own = { name: string; cost: number; shop: string; desc: string };
 
 export type Game = {
-  S: State; M: { sp: string | null }; BN: { busy: boolean; gift?: number }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
+  S: State; M: { sp: string | null; active?: boolean }; BN: { busy: boolean; gift?: number }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
   trend: { sp: string | null }; invSel: number | null; tab: string; kind: string | null; likeT: () => Record<string, number>;
   title: { on: boolean; mp?: boolean }; inCity?: boolean; riding?: boolean; rideDir?: string; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
   SP: Record<string, Species>; SPECIES: Species[]; ZONES: { id: string; name: string; acc: string }[]; RAR: ({ n: string; c: string } | null)[];
@@ -41,6 +41,7 @@ export type Game = {
   tideStepsHTML: () => string; mapImage: () => string; enter: () => string;
   eggs?: () => Egg[];
   mapView?: () => MapView; mapDraw?: (c: HTMLCanvasElement) => void; // 筆記本的手繪地圖（public/game/map.js）
+  QUIRK?: Record<string, { m: number; tag: string; t: string }>; MASTER_N?: number; // 加工個性（產線上的小牌子與奶奶的便條）、熟練代工要幾件 A 級以上
   ship?: Ship[]; wareState?: (t: string, k: string) => WareState | null;
   paper?: () => PaperData | null; papers?: () => PaperRow[]; paperAt?: (i: number) => PaperData | null; paperOf?: (id: string) => PaperData | null; rcptView?: (d: Rcpt) => PaperData;
   clip?: () => number; hasPaper?: (id: string) => boolean; postcardImg?: (z: string) => string;

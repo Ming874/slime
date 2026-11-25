@@ -249,11 +249,19 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return 
 // 雲端存檔（gate.js 的 SlimeCloud）：每次存檔都通知；'now'＝馬上上傳（買東西、做完加工），'leave'＝頁面要關了
 const cloud = how => { try { if (window.SlimeCloud) SlimeCloud.sync(how); } catch (e) { } };
 function saveCloud() { save(); cloud('now'); }
-function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = RIDE.on && RIDE.safe ? RIDE.safe : { x: P.x, z: P.z, yaw: P.yaw, y: +P.y.toFixed(2) }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } } // 搭車中存安全的站位（換邊前＝上車的地方、換邊後＝目的地的下車處），重新整理不會卡在山裡
+// 做到一半的捏捏先扣掉的凝膠（產線這一輪、手作台）：存檔時算回去。交給機器的那一輪可以走開、關掉面板就會存檔，
+// 這時成品還沒出來；做到一半關掉分頁或重新整理，等於這一輪沒開始（和回主選單退回凝膠一樣），不會白白少 2 份
+const GEL_OUT = {};
+const gelOut = (sp, n) => { if (!sp) return; GEL_OUT[sp] = (GEL_OUT[sp] || 0) + n; if (GEL_OUT[sp] <= 0) delete GEL_OUT[sp]; };
+function saveJSON() { const ks = Object.keys(GEL_OUT); ks.forEach(k => S.gel[k] = (S.gel[k] || 0) + GEL_OUT[k]); try { return JSON.stringify(S); } finally { ks.forEach(k => S.gel[k] -= GEL_OUT[k]); } }
+function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = RIDE.on && RIDE.safe ? RIDE.safe : { x: P.x, z: P.z, yaw: P.yaw, y: +P.y.toFixed(2) }; try { localStorage.setItem(SAVE_KEY, saveJSON()); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } } // 搭車中存安全的站位（換邊前＝上車的地方、換邊後＝目的地的下車處），重新整理不會卡在山裡
 
 /* ---------- 經濟公式 ---------- */
 const trend = { sp: null };
 const cap = () => 8 + S.up.cap * 6;
+// 庫存滿了沒：產線這一輪、手作台正在做的那一件先佔一格。交給機器的那一輪可以走開去用手作台、把展示台或網站的作品收回來，
+// 代工廠也一直在背景補貨——只在開工時看 S.stock.length 的話，做好時會多出一件超過上限
+const stockFull = () => S.stock.length + (M.active ? 1 : 0) + (BN.busy ? 1 : 0) >= cap();
 const slots = () => 4 + S.up.shelf * 2;
 const effCrisp = p => p.crisp * (0.35 + 0.65 * p.dur / 100);
 const decoBonus = p => p.deco.reduce((a, d) => a + (DECO[d.k] ? DECO[d.k].v : 0), 0);
@@ -3118,7 +3126,70 @@ function buildWorkshop() {
 }
 /* 金屬髮絲紋：沿水平方向的細紋改變粗糙度與明暗，反射天空時有拉絲金屬的質感 */
 /* 網站貨架（拿著捏捏按 E 直接上架）與倉儲貨架：層數與格數跟著升級變多，上面擺的就是真的商品 */
-const miniMat = id => (W.miniMat = W.miniMat || {})[id] || (W.miniMat[id] = new THREE.MeshPhysicalMaterial({ color: SP[id].color, roughness: .15, clearcoat: 1 }));
+/* ---------- 第 7.5 節：作品在世界裡看得見 ----------
+   貨架上的捏捏照切法分成方塊（厚塊、薄片、沒切、粗製）、星形、愛心三種形狀：三種共用幾何，每個貨架各一個 InstancedMesh、沒用到的那種不畫，
+   所以繪製呼叫 ≤ 原本的「一件一次」。顏色＝種類；S 級在同一個材質裡加亮面（邊緣反光＋一道慢慢掃過的光）；有裝飾的，頂上放一顆代表零件
+   （最值錢那個零件的顏色，發光零件會亮）——零件併在同一個幾何裡（aPart＝1），沒裝飾的在頂點著色器裡縮成一點不畫，不多一次繪製。歪歪的那件斜斜地站著。
+   形狀立起來、正反兩面都是造型面：從工坊裡面或外面看貨架，3 公尺外都認得出星星和愛心。 */
+const WORKS_N = 40; // 每個貨架每種形狀最多幾件（倉儲上限 8＋5×6＝38）
+const worksShape = p => (p.cut && CUTS[p.cut] && CUTS[p.cut].shape) || 'cube';
+const worksDeco = p => p.deco.reduce((b, d) => DECO[d.k] && (!b || DECO[d.k].v > DECO[b].v) ? d.k : b, null); // 代表零件：最值錢的那個（一樣就取先放的）
+const worksKey = p => p.sp + worksShape(p) + (!p.crude && gradeOf(p).g === 'S' ? 'S' : '') + (worksDeco(p) || '') + (p.wonky ? 'w' : '');
+function worksGeo(kind) {
+  const C = W.worksGeo = W.worksGeo || {}; if (C[kind]) return C[kind];
+  let sh;
+  if (kind === 'cube') { const w = .1, h = .08, r = .035; sh = new THREE.Shape(); sh.moveTo(-w + r, -h); sh.lineTo(w - r, -h); sh.quadraticCurveTo(w, -h, w, -h + r); sh.lineTo(w, h - r); sh.quadraticCurveTo(w, h, w - r, h); sh.lineTo(-w + r, h); sh.quadraticCurveTo(-w, h, -w, h - r); sh.lineTo(-w, -h + r); sh.quadraticCurveTo(-w, -h, -w + r, -h); }
+  else sh = cutShape(kind, .13);
+  const body = new THREE.ExtrudeGeometry(sh, { depth: kind === 'cube' ? .14 : .08, bevelEnabled: true, bevelThickness: .03, bevelSize: .022, bevelSegments: 1, curveSegments: kind === 'heart' ? 4 : 2 });
+  body.computeBoundingBox(); const bb = body.boundingBox, top = bb.max.y - bb.min.y; body.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2); // 底貼齊 y＝0、前後左右置中
+  const bead = new THREE.IcosahedronGeometry(.045, 0); bead.translate(kind === 'heart' ? .065 : 0, top + .02, 0); // 愛心頂上的中間是凹的：零件放在右邊的圓弧上
+  const gs = [body, bead].map(g => g.index ? g.toNonIndexed() : g), n0 = gs[0].attributes.position.count, n = n0 + gs[1].attributes.position.count;
+  const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), part = new Float32Array(n).fill(1, n0);
+  gs.forEach((g, i) => { pos.set(g.attributes.position.array, i ? n0 * 3 : 0); nor.set(g.attributes.normal.array, i ? n0 * 3 : 0); g.dispose(); });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('aPart', new THREE.BufferAttribute(part, 1));
+  return (C[kind] = geo);
+}
+function worksMat() {
+  if (W.worksMat) return W.worksMat;
+  const m = W.worksMat = new THREE.MeshPhysicalMaterial({ color: '#ffffff', roughness: .22, clearcoat: 1, clearcoatRoughness: .12, flatShading: true });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uT = W.wind; // 跟草、樹被風吹的動畫共用同一個時間（worldStep 每格更新）
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aPart; attribute vec4 iDeco; attribute float iShine; varying float vPart; varying vec4 vDeco; varying float vShine; varying vec2 vLP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPart = aPart; vDeco = iDeco; vShine = iShine; vLP = position.xy + instanceMatrix[3].xz * 3.7;\nif (aPart > .5 && iDeco.a < .5) transformed = vec3(0.);');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uT; varying float vPart; varying vec4 vDeco; varying float vShine; varying vec2 vLP;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\nif (vPart > .5) diffuseColor.rgb = vDeco.rgb;')
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        float wRim = pow(1. - abs(dot(normal, normalize(vViewPosition))), 2.), wBand = smoothstep(.8, 1., sin((vLP.x * .8 + vLP.y) * 14. - uT * 2.4));
+        totalEmissiveRadiance += vShine * (1. - vPart) * (wRim * .55 + wBand * .7) * mix(vec3(1.), diffuseColor.rgb, .4);
+        totalEmissiveRadiance += step(1.5, vDeco.a) * vPart * vDeco.rgb * .7;`);
+  };
+  m.customProgramCacheKey = () => 'works'; return m;
+}
+// 一個貨架的三個 InstancedMesh（掛在貨架本身，rackFrame 重蓋層板時不會被清掉）；幾何的頂點共用，只有每件的資料各自一份
+function worksSet(host) {
+  if (host.userData.works) return host.userData.works; const set = {};
+  ['cube', 'star', 'heart'].forEach(k => {
+    const base = worksGeo(k), g = new THREE.BufferGeometry(); for (const a in base.attributes) g.setAttribute(a, base.attributes[a]);
+    g.setAttribute('iDeco', new THREE.InstancedBufferAttribute(new Float32Array(WORKS_N * 4), 4)); g.setAttribute('iShine', new THREE.InstancedBufferAttribute(new Float32Array(WORKS_N), 1));
+    const im = new THREE.InstancedMesh(g, worksMat(), WORKS_N); im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(WORKS_N * 3), 3); im.count = 0; im.visible = false; host.add(im); set[k] = im;
+  });
+  return (host.userData.works = set);
+}
+// list：[[捏捏, x, 底的 y], …]；sc＝整體縮放（倉儲一層擺得比較密）
+function worksFill(host, list, sc) {
+  const set = worksSet(host), n = { cube: 0, star: 0, heart: 0 }, T = W.worksT || (W.worksT = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3(), c: new THREE.Color() });
+  for (const [p, x, y] of list) {
+    const k = worksShape(p), im = set[k], i = n[k]; if (i >= WORKS_N) continue; n[k]++;
+    im.setMatrixAt(i, T.m.compose(T.v.set(x, y, 0), T.q.setFromEuler(T.e.set(0, 0, p.wonky ? .3 : 0)), T.s.setScalar(sc))); im.setColorAt(i, T.c.set(SP[p.sp].color));
+    const d = worksDeco(p), a = im.geometry.attributes; if (d) T.c.set(DECO[d].c); a.iDeco.setXYZW(i, T.c.r, T.c.g, T.c.b, d ? (DECO[d].glow ? 2 : 1) : 0); a.iShine.setX(i, !p.crude && gradeOf(p).g === 'S' ? 1 : 0);
+  }
+  for (const k in set) { const im = set[k], a = im.geometry.attributes; im.count = n[k]; im.visible = n[k] > 0; im.instanceMatrix.needsUpdate = im.instanceColor.needsUpdate = a.iDeco.needsUpdate = a.iShine.needsUpdate = true; im.boundingSphere = null; }
+}
+// 網站貨架的空格：一片片鐵板也合成一個 InstancedMesh（原本每格一次繪製）
+function worksPlates(host, list, mat) {
+  const im = host.userData.plate || (host.userData.plate = (() => { const m = new THREE.InstancedMesh(new THREE.BoxGeometry(.26, .01, .26), mat, 16); host.add(m); return m; })());
+  list.slice(0, 16).forEach(([x, y], i) => im.setMatrixAt(i, tmpM.makeTranslation(x, y, 0))); im.count = Math.min(16, list.length); im.visible = im.count > 0; im.instanceMatrix.needsUpdate = true; im.boundingSphere = null;
+}
 /* 奶奶的舊工坊（第 3 堂 06）：小屋把手作台與工作電腦收進去、產線在北側工棚、裝飾桌在西邊花棚。
    只做「外殼加一面牆打開」（像娃娃屋），零件依顏色合併成少數網格 */
 const REPAIRS = [['first', '左邊的窗戶'], ['machine', '右邊的窗戶'], ['firstlive', '屋頂的破洞'], ['coast', '另一塊屋頂瓦片'], ['volcano', '門口的招牌'], ['snow', '煙囪']];
@@ -3282,16 +3353,16 @@ function rackFrame(dyn, tiers, gap, mat, matD) {
 }
 function refreshProps() {
   if (!W.shelfDyn) return;
-  const sig = [S.show.map(p => p.id).join(), S.web.map(p => p.sp).join(), slots(), S.stock.map(p => p.sp).join(), cap(), S.up.gear, S.up.farm, S.own.live ? 1 : 0].join('|'); if (sig === W.propSig) return; W.propSig = sig;
+  const sig = [S.show.map(p => p.id).join(), S.web.map(worksKey).join(), slots(), S.stock.slice(0, cap()).map(worksKey).join(), cap(), S.up.gear, S.up.farm, S.own.live ? 1 : 0].join('|'); if (sig === W.propSig) return; W.propSig = sig; // 貨架上的形狀、S 級、代表零件變了也要重擺
   const wood = W.rackWood || (W.rackWood = woodMat('#b08a5e')), woodD = W.rackWoodD || (W.rackWoodD = woodMat('#6b4d33')), steel = W.rackSteel || (W.rackSteel = std('#64748b', { metalness: .7, roughness: .35 }));
-  const mini = W.miniGeo || (W.miniGeo = new THREE.BoxGeometry(.26, .2, .26));
   // 網站貨架：每層 5 格，伺服器升級會多出新的一層
   W.musJ.forEach((J, i) => { const p = S.show[i]; J.group.visible = !!p; if (p) { jellyColors(J, SP[p.sp]); jellyCut(J, p); jellyDeco(J, p); syncDeco(J, p, 0); } });
   const ws = slots(), wt = Math.ceil(ws / 5); rackFrame(W.shelfDyn, wt, .52, wood, woodD);
-  for (let i = 0; i < ws; i++) { const x = -.88 + (i % 5) * .44, y = .25 + Math.floor(i / 5) * .52; const p = S.web[i]; if (p) mesh(mini, miniMat(p.sp), x, y + .13, 0, W.shelfDyn).userData.shared = true; else box(.26, .01, .26, steel, x, y + .03, 0, W.shelfDyn); }
+  const web = [], empty = []; for (let i = 0; i < ws; i++) { const x = -.88 + (i % 5) * .44, y = .25 + Math.floor(i / 5) * .52, p = S.web[i]; if (p) web.push([p, x, y + .027]); else empty.push([x, y + .03]); }
+  worksFill(W.shelfDyn.parent, web, 1); worksPlates(W.shelfDyn.parent, empty, steel);
   // 倉儲貨架：層數 = 1 + 倉儲升級等級
   const tiers = 1 + S.up.cap, per = Math.ceil(cap() / tiers); rackFrame(W.rackDyn, tiers, .42, steel, steel);
-  S.stock.slice(0, cap()).forEach((p, i) => { const t = Math.floor(i / per), k = i % per; mesh(mini, miniMat(p.sp), -.95 + k * (1.9 / Math.max(1, per - 1)), .25 + t * .42 + .13, 0, W.rackDyn).userData.shared = true; });
+  const gap = 1.9 / Math.max(1, per - 1); worksFill(W.rackDyn.parent, S.stock.slice(0, cap()).map((p, i) => [p, -.95 + (i % per) * gap, .25 + Math.floor(i / per) * .42 + .027]), Math.min(1, gap / .31)); // 一層 7～8 件時縮小一點，星星的角不會碰在一起
   // 直播燈光設備：每一級在舞台旁多一支燈
   W.upG.children.slice().forEach(dropObj); const steel2 = std('#64748b', { metalness: .7, roughness: .35 });
   if (S.own.live) for (let i = 0; i < S.up.gear; i++) { const a = -2.3 + i * .45 + (i > 1 ? 1.9 : 0), x = BASE.live[0] + Math.cos(a) * 2.4, z = BASE.live[1] + Math.sin(a) * 2.4, y = G(x, z), c = ['#22d3ee', '#e879f9', '#fbbf24', '#34d399', '#818cf8'][i]; cyl(.04, .05, 2.3, 8, steel2, x, y + 1.15, z, W.upG); const hd = box(.34, .22, .22, std('#1e293b', { metalness: .6 }), x, y + 2.35, z, W.upG); hd.lookAt(BASE.live[0], y + 1, BASE.live[1]); mesh(new THREE.CircleGeometry(.09, 16), glow(c), 0, 0, .115, hd); }
@@ -3456,7 +3527,7 @@ function lineStep(dt) {
   MK.leds.forEach((im, i) => { const lv = S.up[MKEY[i]], on = act(i), sig = lv + (on ? 'a' : 'b'); if (im.userData.sig === sig) return; im.userData.sig = sig; for (let k = 0; k < 5; k++) im.setColorAt(k, tmpC.set(k < lv ? (on ? '#34d399' : '#22d3ee') : '#1e293b')); im.instanceColor.needsUpdate = true; });
   const moving = M.active || MK.bx < 7.9;
   if (moving || !MK.beltInit) { MK.beltInit = true; MK.beltX.forEach((x, i) => { x += dt * (moving ? .8 : 0); if (x > 7.4) x -= 15; MK.beltX[i] = x; MK.belt.setMatrixAt(i, tmpM.makeTranslation(x, .71, 0)); }); MK.belt.instanceMatrix.needsUpdate = true; }
-  const J = MK.J, spId = M.active ? M.sp : (M.last ? M.last.sp : M.sp);
+  const J = MK.J, spId = M.active ? M.rsp : (M.last ? M.last.sp : M.sp);
   J.group.visible = ownAny() && (M.active || !!M.last); if (spId) { jellyColors(J, SP[spId]); MK.tank.material.color.set(SP[spId].color); MK.tank.material.emissive.set(SP[spId].color); }
   const slicing = M.active && M.step === 0 && M.g && !!M.g.marks;
   const tx = slicing ? MX[0] - LT / 2 + LT * (M.phase === 'run' ? slicePos(M.g) : 0) : M.active ? MX[M.step] : (M.last ? 8.2 : -6.4); if (slicing && M.phase === 'run') MK.bx = tx; else MK.bx += (tx - MK.bx) * Math.min(1, dt * 3); const onTurn = !M.active && M.last && MK.bx > 7.6;
@@ -4699,9 +4770,9 @@ function playerStep(dt) {
   P.camY += (P.y - P.camY) * Math.min(1, dt * 18);
 }
 // 產線特寫鏡頭：放在天棚下方（原本在屋頂上方，畫面被屋頂整片擋住），
-// 並依畫面比例拉遠，讓整條產線出現在下方介面之上的區域
+// 並依畫面比例拉遠，讓整條產線出現在下方介面之上的區域；交給機器的那一輪不跟著每一台跳，停在看得到整條產線的位置
 function lineViewPose() {
-  const vf = W.cam.fov * Math.PI / 180, focus = M.active, ly = W.lineG ? W.lineG.position.y : WS_Y, lz = W.lineG ? W.lineG.position.z : -8, lx = W.lineG ? W.lineG.position.x : 0;
+  const vf = W.cam.fov * Math.PI / 180, focus = M.active && !M.auto, ly = W.lineG ? W.lineG.position.y : WS_Y, lz = W.lineG ? W.lineG.position.z : -8, lx = W.lineG ? W.lineG.position.x : 0;
   const dist = focus ? clamp(3.6 / (Math.tan(vf / 2) * W.cam.aspect), 6.6, 13) : clamp(9.6 / (Math.tan(vf / 2) * W.cam.aspect), 8, 19), y = ly + (focus ? 3.8 : 4.7);
   const p = new THREE.Vector3(focus ? lx + MX[M.step] : .4, y, lz + dist), pitch = Math.atan2(y - (ly + 1.3), dist) + vf * (focus ? .2 : .24);
   return { p, t: p.clone().add(new THREE.Vector3(0, -Math.sin(pitch), -Math.cos(pitch))) };
@@ -5221,7 +5292,7 @@ const PANEL = { eshop: 'up' }; // 分頁 → 畫在哪一塊（電腦的網購�
 // 翻到手繪地圖那一頁：NMAP.seq 換號，NoteMap.tsx 重畫鉛筆圈、把自己的位置捲進畫面；筆記本換頁有翻紙聲
 function showSec(sec) { if (sec === 'map' && tab !== 'map') NMAP.seq++; if (GUI.kind === 'pause' && tab && tab !== sec) sfx.paper('flip'); window.dispatchEvent(new CustomEvent('slime:tab', { detail: { kind: GUI.kind, tab: sec, flip: !!tab && tab !== sec } })); tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
 function closeGui() {
-  if (!GUI.kind) return; if (GUI.kind === 'line' && M.active) { toast('產線還在運轉，請先完成這一輪加工。'); return; }
+  if (!GUI.kind) return; if (GUI.kind === 'line' && M.active && !M.auto) { toast('產線還在運轉，請先完成這一輪加工。'); return; } // 交給機器的那一輪可以走開，做好了自己放進背包
   if (L.watch) stopWatch();
   guiLeave(); GUI.kind = null; GUI.focus = null; tab = ''; guiHide(); save();
   renderHotbar(true); lockMouse(); $('#startHint').hidden = locked() || TOUCH;
@@ -5715,39 +5786,85 @@ function gnBuild() {
 }
 
 /* ---------- 加工：三台機器各有不同的操作流程 ---------- */
-const M = { sp: null, step: -1, active: false, phase: '', pt: 0, g: null, scores: [], last: null, hold: false, kdir: 0 };
+const M = { sp: null, rsp: null, step: -1, active: false, phase: '', pt: 0, g: null, scores: [], last: null, hold: false, kdir: 0, auto: false }; // auto：這一輪交給機器（熟練代工）
+// sp＝面板上選的凝膠（手作台也用同一個選擇）；rsp＝這一輪開工時鎖定的種類。交給機器的那一輪可以走開去手作台換凝膠，
+// 產線運轉中的每一步（個性、切面顏色、成品、退回凝膠）只看 rsp，做出來的一定是投進去的那一種
 const MG = [
   { name: '切片', how: '切割線碰到紅色雷射時下刀', key: '空白鍵／點擊畫面' }, // how：切片與乾燥的說明寫在小遊戲旁邊（Make.tsx），面板上方只寫裹糖晶的
   { name: '裹糖晶', how: '按住讓滾筒加速、放開會減速，讓指針停在綠色區間越久越好。', key: '按住空白鍵' },
   { name: '乾燥', how: '拖曳火力旋鈕，讓它跟上不斷移動的黃色目標溫度。', key: '← → 或 A D' },
 ];
 const lvlOf = i => S.up[MKEY[i]];
-function startMake() {
+/* ---------- 第 7.4 節：加工個性與熟練代工 ----------
+   加工個性：每種史萊姆在某一台機器上有一點不一樣（11 種只差顏色的話，做到第 500 件都是同一組小遊戲）。
+   m＝哪一台（0 切片、1 裹糖、2 乾燥），只在那一台運轉時有作用；tag＝控制面板上凝膠按鈕的小牌子；t＝奶奶貼在面板上的便條（手寫字，Make.tsx）。
+   切片：tol 判定寬度×、dur 輸送帶時間×（>1 比較慢）、pf 完美切面加成×（分數最多到 100%）、peek 切割線快碰到雷射才看得見。
+   裹糖：zs 綠區移動速度×、swing 綠區一定左右跑這麼遠（原本隨機 0～0.16，四成的時候幾乎不動，zs 再快也看不出來）、lag 指針跟上滾筒的速度×（<1 黏、慢半拍）、
+         acc 加減速×、w 綠區寬度×、still 綠區不動、grow 待在綠區會慢慢變寬、breathe 綠區一縮一放。
+   乾燥：ts 目標溫度移動速度×、tw 目標寬度×、hot 目標都在高溫那一邊、jump 每幾秒變一次色並跳到另一邊（換色前先閃、換色後一下子不扣分，見 DRY_WARN）、rise 目標一路往高溫走。
+   難度：用和小遊戲同一套公式的模擬（反應 0.2～0.35 秒的人）對過，變難的那一面一定配一個補償（綠區加寬、判定放寬、換色後的緩衝、完美加成），
+   每種的平均分數和沒有個性時差不到 0.1，讓「這種要怎麼做」是差異而不是懲罰；青草、蜂蜜、海鹽是新手最早做到的，偏簡單。 */
+const QUIRK = {
+  grass: { m: 0, tag: '好切', tol: 1.2, t: '青草的最乖，刀慢一點也切得整齊，先拿它練手吧。' },
+  honey: { m: 1, tag: '黏手', lag: .45, t: '蜂蜜黏黏的，指針跟著滾筒慢半拍、晃得也慢；早一點按、早一點放，反而好停在綠區。' }, // 黏＝指針被抹平，比較好控制（模擬：比沒有個性高）
+  salt: { m: 0, tag: '慢慢送', dur: 1.25, t: '海鹽的在輸送帶上會滑，我把它調慢了，看清楚再下刀。' },
+  coral: { m: 1, tag: '綠區不跑', w: .9, still: 1, acc: .75, t: '珊瑚很乖：綠區不會跑，滾筒也轉得慢慢的；不過它小孔多，綠區窄一點，要穩穩地抓住。' }, // 綠區不動其實沒有變簡單（指針本來就要來回點），窄的那一點用溫和的滾筒補回來
+  lava: { m: 1, tag: '綠區跑得快', zs: 1.5, swing: .13, w: 1.1, t: '熔岩燙燙的，糖一碰就化，綠區會左右跑、跑得比平常快；還好熔岩很吃糖，綠區寬一點。' },
+  obsid: { m: 0, tag: '送得快', dur: .8, tol: 1.15, t: '黑曜又硬又重，輸送帶會跑快一點，不過刀子很好咬。' },
+  ice: { m: 0, tag: '要切準', tol: .8, pf: 1.3, t: '冰晶很脆，刀要下得準；切得漂亮，整面亮晶晶，會多加分。' },
+  aurora: { m: 2, tag: '目標會變色', jump: 2, t: '極光一下綠一下紫，每 2 秒換一次色，溫度就跳到另一邊。要換色前它會先閃一閃；剛換好那一下不算你的，追過去就好。' },
+  glowgrass: { m: 1, tag: '越滾越亮', grow: 1, t: '螢光青草喜歡糖，待在綠區越久，綠區就越寬。' },
+  nightcoral: { m: 1, tag: '綠區會呼吸', breathe: 1, t: '夜光珊瑚會呼吸，綠區一縮一放，縮的時候要抓穩。' },
+  ember: { m: 2, tag: '火要開大', hot: 1, ts: 1.2, t: '餘燼本來就熱熱的，火要開大一點，目標都在高溫那一邊。' },
+  saltc: { m: 2, tag: '越烘越熱', rise: 1, t: '鹽晶裡有水，越烘越乾，火要跟著一路慢慢往上加。' },
+  charc: { m: 1, tag: '一按就衝', acc: 1.6, w: 1.25, t: '炭火很輕，一按滾筒就衝出去，要輕輕點著按；還好它很吃糖，綠區寬一點。' },
+  frostb: { m: 2, tag: '要很準', ts: .6, tw: .75, t: '霜鈴怕熱，溫度要抓得很準；還好它很有耐心，目標變得很慢。' },
+  moonl: { m: 0, tag: '線看不清', peek: 1, tol: 1.2, t: '月光的身體半透明，切割線快碰到雷射才看得見，判定放寬一點。' },
+};
+const quirkAt = (sp, step) => { const q = QUIRK[sp]; return q && q.m === step ? q : {}; };
+// 熟練代工：同一種親手做出 MASTER_N 件 A 級以上（S.codex[id].a），產線就記得手法，之後可以「交給機器」：AUTO_T 秒做出固定 B 級（AUTO_CRISP）。想要 S／A 才自己玩小遊戲
+const MASTER_N = 10, AUTO_T = 3, AUTO_CRISP = .58, AUTO_Q = .6;
+const mastered = sp => !!(sp && S.codex[sp] && (S.codex[sp].a || 0) >= MASTER_N);
+function startMake(auto) {
   if (!ownAny()) return toast('還沒有任何加工機器，到工作電腦的「網購」購買');
   const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）');
-  if (S.stock.length >= cap()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
-  S.gel[sp] -= 2; M.coopDone = null; M.coop = null; M.cut = S.own.slicer ? (CUTS[S.cut] ? S.cut : 'thick') : null; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
+  if (stockFull()) return toast('庫存已滿，請先銷售或升級倉儲貨架');
+  if (auto && !mastered(sp)) return;
+  S.gel[sp] -= 2; gelOut(sp, 2); M.rsp = sp; M.lit = null; M.coopDone = null; M.coop = null; M.auto = !!auto; M.cut = S.own.slicer ? (CUTS[S.cut] ? S.cut : 'thick') : null; M.steps = [0, 1, 2].filter(i => S.own[MKEY[i]]); M.si = 0; M.step = M.steps[0]; M.scores = [null, null, null];
   M.active = true; M.last = null; MK.bx = -6.4; beginStep(); renderHotbar(true); renderMake();
 }
 function beginStep() {
-  M.phase = 'ready'; M.pt = 1.4; M.hold = false; M.kdir = 0; const lv = lvlOf(M.step);
+  M.phase = 'ready'; M.pt = 1.4; M.hold = false; M.kdir = 0; const lv = lvlOf(M.step), qk = quirkAt(M.rsp, M.step);
   if (M.step === 0) {
     // 越熟練判定越寬（最多 +35%）；切過 40 刀之後輸送帶會忽快忽慢（加工產線前那根柱子上的奶奶的筆記 gn1 寫著，不再跳 toast）
-    const C = CUTS[M.cut] || CUTS.thick, k = C.marks, marks = [], skill = 1 + Math.min(.35, (S.cutN || 0) / 150), vary = (S.cutN || 0) >= 40 ? .5 : 0;
+    const C = CUTS[M.cut] || CUTS.thick, k = C.marks, marks = [], skill = 1 + Math.min(.35, (S.cutN || 0) / 150), vary = (S.cutN || 0) >= 40 && !M.auto ? .5 : 0;
     for (let i = 0; i < k; i++) marks.push(.14 + i * .72 / (k - 1) + rnd(-.02, .02));
-    M.g = { t: 0, dur: 2.6 + k * .45, marks, hit: marks.map(() => null), tol: (.045 + .012 * lv) * C.tol * skill, vary };
+    M.g = { t: 0, dur: (2.6 + k * .45) * (qk.dur || 1), marks, hit: marks.map(() => null), tol: (.045 + .012 * lv) * C.tol * skill * (qk.tol || 1), vary, pf: qk.pf || 1, peek: !!qk.peek };
     MK.clipU = 1.1;
   }
   else if (M.step === 1) { // 指針一開始在正中間；綠色區域放在左半或右半，要按住加速或放手減速才對得上
-    const w = .2 + .035 * lv, c = Math.random() < .5 ? rnd(.53 + w / 2, .93 - w / 2) : rnd(.07 + w / 2, .47 - w / 2); M.g = { t: 0, dur: 5, thr: .5, v: .5, inz: 0, lo: c - w / 2, hi: c + w / 2, w, c0: c, ph: rnd(0, 6.28), amp: Math.max(0, Math.min(.16, c - w / 2 - .05, .95 - c - w / 2)) }; M.coop = null; const f = NET.on && P ? nearFriend(8) : null; if (f) { M.coop = f; M.pt = 2.4; netEmit({ t: 'coop', to: f.id, on: true, lo: M.g.lo, hi: M.g.hi }); toast(`${f.name} 在旁邊：裹糖交給朋友來做！`); } }
-  else M.g = { t: 0, dur: 5.5, knob: .5, err: 0, n: 0, tw: .07 + .015 * lv, seed: rnd(0, 10) };
+    const w = (.2 + .035 * lv) * (qk.w || 1), sw = qk.swing || 0, c = Math.random() < .5 ? rnd(Math.max(.53, .05 + sw) + w / 2, Math.min(.93, .95 - sw) - w / 2) : rnd(Math.max(.07, .05 + sw) + w / 2, Math.min(.47, .95 - sw) - w / 2); M.g = { t: 0, dur: 5, thr: .5, v: .5, inz: 0, lo: c - w / 2, hi: c + w / 2, w, c0: c, ph: rnd(0, 6.28), amp: qk.still ? 0 : Math.max(0, Math.min(sw || .16, c - w / 2 - .05, .95 - c - w / 2)), zs: qk.zs || 1, lag: qk.lag || 1, acc: qk.acc || 1, grow: !!qk.grow, gw: 1, breathe: !!qk.breathe }; M.coop = null; const f = NET.on && P && !M.auto ? nearFriend(8) : null; if (f) { M.coop = f; M.pt = 2.4; netEmit({ t: 'coop', to: f.id, on: true, lo: M.g.lo, hi: M.g.hi }); toast(`${f.name} 在旁邊：裹糖交給朋友來做！`); } }
+  else M.g = { t: 0, dur: 5.5, knob: .5, err: 0, n: 0, tw: (.07 + .015 * lv) * (qk.tw || 1), seed: rnd(0, 10), ts: qk.ts || 1, hot: !!qk.hot, jump: qk.jump || 0, rise: !!qk.rise };
+  if (M.auto) { M.pt = .1; M.g.dur = AUTO_T / M.steps.length - M.pt; } // 交給機器：幾乎不用準備，三台合起來（含換台）剛好 AUTO_T 秒
 }
 // 史萊姆在切片機下的位置（0→1）；變速時仍保持單調前進
 const slicePos = g => { const u = clamp(g.t / g.dur, 0, 1); return g.vary ? u + g.vary * Math.sin(u * Math.PI * 4) / (Math.PI * 4) : u; };
 const LT = 2.4; // 切片時史萊姆經過刀下的行程
-const dryTarget = g => clamp(.5 + .28 * Math.sin(g.t * .9 + g.seed) + .12 * Math.sin(g.t * 2.3 + g.seed * 2), .08, .92);
+// 乾燥的目標溫度（加工個性）：jump＝極光每 jump 秒換一次色、跳到另一處；rise＝鹽晶一路往高溫走；hot＝餘燼繞著偏高的溫度小幅擺動
+const dryJump = g => Math.floor(g.t / g.jump);
+// 極光跳過去的距離有 0.4～0.6，旋鈕一秒只轉 0.9：反應再快也要半秒多才追得上（沒有緩衝時完美操作也只有 78%）。
+// 所以換色前 DRY_WARN 秒目標先閃（知道要跳了）、換色後 DRY_SETTLE 秒新的顏色慢慢亮起來、這段時間不扣分——難的是「每 2 秒換邊」的節奏，不是追不上
+const DRY_WARN = .35, DRY_SETTLE = .45;
+const drySettling = g => !!g.jump && g.t >= g.jump && g.t % g.jump < DRY_SETTLE;
+const dryTarget = g => {
+  const t = g.t * (g.ts || 1);
+  if (g.jump) { const k = dryJump(g), side = (k + Math.floor(g.seed)) % 2 ? 1 : -1; return clamp(.5 + side * (.2 + .12 * (.5 + .5 * Math.sin(k * 3.7 + g.seed))) + .07 * Math.sin(g.t * 1.7), .08, .92); } // 每次都跳到另一半邊（.18～.3 或 .7～.82），不會只挪一點點；兩次之間也小小地晃，不是停著等
+  if (g.rise) return clamp(.18 + .64 * clamp(g.t / g.dur, 0, 1) + .07 * Math.sin(t * 1.6 + g.seed), .08, .92);
+  const c = g.hot ? .66 : .5, a = g.hot ? .62 : 1;
+  return clamp(c + .28 * a * Math.sin(t * .9 + g.seed) + .12 * a * Math.sin(t * 2.3 + g.seed * 2), .08, .92);
+};
 function makeAction(kind, val) {
-  if (!M.active) return; if (kind === 'hold') { if (M.coop) return; M.hold = val; const b = $('#mgHold'); if (b) b.classList.toggle('on', !!val); return; }
+  if (!M.active || M.auto) return; if (kind === 'hold') { if (M.coop) return; M.hold = val; const b = $('#mgHold'); if (b) b.classList.toggle('on', !!val); return; }
   if (M.phase !== 'run') return; const g = M.g;
   if (M.step === 0 && kind === 'tap') {
     const pos = slicePos(g); let best = -1, bd = 1; g.marks.forEach((m, i) => { if (g.hit[i] == null) { const d = Math.abs(pos - m); if (d < bd) { bd = d; best = i; } } });
@@ -5762,30 +5879,70 @@ function makeTick(dt) {
   if (M.stop > 0) { M.stop -= dt; return; } // 下刀瞬間的停頓
   if (M.slow > 0) { M.slow -= dt; dt *= .35; } // 完美切面後短暫慢動作
   g.t += dt;
+  if (M.auto) autoPlay(g);
   if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos > m + g.tol * 2.2) { g.hit[i] = 0; g.combo = 0; ui('make'); updMakeUI(); } }); }
   if (M.step === 1 && M.coop && (M.coopT = (M.coopT || 0) + dt) > .1) { M.coopT = 0; netEmit({ t: 'coopV', to: M.coop.id, v: g.v, lo: g.lo, hi: g.hi }); }
-  if (M.step === 1) { const cc = g.c0 + g.amp * Math.sin(g.t * .8 + g.ph); g.lo = cc - g.w / 2; g.hi = cc + g.w / 2; }
-  if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
-  if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
+  // 綠區：加工個性可以讓它跑得快（zs）、待久了變寬（grow，最多 ×1.5）、一縮一放（breathe）
+  if (M.step === 1) { const inZ = g.v >= g.lo && g.v <= g.hi; if (g.grow) g.gw = inZ ? Math.min(1.5, g.gw + dt * .3) : Math.max(1, g.gw - dt * .5);
+    const cc = g.c0 + g.amp * Math.sin(g.t * .8 * g.zs + g.ph), w = g.w * g.gw * (g.breathe ? 1 + .32 * Math.sin(g.t * 2.2) : 1); g.lo = Math.max(.02, cc - w / 2); g.hi = Math.min(.98, cc + w / 2); }
+  if (M.step === 1) { g.thr = clamp(g.thr + (M.hold ? 1.15 : -.95) * g.acc * dt, 0, 1); g.v += (g.thr - g.v) * Math.min(1, dt * 2.5 * g.lag); if (g.v >= g.lo && g.v <= g.hi) g.inz += dt; MK.drumSpd = g.v; }
+  if (M.step === 2) { g.knob = clamp(g.knob + M.kdir * dt * .9, 0, 1); if (!drySettling(g)) g.err += Math.max(0, Math.abs(g.knob - dryTarget(g)) - g.tw * .5) * dt; g.n += dt; MK.heatLv = g.knob; }
   if (g.t >= g.dur) finishStep(); else updMakeUI();
 }
 function finishStep() {
   const g = M.g; let sc;
-  if (M.step === 0) sc = g.hit.reduce((a, b) => a + (b || 0), 0) / g.marks.length;
+  if (M.auto) sc = AUTO_Q;
+  else if (M.step === 0) sc = Math.min(1, g.hit.reduce((a, b) => a + (b || 0) * (b > .9 ? g.pf : 1), 0) / g.marks.length); // pf：冰晶的完美切面多加分
   else if (M.step === 1) sc = clamp(g.inz / (g.dur * .8), 0, 1);
   else sc = clamp(1 - (g.err / Math.max(g.n, .01)) / .25, 0, 1);
-  if (M.step === 0) S.cutN = (S.cutN || 0) + g.hit.filter(h => h > .3).length;
+  if (M.step === 0 && !M.auto) S.cutN = (S.cutN || 0) + g.hit.filter(h => h > .3).length; // 機器切的不算玩家的熟練
   if (M.step === 1 && M.coop) { netEmit({ t: 'coop', to: M.coop.id, on: false, sc }); M.coopDone = M.coop.name; M.coop = null; M.hold = false; }
   M.scores[M.step] = sc; sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
   // 不跳「切片：完美（100%）」：介面上的步驟清單已經寫著這一步的分數，切的當下也冒過「完美切面！」
   M.si++;
   if (M.si >= M.steps.length) {
-    M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
+    M.active = false; gelOut(M.rsp, -2); const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.rsp, M.auto ? AUTO_CRISP : 0.15 + 0.85 * avg);
     if (M.coopDone) { p.crisp = Math.min(1, p.crisp + .05); setTimeout(() => toast(`和 ${M.coopDone} 合作的產線：酥脆度 +5%`), 300); M.coopDone = null; }
     if (M.scores[0] != null && M.cut) { p.cut = M.cut; p.cq = Math.round(M.scores[0] * 100) / 100; if (M.scores[0] < .35) { p.wonky = true; setTimeout(() => toast('切歪了，做出一個「歪歪捏捏」：比較便宜，但有收藏家特別喜歡。凝膠沒有浪費。'), 600); } }
-    S.stock.push(p); M.last = p; if (!S.lineMade) { S.lineMade = true; objSig = ''; } gainXP(5 + p.crisp * 10); saveCloud(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
+    S.stock.push(p); M.last = p; if (!S.lineMade) { S.lineMade = true; objSig = ''; } gainXP(M.auto ? 3 : 5 + p.crisp * 10); saveCloud(); setTimeout(() => sfx.pop(), 350); renderHotbar(true); renderQuest();
+    if (M.auto) { M.auto = false; toast(`機器照你的手法做好了一個${short(p.sp)}捏捏（B 級）`); }
+    else if ('SA'.includes(gradeOf(p).g)) { const c = S.codex[p.sp]; c.a = (c.a || 0) + 1; if (c.a === MASTER_N) masterFx(p.sp); } // 熟練代工：只算親手做的 A 級以上
   } else { M.step = M.steps[M.si]; beginStep(); }
   renderMake();
+}
+// 交給機器：照熟練的手法自己操作，畫面上一樣看得到刀落下、滾筒轉、烘箱亮（分數固定，結算時給 AUTO_CRISP）
+function autoPlay(g) {
+  if (M.phase !== 'run') return;
+  if (M.step === 0) { const pos = slicePos(g); g.marks.forEach((m, i) => { if (g.hit[i] == null && pos >= m) { g.hit[i] = AUTO_Q; autoChop(); } }); }
+  else if (M.step === 1) M.hold = g.v < (g.lo + g.hi) / 2;
+  else { const d = dryTarget(g) - g.knob; M.kdir = Math.abs(d) > .02 ? Math.sign(d) : 0; }
+}
+// 機器下的刀：只有刀、聲音、切下來的一片與一點碎屑，不跳「很好／完美」的字（不是玩家切的）
+function autoChop() {
+  MK.pulse[0] = .25; sfx.machine(0); sfx.crunch(.75, .6); spawnSlice(AUTO_Q);
+  if (W.goo) W.goo.emit(W.lineG.localToWorld(new THREE.Vector3(MX[0] + .2, 1.3, 0)), 4, SP[M.rsp].color, { gy: W.lineG.position.y + .72, speed: 1.1, up: 2.2, size: .04 });
+}
+// 第 MASTER_N 件 A 級以上：產線上方冒出一句話，控制面板的「代工記憶」燈一盞一盞亮滿（M.lit）、「交給機器」出現在「啟動產線」旁邊，
+// 面板捲到那一排（做完一輪面板停在最上面的凝膠，按鈕在下面看不到）。面板開著時訊息列在面板後面，只有面板已經關了才用訊息列說
+function masterFx(sp) {
+  setTimeout(() => {
+    sfx.level(); lineSay('產線記住你的手法了！', '#fde047'); M.lit = sp;
+    if (GUI.kind === 'line') { renderMake(); setTimeout(() => { const el = $('#gbody .rx-mk-go'); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60); }
+    else toast(`親手做了 ${MASTER_N} 件 A 級以上的${short(sp)}捏捏：產線記住了，之後可以「交給機器」做 B 級`);
+  }, 900);
+}
+// 產線上方的一句話：投影產線頂上的位置，再夾進 HUD（指南針、方位、時間條、上方的錢與按鈕、目前目標）底下和控制面板頂端之間——
+// 固定放在產線上方 3.4 公尺的話，每種畫面比例都落在指南針底下（手機橫放還會被裁掉）。手機橫放時中間那一欄（指南針＋方位＋時間條）底下
+// 只剩 40 px：往左右找最近放得下的地方（通常是右上角按鈕底下）；哪裡都放不下才把字縮小
+function lineSay(txt, color) {
+  if (!W.lineG) return; const d = document.createElement('div'); d.className = 'fx big say'; d.textContent = txt; d.style.color = color; $('#fxl').appendChild(d);
+  const hud = ['#compass', '#cmpDeg', '#dnClock', '#stats', '#topbtns', '#objective'].map(sel => $(sel)).filter(Boolean).map(e => e.getBoundingClientRect()).filter(r => r.height);
+  const gw = GUI.kind && $('#gwin'), bot = gw ? gw.getBoundingClientRect().top - 6 : innerHeight * .62, q = W.lineG.localToWorld(new THREE.Vector3(0, 2.4, 0)).project(W.cam);
+  let hw, hh, x, top; const fit = () => { hw = d.offsetWidth / 2 + 6; hh = d.offsetHeight / 2; x = clamp((q.x * .5 + .5) * innerWidth, hw + 8, innerWidth - hw - 8); }, topAt = xx => hud.reduce((t, r) => r.right > xx - hw && r.left < xx + hw ? Math.max(t, r.bottom + 6) : t, 8);
+  fit(); top = topAt(x); const need = () => hh * 2.5; // 2.5：字本身＋.fx.say 最後往上飄 25% 的高度
+  for (let k = 1; top + need() > bot && k <= 24; k++) { const xx = clamp(x + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * innerWidth / 24, hw + 8, innerWidth - hw - 8), t = topAt(xx); if (t + need() <= bot) { x = xx; top = t; } }
+  if (top + need() > bot) { d.style.fontSize = '17px'; fit(); top = topAt(x); }
+  const lo = top + hh * 1.5; d.style.left = x + 'px'; d.style.top = clamp((-q.y * .5 + .5) * innerHeight, lo, Math.max(lo, bot - hh)) + 'px'; setTimeout(() => d.remove(), 2700);
 }
 function cutShape(kind, r) {
   const sh = new THREE.Shape();
@@ -5797,7 +5954,7 @@ function cutShape(kind, r) {
 const faceMat = (sp, q) => new THREE.MeshPhysicalMaterial({ color: new THREE.Color(sp.color).lerp(new THREE.Color('#ffffff'), .38), roughness: .6 - .52 * q, clearcoat: q, clearcoatRoughness: .3 - .26 * q, emissive: sp.color, emissiveIntensity: .06 + .28 * q, transparent: true, polygonOffset: true, polygonOffsetFactor: -1 });
 function sliceFx(q) {
   MK.pulse[0] = .25; sfx.machine(0); MK.laserHit = .15;
-  const wp = W.lineG.localToWorld(new THREE.Vector3(MX[0] + .2, 1.3, 0)), sp = SP[M.sp];
+  const wp = W.lineG.localToWorld(new THREE.Vector3(MX[0] + .2, 1.3, 0)), sp = SP[M.rsp];
   if (q < 0) { sfx.squish(.35); fx3(wp.clone().setY(wp.y + 1.3), '空刀', '#94a3b8'); W.shake = .02; return; }
   M.stop = .07; W.shake = .04 + q * .05; if (navigator.vibrate) navigator.vibrate(q > .9 ? [12, 20, 12] : 10);
   sfx.crunch(.7 + q * .6, .45 + q * .55); if (q > .9) setTimeout(() => sfx.perfect(), 60);
@@ -5805,7 +5962,7 @@ function sliceFx(q) {
   if (W.goo && q > .9) W.goo.emit(wp, 5, '#ffffff', { gy: W.lineG.position.y + .72, speed: .8, up: 3.2, size: .03 });
   spawnSlice(q); slashFx(q);
   if (q > .9) { M.stop = .12; M.slow = .3; W.fovKick = 5; screenFlash('#fff4d0'); } else if (q > .6) W.fovKick = 2.5;
-  fx3(wp.clone().setY(wp.y + 1.3), q > .9 ? '完美切面！' : q > .6 ? '很好' : q > .3 ? '有點歪' : '切歪了', q > .9 ? '#f0abfc' : q > .6 ? '#34d399' : '#fbbf24', q > .9 ? 'big' : '');
+  fx3(wp.clone().setY(wp.y + 1.3), q > .9 ? '完美切面！' + (M.g && M.g.pf > 1 ? ` ×${M.g.pf}` : '') : q > .6 ? '很好' : q > .3 ? '有點歪' : '切歪了', q > .9 ? '#f0abfc' : q > .6 ? '#34d399' : '#fbbf24', q > .9 ? 'big' : '');
   const combo = (M.g && M.g.combo) || 0;
   if (combo >= 2) setTimeout(() => fx3(wp.clone().setY(wp.y + 1.8), `${combo} 連斬！`, combo >= 4 ? '#fde047' : '#67e8f9', combo >= 3 ? 'big' : ''), 140);
   ui('make');
@@ -5851,8 +6008,8 @@ function spawnSlice(q) {
   // 切下來的那一塊：造型切就是星形／愛心（正面朝向鏡頭），厚塊／薄片就是一片切片；它會從刀口彈起、落在輸送帶上往前送，跟著進下一台機器
   // 本體從刀口截斷：刀口到上一刀（或前端）之間那一段被切下來，剩下的本體就短了這麼多
   const sxw = .42 * (MK.sx || 2.4), uCut = clamp((MX[0] - MK.bx) / sxw, -1, 1), prevU = Math.min(MK.clipU == null ? 1 : MK.clipU, 1), L = clamp((prevU - uCut) * sxw, .06, 2);
-  MK.clipU = uCut; MK.capGlint = q > .9 ? 1.6 : q * .8; if (MK.cap) { MK.cap.material.dispose(); MK.cap.material = faceMat(SP[M.sp], q); MK.capBase = MK.cap.material.emissiveIntensity; }
-  const C = CUTS[M.cut] || CUTS.thick, sp = SP[M.sp], th = C.shape ? .2 : L, side = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .15, clearcoat: 1, transparent: true }), face = faceMat(sp, q);
+  MK.clipU = uCut; MK.capGlint = q > .9 ? 1.6 : q * .8; if (MK.cap) { MK.cap.material.dispose(); MK.cap.material = faceMat(SP[M.rsp], q); MK.capBase = MK.cap.material.emissiveIntensity; }
+  const C = CUTS[M.cut] || CUTS.thick, sp = SP[M.rsp], th = C.shape ? .2 : L, side = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .15, clearcoat: 1, transparent: true }), face = faceMat(sp, q);
   let geo; if (C.shape) { geo = new THREE.ExtrudeGeometry(cutShape(C.shape, .5), { depth: th, bevelEnabled: false }); geo.translate(0, C.shape === 'heart' ? -.02 : 0, -th / 2); } else geo = new THREE.BoxGeometry(th, .7, .8);
   const m = new THREE.Mesh(geo, C.shape ? [face, side] : [face, face, side, side, side, side]); m.position.set(MX[0] + .2 + (C.shape ? 0 : th / 2), 1.14, 0); m.castShadow = !LOW; W.lineG.add(m);
   MK.pieces.push({ m, vx: 1.6, vy: 1.6, spin: 7 + rnd(0, 3), rx: 0, land: false, life: 99, th, face, side, base: face.emissiveIntensity, glint: q > .9 ? 1.6 : q * .8, z0: rnd(-.12, .12), coat: 0, h: C.shape ? .27 : .35 });
@@ -5891,7 +6048,8 @@ function cutLinesStep(on) {
   }
   MK.laser.visible = !!on; MK.laserHit = Math.max(0, (MK.laserHit || 0) - 1 / 60); MK.laser.material.opacity = .32 + MK.laserHit * 3;
   const g = M.g, C = on ? CUTS[M.cut] || CUTS.thick : null, pos = on && M.phase === 'run' ? slicePos(g) : 0;
-  MK.cutL.forEach((m, i) => { m.visible = !!on && i < g.marks.length && g.hit[i] == null; if (!m.visible) return; m.position.x = MK.bx + LT * (.5 - g.marks[i]); const near = Math.abs(pos - g.marks[i]) < g.tol * 1.3; m.material.color.set(near ? '#ffffff' : C.col); m.scale.set(near ? 1.6 : 1, near ? 1.12 : 1, 1); });
+  MK.cutL.forEach((m, i) => { m.visible = !!on && i < g.marks.length && g.hit[i] == null; if (!m.visible) return; m.position.x = MK.bx + LT * (.5 - g.marks[i]); const near = Math.abs(pos - g.marks[i]) < g.tol * 1.3; m.material.color.set(near ? '#ffffff' : C.col); m.scale.set(near ? 1.6 : 1, near ? 1.12 : 1, 1);
+    m.material.opacity = g.peek ? .9 * clamp(1 - (Math.abs(pos - g.marks[i]) - .05) / .09, 0, 1) : .9; }); // peek（月光）：半透明的身體，切割線快碰到雷射才浮出來
 }
 // 成品上保留的切面（厚塊：一整面；薄片：一層層；星形／愛心：造型面）
 // 外形的極座標表：每個角度到星形／愛心外框的距離（用來把圓角方塊變形成圓角的星形／愛心柱）
@@ -5935,7 +6093,8 @@ function updMakeUI() {
   const g = M.g; if (!g) return; const tb = $('#mgTime'); if (tb) tb.style.width = clamp(g.t / g.dur, 0, 1) * 100 + '%';
   if (M.step === 0) $$('#cutDots i').forEach((d, i) => d.className = g.hit[i] == null ? '' : g.hit[i] > .85 ? 'pf' : g.hit[i] > .3 ? 'ok' : 'bad');
   if (M.step === 1) { const n = $('#mgNeedle'); if (n) n.style.left = g.v * 100 + '%'; const z = document.querySelector('.rx-gauge .gz'); if (z) { z.style.left = g.lo * 100 + '%'; z.style.width = (g.hi - g.lo) * 100 + '%'; } }
-  if (M.step === 2) { const t = $('#mgTgt'), k = $('#mgKnob'), x = dryTarget(g); if (t) { t.style.left = (x - g.tw) * 100 + '%'; t.style.width = g.tw * 200 + '%'; } if (k) k.style.left = g.knob * 100 + '%'; }
+  if (M.step === 2) { const t = $('#mgTgt'), k = $('#mgKnob'), x = dryTarget(g); if (t) { t.style.left = (x - g.tw) * 100 + '%'; t.style.width = g.tw * 200 + '%'; if (g.jump) { const ph = g.t % g.jump, left = g.jump - ph; t.style.background = dryJump(g) % 2 ? '#a78bfa' : '#34d399'; t.style.opacity = drySettling(g) ? .3 + .7 * ph / DRY_SETTLE : left < DRY_WARN && g.t + left < g.dur ? (Math.sin(g.t * 36) > 0 ? 1 : .3) : 1; } } if (k) k.style.left = g.knob * 100 + '%'; } // 極光：目標一綠一紫；要跳之前閃、剛跳過去慢慢亮起來（這段不扣分）
+  if (M.auto) { const b = $('#mgAuto'); if (b) b.style.width = clamp((M.si + clamp(g.t / g.dur, 0, 1)) / M.steps.length, 0, 1) * 100 + '%'; } // 交給機器：三台合起來一條進度
 }
 function swatch(sp) { return sp.color2 ? `linear-gradient(135deg,${sp.color},${sp.color2})` : `radial-gradient(circle at 30% 30%,${rgba(sp.color, 1, .6)},${sp.color})`; }
 function renderMake() { ui('make'); if (M.active) updMakeUI(); } // 面板由 React 負責（components/stations/Make.tsx）
@@ -6117,8 +6276,8 @@ function shopPrice(c, p) { return fair(p, 'shop') * (1 + Math.min(S.regulars[c.n
 function branchTick(dt) {
   if (S.branch === 'factory' && S.workers > 0) {
     if (S.money > 0) S.money = Math.max(0, S.money - S.workers * .05 * dt); BT.fac += dt * S.workers / 12;
-    while (BT.fac >= 1) { BT.fac -= 1; if (S.stock.length >= cap()) break; const sp = Object.keys(S.gel).filter(k => S.gel[k] >= 2).sort((a, b) => S.gel[b] - S.gel[a])[0]; if (!sp) break; S.gel[sp] -= 2; S.stock.push(makeProduct(sp, clamp(0.55 + 0.05 * S.auto + rnd(-.05, .05), .2, 1))); }
-    FAC.working = S.stock.length < cap() && Object.values(S.gel).some(v => v >= 2);
+    while (BT.fac >= 1) { BT.fac -= 1; if (stockFull()) break; const sp = Object.keys(S.gel).filter(k => S.gel[k] >= 2).sort((a, b) => S.gel[b] - S.gel[a])[0]; if (!sp) break; S.gel[sp] -= 2; S.stock.push(makeProduct(sp, clamp(0.55 + 0.05 * S.auto + rnd(-.05, .05), .2, 1))); }
+    FAC.working = !stockFull() && Object.values(S.gel).some(v => v >= 2);
   }
   // 小店、企業只在玩家人在工坊附近時「營業」：不在的時候不會來新的客人與訂單，等待中的期限也暫停（原本人在雪原也照樣倒數、扣好感與信譽，
   // 而且這些事已經不跳字了，玩家根本不知道）。在的時候：工作電腦的螢幕亮紅牌、叮一聲，指南針上工作電腦的方向有粉紅色的小牌（bizWait）
@@ -6201,8 +6360,9 @@ document.addEventListener('click', e => {
     case 'hb': { const i = +el.dataset.i; if (GUI.kind === 'inv') { invSel = i; if (i < 9) S.hb = i; renderInv(); } else S.hb = i; renderHotbar(true); break; }
     case 'pickSp': M.sp = id; M.last = null; tab === 'bench' ? renderBench() : renderMake(); break;
     case 'startMake': startMake(); break;
+    case 'autoMake': startMake(true); break;
     case 'show': { const p = stockById(id); if (!p) return; if (S.show.length >= 4) return toast('展示台最多擺 4 個作品'); S.stock = S.stock.filter(q => q !== p); S.show.push(p); sfx.pop(); renderMuseum(); renderHotbar(true); save(); break; }
-    case 'unshow': { const p = S.show.find(q => q.id === +id); if (!p) return; if (S.stock.length >= cap()) return toast('庫存已滿'); S.show = S.show.filter(q => q !== p); S.stock.push(p); renderMuseum(); renderHotbar(true); save(); break; }
+    case 'unshow': { const p = S.show.find(q => q.id === +id); if (!p) return; if (stockFull()) return toast(M.active ? '庫存已滿（產線正在做的那件要留一格）' : '庫存已滿'); S.show = S.show.filter(q => q !== p); S.stock.push(p); renderMuseum(); renderHotbar(true); save(); break; }
     case 'like': { W.likeT = W.likeT || {}; if (Date.now() - (W.likeT[id] || 0) < 60000) return; W.likeT[id] = Date.now(); netEmit({ t: 'like', to: id }); toast('已按讚！'); sfx.tick(); renderVisit(); break; }
     case 'wkDeliver': { if (S.wk.w !== weekNo()) S.wk = { w: weekNo(), done: [] }; const o = weeklyOrders().find(x => x.id === +id); if (!o || S.wk.done.includes(o.id)) return; const it = wkItems(o); if (it.length < o.n) return; S.stock = S.stock.filter(p => !it.includes(p)); addMoney(o.reward); S.fans += o.fans; gainXP(15); S.wk.done.push(o.id); sfx.level(); toast(`本週限定訂單完成 +${fmt(o.reward)}　粉絲 +${o.fans}`); refresh(); save(); break; }
     case 'pickCut': if (CUTS[k] && !M.active) { S.cut = k; renderMake(); save(); } break;
@@ -6222,7 +6382,7 @@ document.addEventListener('click', e => {
     case 'logout': { const C = window.SlimeCloud; if (!C) break; save(); netLeave(true); C.logout(false).then(ok => { if (!ok) modal('<h2>進度還沒傳到雲端</h2><p>目前連不上伺服器。現在登出的話，新的進度會留在這台電腦，下次用同一個帳號在這台電腦登入時再上傳。</p>', [{ t: '取消', ghost: true }, { t: '仍要登出', red: true, f: () => C.logout(true) }]); }); break; }
     case 'delMe': modal('<h2>刪除我的資料？</h2><p>會刪除你在伺服器上的帳號、遊戲進度與保留中的存檔，所有裝置都會登出，這台電腦上的進度也會清除。<b>刪除後無法復原。</b></p>', [{ t: '取消', ghost: true }, { t: '永久刪除', red: true, f: () => { netLeave(true); window.SlimeCloud.deleteMe().catch(e => toast(e.message)); } }]); break;
     case 'saveNow': saveCloud(); S.savedAt = Date.now(); toast('遊戲已儲存'); renderPause(); break;
-    case 'toTitle': if (M.active) { S.gel[M.sp] = (S.gel[M.sp] || 0) + 2; M.active = false; M.g = null; toast('產線中斷，已退回 2 份凝膠'); } saveCloud(); netLeave(true); showTitle(); break;
+    case 'toTitle': if (M.active) { S.gel[M.rsp] = (S.gel[M.rsp] || 0) + 2; gelOut(M.rsp, -2); M.active = false; M.auto = false; M.g = null; toast('產線中斷，已退回 2 份凝膠'); } saveCloud(); netLeave(true); showTitle(); break;
     case 'netLeave': netLeave(); renderPause(); break;
     case 'tContinue': continueGame(); break;
     case 'tNew': newGameAsk(); break;
@@ -6231,7 +6391,7 @@ document.addEventListener('click', e => {
     case 'mpHost': netHost(); break;
     case 'mpJoin': netJoin($('#mpCode').value); break;
     case 'list': { const p = stockById(id); if (!p) return; if (p.played || p.dur < 100) return toast('捏過的捏捏不能上架到網站，只能在直播或其他通路販售'); if (S.web.length >= slots()) return toast('貨架已滿，請升級網站伺服器'); S.stock = S.stock.filter(q => q !== p); S.web.push(p); renderWeb(); renderHotbar(); save(); break; }
-    case 'unlist': { const p = S.web.find(q => q.id === +id); if (!p) return; if (S.stock.length >= cap()) return toast('庫存已滿'); S.web = S.web.filter(q => q !== p); S.stock.push(p); renderWeb(); renderHotbar(); save(); break; }
+    case 'unlist': { const p = S.web.find(q => q.id === +id); if (!p) return; if (stockFull()) return toast(M.active ? '庫存已滿（產線正在做的那件要留一格）' : '庫存已滿'); S.web = S.web.filter(q => q !== p); S.stock.push(p); renderWeb(); renderHotbar(); save(); break; }
     case 'buyOwn': if (purchase('own', k, 'web')) sfx.pop(); break; // 網購：網頁本身就是回饋（蓋「已購買」章），不跳 toast；大東西關上電腦後綁氣球降落
     case 'benchMake': benchMake(); break;
     case 'mapRot': mapRotate(+el.dataset.i); break;
@@ -9221,9 +9381,9 @@ function renderShop() { ui('shop'); } // 電腦的網購（components/stations/S
 const BN = { busy: false };
 function renderBench() { if (!M.sp || !unlockedSpecies().some(s => s.id === M.sp)) M.sp = (unlockedSpecies().find(s => (S.gel[s.id] || 0) >= 2) || unlockedSpecies()[0]).id; ui('bench'); } // 畫面改由 React 負責（components/stations/）
 function benchMake() {
-  if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (S.stock.length >= cap()) return toast('庫存已滿');
-  S.gel[sp] -= 2; BN.busy = true; renderBench(); sfx.squish(1); [360, 760, 1150].forEach((ms, i) => setTimeout(() => { sfx.crunch(.75 + i * .2, .95); sfx.squish(.5, 1 + i * .08); }, ms)); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
-  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); if (S.tutDone) toast(`做好了：粗製${short(sp)}捏捏`); saveCloud(); if (!S.tutDone) setTimeout(finishTutorial, 450); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
+  if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (stockFull()) return toast(M.active ? '庫存已滿（產線正在做的那件要留一格）' : '庫存已滿');
+  S.gel[sp] -= 2; gelOut(sp, 2); BN.busy = true; renderBench(); sfx.squish(1); [360, 760, 1150].forEach((ms, i) => setTimeout(() => { sfx.crunch(.75 + i * .2, .95); sfx.squish(.5, 1 + i * .08); }, ms)); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
+  setTimeout(() => { BN.busy = false; gelOut(sp, -2); const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); if (S.tutDone) toast(`做好了：粗製${short(sp)}捏捏`); saveCloud(); if (!S.tutDone) setTimeout(finishTutorial, 450); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
 }
 /* ---------- 古地圖拼圖 ---------- */
 function openAltar() {
@@ -10412,7 +10572,7 @@ window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
   get title() { return TITLE; }, get inCity() { return !!P && inCity(); }, get riding() { return RIDE.on; }, get rideDir() { return RIDE.on ? RIDE.dir : ''; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
-  MG, STEPS, MKEY, ownAny, TOUCH,
+  MG, STEPS, MKEY, ownAny, TOUCH, QUIRK, MASTER_N, AUTO_T,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,
   AVATARS, avatarSVG, SP, SPECIES, ZONES, RAR, DN, DN_PHASE, creditsHTML, PHOTO_EVT, REPAIRS, UPS, OWN, PACKS, DECO, CUTS, GRADES, GOAL, SHOP_UPS, QUEST, WEEK_MS, CH,

@@ -41,7 +41,7 @@ export default function Bench() {
         {sel && <div className="rx-craft-preview"><SlimeArt kind="gel" color={g.SP[sel].color} color2={g.SP[sel].color2} size={46} /><SlimeArt kind="gel" color={g.SP[sel].color} color2={g.SP[sel].color2} size={46} /><i>＋</i><SlimeArt kind="prod" color={g.SP[sel].color} color2={g.SP[sel].color2} size={56} /></div>}
         <div className="tbar" style={{ height: 10 }}><i id="benchBar" key={busy ? 'busy' : 'idle'} className={busy ? 'rx-run' : ''} /></div>
         <button type="button" className="btn big" style={{ width: '100%' }} data-act="benchMake" aria-label={busy ? undefined : '手工捏製（消耗 2 份凝膠）'} disabled={busy || have < 2}>{busy ? '捏製中…' : have < 2 ? '凝膠不夠' : '手工捏製'}</button>
-        <small className="rx-dim">庫存 {S.stock.length}/{g.cap()}</small>
+        <small className="rx-dim">庫存 {S.stock.length}/{g.cap()}{g.M.active ? '・產線正在做的那件也要一格' : ''}</small>
       </div>
       {gift && <div className="rx-gift" ref={giftRef} aria-live="polite"><PaperView p={gift} live /></div>}
       </div>

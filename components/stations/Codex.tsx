@@ -36,7 +36,7 @@ export default function Codex() {
             <h4><i aria-hidden="true" />{z.name}{!open && <small>尚未開放</small>}</h4>
             <div className="rx-specs">
               {g.SPECIES.filter((s) => s.zone === z.id).map((s) => {
-                const c = S.codex[s.id], rar = g.RAR[s.rar]!;
+                const c = S.codex[s.id], rar = g.RAR[s.rar]!, q = g.QUIRK?.[s.id], mn = g.MASTER_N || 10; // q：加工個性的小牌子（產線上的那句）；代工記憶＝親手做的 A 級以上件數
                 return (
                   <article key={s.id} className={`rx-spec ${c ? 'found' : open ? 'unseen' : 'locked'}`}>
                     <div className="rx-spec-pic">
@@ -47,6 +47,7 @@ export default function Codex() {
                       <span className="rx-rar" style={{ '--rc': rar.c } as React.CSSProperties}>{rar.n}</span>
                       <small>{c ? `已製作 ${c.made} 個` : open ? `在${z.name}還沒遇過` : '區域尚未開放'}</small>
                       {c && c.made > 0 && <Tally n={c.made} />}
+                      {c && c.made > 0 && q && <small className="rx-spec-craft">{q.tag}・代工記憶 {Math.min(mn, c.a || 0)}/{mn}</small>}
                     </div>
                     {c && <span className="rx-seal" aria-hidden="true">收錄</span>}
                   </article>

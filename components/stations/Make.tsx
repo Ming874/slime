@@ -1,24 +1,73 @@
 'use client';
 /* 加工產線（機器控制面板）。
    - 待機：選凝膠、選切法、啟動產線、上一個成品的評等卡、機器等級。
+     加工個性（game.js 的 QUIRK）：凝膠按鈕角上掛的小牌子（不撐寬按鈕）＋奶奶貼在面板上的便條（運轉中只留小牌子，不把量表擠出面板）；
+     熟練代工：啟動那一排裡的「代工記憶」10 盞燈，亮滿了「交給機器」就出現在「啟動產線」旁邊（不另外佔一排、不用往下捲才找得到）。
    - 運轉中：三道工序的燈號、操作說明、小遊戲。小遊戲裡每格畫面會動的元素（#mgNeedle、#mgTime、#mgTgt、#mgKnob、
      #cutDots 的刀痕）由 game.js 直接更新，這裡只負責擺出來。按鈕帶 data-act／data-mg，由 game.js 處理。 */
 import { G, pct, prodName, type Product } from './game';
 import { Pips, SlimeArt } from './Art';
 
+// rsp＝這一輪開工時鎖定的種類（手作台換凝膠不影響）；lit＝剛學會的那一種（代工記憶的燈一盞一盞亮起來）
 type MakeState = {
-  sp: string | null; active: boolean; step: number; phase: string; cut: string | null; steps: number[];
+  sp: string | null; rsp?: string | null; lit?: string | null; active: boolean; auto?: boolean; step: number; phase: string; cut: string | null; steps: number[];
   scores: (number | null)[]; coop: { name: string } | null; last: Product | null;
   g: { marks: number[]; hit: (number | null)[]; combo?: number; lastQ?: number; cuts?: number; lo: number; hi: number; v?: number } | null;
 };
-type MakeGame = { M: MakeState; MG: { name: string; how: string; key: string }[]; STEPS: string[]; MKEY: string[]; ownAny: () => boolean; TOUCH: boolean };
+// 加工個性：m＝哪一台（0 切片、1 裹糖、2 乾燥）、tag＝小牌子、t＝奶奶的便條
+type Quirk = { m: number; tag: string; t: string; jump?: number }; // jump：極光的乾燥目標會變色（操作說明不能再說「黃色」）
+type MakeGame = { M: MakeState; MG: { name: string; how: string; key: string }[]; STEPS: string[]; MKEY: string[]; ownAny: () => boolean; TOUCH: boolean; QUIRK: Record<string, Quirk>; MASTER_N: number; AUTO_T: number };
 
 const grade = (q: number) => (q > 0.9 ? 'pf' : q > 0.6 ? 'ok' : q > 0.3 ? 'meh' : 'bad');
 const GRADE_TXT: Record<string, string> = { pf: '完美', ok: '很好', meh: '有點歪', bad: '失手' };
 
 export default function Make() {
   const g = G(), x = g as unknown as MakeGame, M = x.M;
-  return <div className={`rx-make${M.active ? ' run' : ''}`}>{M.active && M.g ? <Running /> : <Idle />}</div>;
+  return <div className={`rx-make${M.active ? ' run' : ''}`}>{M.active && M.g ? (M.auto ? <Auto /> : <Running />) : <Idle />}</div>;
+}
+
+// 奶奶貼在控制面板上的便條（手寫字）：這種史萊姆在哪一台機器上不一樣；那台還沒買就補一句「等你有了…就知道」
+function QuirkNote({ sp }: { sp: string }) {
+  const g = G(), x = g as unknown as MakeGame, q = x.QUIRK[sp];
+  if (!q) return null;
+  const k = x.MKEY[q.m], own = g.S.own[k];
+  return (
+    <div className="rx-quirk">
+      <i className="rx-quirk-tape" aria-hidden="true" />
+      <p><b>{g.short(sp)}・{x.STEPS[q.m]}</b>{q.t}{!own && <span className="rx-quirk-off">等你有了{g.UPS[k].name.replace('升級', '')}就知道了。</span>}</p>
+      <em>— 奶奶</em>
+    </div>
+  );
+}
+
+// 熟練代工：同一種親手做出 MASTER_N 件 A 級以上，啟動那一排裡的「代工記憶」燈一盞一盞亮起來；亮滿了「交給機器」出現在「啟動產線」旁邊
+const masterN = (x: MakeGame, sp: string) => Math.min(x.MASTER_N, G().S.codex[sp]?.a || 0);
+function Mastery({ sp, lit }: { sp: string; lit: boolean }) {
+  const g = G(), x = g as unknown as MakeGame, n = masterN(x, sp), done = n >= x.MASTER_N;
+  return (
+    <div className={`rx-master${done ? ' on' : ''}${lit ? ' lit' : ''}`}>
+      <b>代工記憶</b>
+      <span className="rx-master-leds" aria-label={`${n}/${x.MASTER_N}`}>{Array.from({ length: x.MASTER_N }, (_, i) => <i key={i} className={i < n ? 'on' : ''} style={lit ? ({ '--d': i * 0.07 } as React.CSSProperties) : undefined} />)}</span>
+      <small>{done ? `產線記得你做${g.short(sp)}的手法：普通的交給機器 ${x.AUTO_T} 秒做出 B 級，想要 S、A 再自己來。` : `親手做出 A 級以上 ${n}/${x.MASTER_N} 件，產線就學得會，普通的可以交給機器。`}</small>
+    </div>
+  );
+}
+
+// 交給機器的那一輪：三台的燈照樣一台一台亮，只有一條進度（#mgAuto 由 game.js 更新）；可以關掉面板走開，做好了自己放進背包
+function Auto() {
+  const g = G(), x = g as unknown as MakeGame, M = x.M, S = g.S;
+  return (
+    <>
+      <div className="rx-stages">
+        {x.STEPS.map((name, i) => {
+          const own = S.own[x.MKEY[i]], done = M.scores[i] != null && i !== M.step;
+          return <span key={name} className={`rx-stage${!own ? ' off' : i === M.step ? ' now' : done ? ' done' : ''}`}><i aria-hidden="true" /><b>{i + 1}. {name}</b><small>{!own ? '未安裝' : done ? '好了' : i === M.step ? '機器在做' : '待命'}</small></span>;
+        })}
+      </div>
+      <div className="rx-mk-how"><b>交給機器</b><span>產線照你做{M.rsp ? g.short(M.rsp) : ''}的手法自己動，{x.AUTO_T} 秒做出一個 B 級。可以先去忙別的，做好了會放進背包。</span></div>
+      <div className="tbar rx-tbar rx-autobar"><i id="mgAuto" /></div>
+    </>
+  );
 }
 
 function Idle() {
@@ -32,14 +81,17 @@ function Idle() {
         <div className="rx-gelrow">
           {g.unlockedSpecies().map((s) => {
             const n = S.gel[s.id] || 0;
+            const q = x.QUIRK[s.id];
             return (
               <button key={s.id} type="button" className={`rx-gel${M.sp === s.id ? ' on' : ''}${n < 2 ? ' low' : ''}`} data-act="pickSp" data-id={s.id}>
                 <SlimeArt kind="gel" color={s.color} color2={s.color2} size={34} />
                 <span><b>{g.short(s.id)}</b><small>凝膠 {n}</small></span>
+                {q && <em className="rx-gel-tag">{q.tag}</em>}
               </button>
             );
           })}
         </div>
+        {M.sp && <QuirkNote sp={M.sp} />}
       </section>
 
       {S.own.slicer && (
@@ -60,10 +112,18 @@ function Idle() {
         <div className="rx-mk-go-info">
           <b>{sp ? `已選：${sp.name}` : '請先選擇要加工的凝膠'}</b>
           <small>{owned.length ? `已安裝：${owned.map((k) => g.UPS[k].name.replace('升級', '')).join('、')}・` : '還沒有機器，到工作電腦網購。'}庫存 {S.stock.length}/{g.cap()}</small>{/* 缺的機器：下面的工序列寫著「未安裝」、那一步算 0 分 */}
+          {M.sp && x.ownAny() && <Mastery sp={M.sp} lit={M.lit === M.sp} />}
         </div>
-        <button type="button" className="rx-start" data-act="startMake" disabled={!!why} title={why || undefined}>
-          <i aria-hidden="true" />{why || '啟動產線'}
-        </button>
+        <div className="rx-mk-go-btns">
+          {M.sp && x.ownAny() && masterN(x, M.sp) >= x.MASTER_N && (
+            <button type="button" className="rx-start rx-auto" data-act="autoMake" disabled={!!why} title={why || undefined}>
+              <i aria-hidden="true" />交給機器<small>{x.AUTO_T} 秒・B 級</small>
+            </button>
+          )}
+          <button type="button" className="rx-start" data-act="startMake" disabled={!!why} title={why || undefined}>
+            <i aria-hidden="true" />{why || '啟動產線'}
+          </button>
+        </div>
       </div>
 
       {M.last && <Result p={M.last} />}
@@ -97,6 +157,7 @@ function Result({ p }: { p: Product }) {
 function Running() {
   const g = G(), x = g as unknown as MakeGame, M = x.M, mg = M.g!, step = M.step, S = g.S;
   const C = (M.cut && g.CUTS[M.cut]) || g.CUTS.thick;
+  const q0 = M.rsp ? x.QUIRK[M.rsp] : null, qk = q0 && q0.m === step ? q0 : null, jump = !!qk?.jump; // 這一輪的種類（開工時鎖定）在這一台上的個性
   return (
     <>
       <div className="rx-stages">
@@ -112,6 +173,7 @@ function Running() {
 
       <div className="rx-mk-how">
         <b>{g.UPS[x.MKEY[step]].name}</b>
+        {qk && <em className="rx-gel-tag" title={qk.t}>{g.short(M.rsp!)}・{qk.tag}</em>}
         {step === 1 && <span>{x.MG[step].how}</span>}{/* 切片、乾燥的說明就寫在小遊戲旁邊，不在這裡再說一次（前 10 分鐘的文字預算 11.1） */}
         {!x.TOUCH && <kbd>{x.MG[step].key}</kbd>}
         {M.phase === 'ready' && <em className="rx-ready">準備…</em>}
@@ -144,7 +206,7 @@ function Running() {
         <div className="rx-dry">
           <div className="track dry rx-track" id="mgDry"><div className="tgt" id="mgTgt" /><div className="knob" id="mgKnob" style={{ left: '50%' }} /></div>
           <div className="tbar rx-tbar"><i id="mgTime" /></div>
-          <p className="rx-note-line">拖曳火力旋鈕，跟上黃色的目標溫度。</p>
+          <p className="rx-note-line">拖曳火力旋鈕，{jump ? `跟上一綠一紫、每 ${qk!.jump} 秒換邊的目標溫度（閃的時候準備換邊）。` : '跟上黃色的目標溫度。'}</p>
         </div>
       )}
     </>
