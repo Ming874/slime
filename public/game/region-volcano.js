@@ -79,16 +79,23 @@
     for (const c of CC) h += coneAdd(c, x, z);
     return h;
   }
-  // 熔岩河：從火山口往東北（RU）的山腰流下來，RN 是左右擺動的方向；湖在山腳（半徑 35 左右，在史萊姆的生成範圍外）
+  // 熔岩河：從火山口往東北（RU）的山腰流下來，RN 是左右擺動的方向；湖在山腳外的平地上
+  // （火山錐在離火山口 36 單位降到 0；湖原本在 35.4，上半圈坐在 45° 的錐面上，整平時把山腳削出一道 6 公尺高的直立斷崖，河像瀑布一樣掉下去。
+  //   現在整個湖在山腳外的平地上，靠火山那一側的岸離山腳約 1.5 單位，河順著錐面一路流下來、再流一小段平地進湖，坡度和錐面其他地方一樣）
   const RU = [.85, -.53], RN = [.53, .85];
-  const RV = crv([[20, 0], [22.6, .7], [25.2, -.35], [27.8, .45], [30.4, -.15], [32.4, 0]].map(([r, l]) => [RU[0] * r + RN[0] * l, -130 + RU[1] * r + RN[1] * l]), .5);
-  const LK = { x: RU[0] * 35.4, z: -130 + RU[1] * 35.4, r: 3.3, lv: .45 }, lkR = a => LK.r * (1 + .08 * Math.sin(a * 3 + .5) + .05 * Math.sin(a * 5 + 1.7)), HEAD = RV.P[0];
+  const RV = crv([[20, 0], [22.6, .7], [25.2, -.35], [27.8, .45], [30.4, -.15], [33, .25], [35.6, -.1], [38, 0]].map(([r, l]) => [RU[0] * r + RN[0] * l, -130 + RU[1] * r + RN[1] * l]), .5);
+  const LK = { x: RU[0] * 41.3, z: -130 + RU[1] * 41.3, r: 3.3, lv: .1 }, lkR = a => LK.r * (1 + .08 * Math.sin(a * 3 + .5) + .05 * Math.sin(a * 5 + 1.7)), HEAD = RV.P[0];
   function river(x, z, h, q) {
-    if (x < 12 || x > 38 || z < -155 || z > -133) return h;
+    if (x < 12 || x > 45 || z < -161 || z > -133) return h;
     { const d = Math.hypot(x - HEAD[0], z - HEAD[1]); if (d < 2.2) h += 1.1 * (1 - sm(.5, 2.1, d)); } // 山腰的小噴口（hornito）
     if (q && q.l < 3) h += -.22 * (1 - sm(.6, 1.1, q.l)) + .38 * sm(.9, 1.5, q.l) * (1 - sm(1.9, 2.8, q.l)); // 河床挖低、兩側天然堤岸
     const dx = x - LK.x, dz = z - LK.z, d = Math.hypot(dx, dz);
-    if (d < LK.r + 3.2) { const rr = lkR(Math.atan2(dz, dx)); h += (LK.lv - h) * (1 - sm(rr + .9, rr + 2.8, d)); if (d < rr + .25) { const u = d / (rr + .25); h = LK.lv - .65 + .6 * u * u; } } // 湖底比 0 低：史萊姆不會生在湖裡
+    if (d < LK.r + 6) {
+      const rr = lkR(Math.atan2(dz, dx)), u = d / (rr + .25);
+      if (h < LK.lv + .25) h += (LK.lv + .25 - h) * (1 - sm(rr + .9, rr + 2.8, d)); // 比湖岸低的地方墊成一圈矮矮的湖岸（比湖岸高的不削）
+      // 湖底是碗（岩漿面在 −0.1，碗比它低的地方都比 0 低：史萊姆不會生在湖裡、也走不進去），碗口往外接一段緩緩升起的湖岸，碰到原本的地面為止
+      h = Math.min(h, u < 1 ? LK.lv - .65 + .6 * u * u : LK.lv - .05 + (u - 1) * (1.1 + 2.2 * (u - 1)));
+    }
     return h;
   }
   // 火山灰平原：橢圓範圍裡的沙丘（AS.a 是風吹的方向），整片略為墊高（原本這裡比 0 低，史萊姆生不出來）
@@ -217,15 +224,23 @@
   }
 
   /* ---------- 物件 ---------- */
-  // 六角柱：側面與頂面分開上色（底不封），非索引幾何＋頂點色（合併時沿用自己的顏色）；rot 是第一個角的方向
+  // 六角柱：側面、倒角、頂面分開上色（底不封），非索引幾何＋頂點色（合併時沿用自己的顏色）；rot 是第一個角的方向
+  // 六個側面依朝向烘進深淺（像固定從西北邊打來的光，一面一個顏色）：原本六面同色，背光時一根根柱子是沒有立體感的深色長方塊；
+  // 頂上一圈斜斜的倒角比側面亮，柱頂邊緣圓一點，遠看不再是一排黑色的電池
+  const LD = [-.6, -.8];
   function hexCol(r, h, cs, ct, rot = 0) {
-    const p = [], c = [], A = [0, 1, 2, 3, 4, 5].map(k => [Math.cos(rot + k * Math.PI / 3) * r, Math.sin(rot + k * Math.PI / 3) * r]), S = new THREE.Color(cs), T = new THREE.Color(ct);
-    const v = (x, y, z, k) => { p.push(x, y, z); c.push(k.r, k.g, k.b); };
-    for (let k = 0; k < 6; k++) { const [x0, z0] = A[k], [x1, z1] = A[(k + 1) % 6]; v(x0, 0, z0, S); v(x1, h, z1, S); v(x1, 0, z1, S); v(x0, 0, z0, S); v(x0, h, z0, S); v(x1, h, z1, S); }
-    for (let k = 1; k < 5; k++) { v(A[0][0], h, A[0][1], T); v(A[k + 1][0], h, A[k + 1][1], T); v(A[k][0], h, A[k][1], T); }
+    const p = [], c = [], bev = Math.min(.08, h * .15), ri = r * .82, y1 = h - bev, A = [0, 1, 2, 3, 4, 5].map(k => [Math.cos(rot + k * Math.PI / 3), Math.sin(rot + k * Math.PI / 3)]);
+    const S = new THREE.Color(cs), T = new THREE.Color(ct), F = new THREE.Color(), E = new THREE.Color(), v = (x, y, z, k) => { p.push(x, y, z); c.push(k.r, k.g, k.b); };
+    for (let k = 0; k < 6; k++) {
+      const [c0, s0] = A[k], [c1, s1] = A[(k + 1) % 6], na = rot + (k + .5) * Math.PI / 3; F.copy(S).multiplyScalar(.78 + .3 * (.5 + .5 * (Math.cos(na) * LD[0] + Math.sin(na) * LD[1]))); E.copy(F).lerp(T, .55);
+      v(c0 * r, 0, s0 * r, F); v(c1 * r, y1, s1 * r, F); v(c1 * r, 0, s1 * r, F); v(c0 * r, 0, s0 * r, F); v(c0 * r, y1, s0 * r, F); v(c1 * r, y1, s1 * r, F);
+      v(c0 * r, y1, s0 * r, E); v(c1 * ri, h, s1 * ri, E); v(c1 * r, y1, s1 * r, E); v(c0 * r, y1, s0 * r, E); v(c0 * ri, h, s0 * ri, E); v(c1 * ri, h, s1 * ri, E);
+    }
+    for (let k = 1; k < 5; k++) { v(A[0][0] * ri, h, A[0][1] * ri, T); v(A[k + 1][0] * ri, h, A[k + 1][1] * ri, T); v(A[k][0] * ri, h, A[k][1] * ri, T); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3)); return g;
   }
-  const SIDE = ['#3d3b43', '#47444d', '#35333b', '#4e4a52'], CAP = ['#77717a', '#69646e', '#837c84', '#706a74']; // 玄武岩：偏冷的灰（在橘色的光下才是灰色）
+  // 玄武岩：偏冷、帶一點藍紫的灰（在火山橘色的光下才是灰色）；比原本亮很多（原本白天是深色方塊、黃昏到夜裡整座台地是一面黑牆）
+  const SIDE = ['#77738a', '#817c94', '#6d6982', '#8a859c'], CAP = ['#b6b0c0', '#aaa4b6', '#c0bac8', '#b0aabc'];
   // 耐旱植物：0 一叢乾草、1 長著小花的墊狀植物、2 兩三朵小火焰花（都很小，合併進各區的網格）
   function plant(kt, M, wx, wz, k, s, rd) {
     const B = M4(wx, H(wx, wz) - .02, wz, 0, rd() * 6.28, 0, s), add = (geo, col, m) => kt.add(M.flat, geo, col, B.clone().multiply(m));
@@ -236,6 +251,15 @@
   // 一顆壓扁的深色岩石（rk 是 game.js 的低面數隨機岩石）
   // LOW：小石頭改用八面體（8 個三角形，十二面體是 36 個）；石頭一多，三角形大半都在這裡
   const rock = (kt, M, x, z, s, col, seed, rd, sink = .25, sy = .65) => kt.add(M.flat, LOW && s < .34 ? jit(new THREE.OctahedronGeometry(1, 0), .38, seed) : rk(seed), col, M4(x, H(x, z) - s * sink, z, rd() * .4, rd() * 6.28, rd() * .3, s * 1.15, s * sy, s));
+  // 發紅的裂縫（細長的方塊，長 len、厚 th、寬 w；ry 同 M4，長邊沿本地 x）：順著地面的坡度擺，兩端都貼地
+  // （原本一律水平放，熔岩流前緣、河岸這些陡坡上一端埋進土裡半公尺、另一端翹出來半公尺）
+  const cA = new THREE.Vector3(), cB = new THREE.Vector3(), cC = new THREE.Vector3();
+  function crack(kt, mat, len, th, w, col, x, z, ry, dy = .02) {
+    const ux = Math.cos(ry), uz = -Math.sin(ry), hl = len / 2, hw = Math.max(w, .2) / 2, h0 = H(x - ux * hl, z - uz * hl), h1 = H(x + ux * hl, z + uz * hl);
+    cA.set(ux * len, h1 - h0, uz * len).normalize(); cC.set(-uz * hw * 2, H(x - uz * hw, z + ux * hw) - H(x + uz * hw, z - ux * hw), ux * hw * 2).normalize();
+    cB.crossVectors(cC, cA).normalize(); cC.crossVectors(cA, cB);
+    kt.add(mat, new THREE.BoxGeometry(len, th, w), col, new THREE.Matrix4().makeBasis(cA, cB, cC).setPosition(x, (H(x, z) + (h0 + h1) / 2) / 2 + dy, z));
+  }
   // 熔岩的貼圖：橘紅底、亮黃色的流紋、深色的結殼（沿 v 重複；捲動貼圖就像在流）
   function lavaTex() {
     const c = document.createElement('canvas'); c.width = 128; c.height = 256; const g = c.getContext('2d'), r = seeded(77);
@@ -271,6 +295,13 @@
     const KT = {}, kit = k => { const key = LOW ? 'all' : k; return KT[key] || (KT[key] = nookKit()); }, gk = nookKit();
     const FAR = { sw: 170, s: 150, se: 150, ne: 160, nw: 130, all: 999 }, Q = LOW ? .55 : 1; // LOW 整區一組（少一兩個繪製呼叫），由霧與視錐剔除
 
+    /* ---- 地面的岩漿光（terrainMat 讀 TMASK）：台地與坡道、熔岩丘、灰原、丘陵上不要熔岩原的岩殼縫（只看雜訊的話，一大片縫剛好蓋在這些地方，
+       熔岩丘應該是灰色的硬殼、頂上一道裂縫，灰原是安靜的灰）；火山錐上和熔岩河並排、從冷卻的熔岩流旁邊流下的兩道岩漿河不畫 ---- */
+    [[PA.x, PA.z, 8.5, 12.5], [PA.x + PA_U[0] * (PA_RR + 3.2), PA.z + PA_U[1] * (PA_RR + 3.2), 3.4, 6.5], [-39, -101, 15, 21], [-48.5, -90.5, 5.5, 9],
+      ...[-9, 0, 9].map(o => [AS.x + AS_C * o, AS.z + AS_S * o, 12.5, 17.5]), ...HL.filter((_, i) => i !== 2).map(([x, z, r]) => [x, z, r + 1, r + 5])]
+      .forEach(([x, z, r0, r1], i) => TMASK.crust[i].set(x * K, z * K, r0 * K, r1 * K));
+    TMASK.lava.set(2, 8, -9, -9); // 編號由 terrainMat 的雜訊決定：第 2 道從熔岩流旁邊流下（下游還穿過它），第 8 道和熔岩河並排流到湖邊
+
     /* ---- 六角台地 ---- */
     {
       const kt = kit('sw'), top = PA.top * K, [ux, uz] = PA_U, nx = -uz, nz = ux, ra = Math.atan2(uz, ux);
@@ -288,11 +319,13 @@
           a += (r * 1.8 + .05) / (rho * K);
         }
       });
-      // 螢光苔：斷崖的柱頂上幾叢，集中在五個方向（朝隧道出口、朝小徑盡頭、朝火山、西南、西北），不是每根都有；白天是淡淡的青綠色，夜裡發光，台地夜裡才不是一整片黑牆
-      const MOSS = [.9, .3, -.8, 2.3, -2.4];
+      // 螢光苔：斷崖的柱頂上一叢叢，五個方向（朝隧道出口、朝小徑盡頭、朝火山、西南、西北）長得最多，其他地方零星幾叢，有些從柱頂垂下一小片到側面；
+      // 白天是淡淡的青綠色，夜裡發光，台地夜裡才不是一整片黑牆
+      const MOSS = [.9, .3, -.8, 2.3, -2.4], mc = () => pk(['#2fb38f', '#45c79e', '#2a9d84'], rd);
       tops.forEach(([x, z, y, a, r]) => {
-        if (!MOSS.some(m => Math.abs(wa(a - m)) < .24) || rd() < .35) return;
-        for (let i = 0, n = rd() < .5 ? 2 : 1; i < n; i++) { const s = (.13 + rd() * .1) * (i ? .7 : 1), ox = (rd() - .5) * r * .9, oz = (rd() - .5) * r * .9; gk.add(M.night, new THREE.SphereGeometry(1, 6, 3, 0, PI2, 0, Math.PI / 2), pk(['#2fb38f', '#45c79e', '#2a9d84'], rd), M4(x + ox, y - .01, z + oz, 0, rd() * 6, 0, s * 1.3, s * .55, s)); }
+        if (rd() > (MOSS.some(m => Math.abs(wa(a - m)) < .34) ? .75 : .28)) return;
+        for (let i = 0, n = rd() < .5 ? 2 : 1; i < n; i++) { const s = (.13 + rd() * .1) * (i ? .7 : 1), ox = (rd() - .5) * r * .9, oz = (rd() - .5) * r * .9; gk.add(M.night, new THREE.SphereGeometry(1, 6, 3, 0, PI2, 0, Math.PI / 2), mc(), M4(x + ox, y - .01, z + oz, 0, rd() * 6, 0, s * 1.3, s * .55, s)); }
+        if (rd() < .6) gk.add(M.night, new THREE.SphereGeometry(1, 5, 3), mc(), M4(x + Math.cos(a) * r * .82, y - .14 - rd() * .22, z + Math.sin(a) * r * .82, 0, -a, 0, .05, .2 + rd() * .12, .13 + rd() * .05));
       });
       // 台頂外圈兩排柱頂（和地面齊平），看起來整座台地都是柱子撐起來的
       [.52, 1.04].forEach(o => { for (let a = -Math.PI; a < Math.PI;) { const rho = paR(a) - o, r = .42 + rd() * .1, x = (PA.x + Math.cos(a) * rho) * K, z = (PA.z + Math.sin(a) * rho) * K, y = H(x, z); col(x, z, r, y - .35, y + .03 + rd() * .06, 0); a += (r * 1.8 + .05) / (rho * K); } });
@@ -300,7 +333,7 @@
       (LOW ? [] : [[-.8, 2.3], [2.3, -.9], [-.3, -2.9]]).forEach(([px, pz]) => { const cx = (PA.x + px) * K, cz = (PA.z + pz) * K, r = .45; [[0, 0], ...[0, 1, 2, 3, 4, 5].filter(() => rd() < .7).map(k => [Math.cos(Math.PI / 6 + k * Math.PI / 3) * r * 1.74, Math.sin(Math.PI / 6 + k * Math.PI / 3) * r * 1.74])].forEach(([ox, oz]) => { const x = cx + ox, z = cz + oz, y = H(x, z); col(x, z, r, y - .3, y + .02 + rd() * .1, 0, 0); }); });
       // 坡道：交錯排列的柱頂當踏階（每塊的下坡邊緣露出一點，看起來一階一階）；兩側一排排往下的柱子當扶手
       for (let i = 0, u = PA_RR - .9; u < PA_RR + 6.4; u += .45, i++) for (let v = -1.82 + (i % 2) * .26; v <= 1.83; v += .52) { const x = (PA.x + ux * u + nx * v) * K, z = (PA.z + uz * u + nz * v) * K, y = H(x, z); col(x, z, .47, y - .5, y + .07, 0, ra); }
-      [-1, 1].forEach(sd => { for (let u = PA_RR - .2; u < PA_RR + 6.3; u += .55) [[2.25, .3, .85, 1], [2.8, -.6, .05, 0]].slice(0, LOW ? 1 : 2).forEach(([v, lo, hi, solid]) => { const x = (PA.x + ux * u + nx * v * sd) * K, z = (PA.z + uz * u + nz * v * sd) * K, foot = H(x + nx * sd * 1.3, z + nz * sd * 1.3) - .4; col(x, z, .38 + rd() * .1, foot, Math.max(foot + .45, rampH(u) * K + lo + rd() * (hi - lo)), solid); }); });
+      [-1, 1].forEach(sd => { for (let u = PA_RR - .2; u < PA_RR + 6.3; u += .55) [[2.25, .3, .85, 1], [2.8, -.6, .05, 0]].slice(0, LOW ? 1 : 2).forEach(([v, lo, hi, solid]) => { const x = (PA.x + ux * u + nx * v * sd) * K, z = (PA.z + uz * u + nz * v * sd) * K, foot = H(x + nx * sd * 1.3, z + nz * sd * 1.3) - .4, r = .38 + rd() * .1, y1 = Math.max(foot + .45, rampH(u) * K + lo + rd() * (hi - lo)); if (y1 > H(x, z) + .08) col(x, z, r, foot, y1, solid); }); }); // 整根埋在土裡的（坡道頂、台地邊上）不放
       // 倒下的兩截柱子、北邊崖頂朝火山口的小石堆、台頂幾叢耐旱植物
       [[1.4, -2.2, .4], [-1.8, 1.2, 2.1]].forEach(([px, pz, ry]) => { const x = (PA.x + px) * K, z = (PA.z + pz) * K; kt.add(M.flat, hexCol(.34, 1.5, pk(SIDE, rd), pk(CAP, rd)), null, M4(x, H(x, z) + .24, z, 0, ry, Math.PI / 2).multiply(M4(0, -.75, 0))); });
       { const a = Math.atan2(-130 - PA.z, -PA.x), rho = paR(a) - 1.9, x = (PA.x + Math.cos(a) * rho) * K, z = (PA.z + Math.sin(a) * rho) * K; let y = H(x, z); [[.42, .16], [.33, .15], [.25, .13], [.17, .11]].forEach(([r, h], i) => { kt.add(M.flat, rk(560 + i), i % 2 ? '#5f5c66' : '#75717b', M4(x + (i % 2 - .5) * .05, y + h / 2, z, 0, i, 0, r, h * .85, r * .9)); y += h; }); addCol({ x, z, r: .45 }); }
@@ -315,8 +348,8 @@
         [[-.62, .6, 0], ...(t[2] > 3 ? [[-.42, .38, 1]] : [])].forEach(([a, b, cross]) => {
           const n = Math.max(3, Math.round((b - a) * (cross ? t[3] : t[2]) * K / .5)), ry = cross ? -Math.atan2(c, -s) : -t[5];
           for (let i = 0; i < n; i++) {
-            const f = a + (b - a) * (i + .5) / n, w = .07 * Math.sin(f * 9 + j * 2), [x, z] = cross ? at(w, f) : at(f, w), y = H(x, z), nx = cross ? c : -s, nz = cross ? s : c;
-            gk.add(M.lamp, new THREE.BoxGeometry(.55 + rd() * .2, .07, .14 + rd() * .08), pk(lamp, rd), M4(x, y + .02, z, 0, ry + (rd() - .5) * .35, 0));
+            const f = a + (b - a) * (i + .5) / n, w = .07 * Math.sin(f * 9 + j * 2), [x, z] = cross ? at(w, f) : at(f, w), nx = cross ? c : -s, nz = cross ? s : c;
+            crack(gk, M.lamp, .55 + rd() * .2, .07, .14 + rd() * .08, pk(lamp, rd), x, z, ry + (rd() - .5) * .35);
             [-1, 1].forEach(sd => { if (rd() < (LOW ? .4 : .8)) rock(kt, M, x + nx * sd * (.24 + rd() * .06), z + nz * sd * (.24 + rd() * .06), .16 + rd() * .1, pk(lips, rd), 1000 + (i * 2 + j * 17 + (sd > 0)) % 40, rd, .05, .5); });
           }
         });
@@ -339,13 +372,13 @@
         for (let a = a0 - 1.6; a < a0 + 1.6; a += .95 / (lr * K)) {
           const bx = lx + Math.cos(a) * lr, bz = lz + Math.sin(a) * lr; if (inLobe(bx, bz, j) || near(FL, bx, bz).l < flW(1) - .6) continue;
           const x = bx * K, z = bz * K; rock(kt, M, x, z, .24 + rd() * .2, pk(dark, rd), 600 + Math.floor(rd() * 40), rd, .2, .55);
-          if (rd() < .6) { const cx = (lx + Math.cos(a + .1) * (lr + .22)) * K, cz = (lz + Math.sin(a + .1) * (lr + .22)) * K; gk.add(M.lamp, new THREE.BoxGeometry(.6 + rd() * .55, .07, .12), pk(lamp, rd), M4(cx, H(cx, cz) + .03, cz, 0, -a + Math.PI / 2 + (rd() - .5) * .4, 0)); }
+          if (rd() < .6) { const cx = (lx + Math.cos(a + .1) * (lr + .22)) * K, cz = (lz + Math.sin(a + .1) * (lr + .22)) * K; crack(gk, M.lamp, .6 + rd() * .55, .07, .12, pk(lamp, rd), cx, cz, -a + Math.PI / 2 + (rd() - .5) * .4, .03); }
         }
       });
       // 平地上那段的兩側邊緣：岩塊與發紅的縫；山坡上的只放零星幾塊
-      [-1, 1].forEach(sd => { for (let s = .2; s < .97; s += (s < .62 ? .1 : .045) / Q) { const p = along(FL, s), l = (flW(s) + .05) * sd, bx = p.x - p.tz * l, bz = p.z + p.tx * l; if (inLobe(bx, bz, -1)) continue; const x = bx * K, z = bz * K; rock(kt, M, x, z, .22 + rd() * .22, pk(dark, rd), 640 + Math.floor(rd() * 40), rd, .2, .55); if (s > .62 && rd() < .45) gk.add(M.lamp, new THREE.BoxGeometry(.5 + rd() * .45, .06, .1), pk(lamp, rd), M4(x + p.tx * .5, H(x + p.tx * .5, z + p.tz * .5) + .02, z + p.tz * .5, 0, Math.atan2(-p.tz, p.tx) + (rd() - .5) * .5, 0)); } });
+      [-1, 1].forEach(sd => { for (let s = .2; s < .97; s += (s < .62 ? .1 : .045) / Q) { const p = along(FL, s), l = (flW(s) + .05) * sd, bx = p.x - p.tz * l, bz = p.z + p.tx * l; if (inLobe(bx, bz, -1)) continue; const x = bx * K, z = bz * K; rock(kt, M, x, z, .22 + rd() * .22, pk(dark, rd), 640 + Math.floor(rd() * 40), rd, .2, .55); if (s > .62 && rd() < .45) crack(gk, M.lamp, .5 + rd() * .45, .06, .1, pk(lamp, rd), x + p.tx * .5, z + p.tz * .5, Math.atan2(-p.tz, p.tx) + (rd() - .5) * .5); } });
       // 中間還沒完全冷掉的地方：幾道發紅的裂縫與擠出來的熔岩小丘
-      for (let i = 0; i < 9; i++) { const s = .7 + rd() * .28, p = along(FL, s), l = (rd() - .5) * flW(s), x = (p.x - p.tz * l) * K, z = (p.z + p.tx * l) * K; gk.add(M.lamp, new THREE.BoxGeometry(.8 + rd() * .6, .05, .09), pk(lamp, rd), M4(x, H(x, z) + .03, z, 0, Math.atan2(-p.tz, p.tx) + Math.PI / 2 + (rd() - .5) * .8, 0)); if (i % 3 === 0) rock(kt, M, x + .4, z + .3, .3, '#25232a', 680 + i, rd, .1, .5); }
+      for (let i = 0; i < 9; i++) { const s = .7 + rd() * .28, p = along(FL, s), l = (rd() - .5) * flW(s), x = (p.x - p.tz * l) * K, z = (p.z + p.tx * l) * K; crack(gk, M.lamp, .8 + rd() * .6, .05, .09, pk(lamp, rd), x, z, Math.atan2(-p.tz, p.tx) + Math.PI / 2 + (rd() - .5) * .8, .03); if (i % 3 === 0) rock(kt, M, x + .4, z + .3, .3, '#25232a', 680 + i, rd, .1, .5); }
       // 比較老的上游那段，縫裡已經長出幾叢小草和小花
       for (let i = 0; i < (LOW ? 3 : 6); i++) { const s = .3 + rd() * .4, p = along(FL, s), l = (flW(s) - .6) * (i % 2 ? 1 : -1), x = (p.x - p.tz * l) * K, z = (p.z + p.tx * l) * K; plant(kt, M, x, z, i % 3, .8 + rd() * .4, rd); }
     }
@@ -370,13 +403,15 @@
         if (!ci) { [[-.45, .15, .62, '#fb923c'], [.3, -.35, .55, '#fb923c'], [.25, .45, .5, '#f97316'], [-.2, -.75, .42, '#ff7a59']].forEach(([ox, oz, s, cl], i) => { const x = cx + ox * K, z = cz + oz * K; gk.add(M.night, toyGeo(cl, true), null, M4(x, H(x, z) - .02, z, 0, Math.atan2(-ox, -oz) + (i - 1.5) * .5, 0, s)); }); V.nest = [cx, fy, cz]; }
       });
       // 噴口與硫磺池：夜裡燒出的藍色火焰（硫磺燃燒）；白天看不到（不畫）
-      // 火焰從噴口的石頭中間冒出來（石頭約 0.5 公尺高，所以底部墊高），一個噴口四簇
-      const fl = []; sv.forEach(([bx, bz]) => { for (let k = 0; k < 4; k++) { const a = k / 4 * PI2 + rd() * .8, r = .12 + rd() * .32; fl.push({ x: bx * K + Math.cos(a) * r, z: bz * K + Math.sin(a) * r, s: .95 + rd() * .5, p: rd() * 9, y0: .22 }); } });
+      // 火焰從噴口的石頭中間冒出來（石頭約 0.5 公尺高，所以底部墊高），一個噴口三簇、彼此分開一點、和硫磺池邊的一樣小
+      // （原本四簇又高又擠在一起，尖尖的疊在一起像一叢藍色的冰晶）
+      const fl = []; sv.forEach(([bx, bz]) => { for (let k = 0; k < 3; k++) { const a = k / 3 * PI2 + rd() * .8, r = .24 + rd() * .26; fl.push({ x: bx * K + Math.cos(a) * r, z: bz * K + Math.sin(a) * r, s: .62 + rd() * .26, p: rd() * 9, y0: .22 }); } });
       for (let k = 0; k < 4; k++) { const a = k / 4 * PI2 + .6, r = rf(a) * 1.12; fl.push({ x: px + Math.cos(a) * r, z: pz + Math.sin(a) * r, s: .6 + rd() * .3, p: rd() * 9, y0: .03 }); }
       fl.forEach(f => { f.y = H(f.x, f.z) + f.y0; });
-      // 火焰是兩層水滴形（半球底＋圓錐尖），疊加混色：外層深藍、內層淡藍，看起來是一團柔柔的光，不是冰晶
-      const tear = (r, h, c, y) => [[new THREE.SphereGeometry(r, 8, 4, 0, PI2, Math.PI / 2, Math.PI / 2), c, M4(0, y, 0, 0, 0, 0, 1, .75, 1)], [new THREE.ConeGeometry(r, h, 8, 1, true), c, M4(0, y + h / 2, 0)]];
-      const fg = mergeParts([...tear(.24, .62, '#12307f', .2), ...tear(.13, .4, '#2f6fd6', .17)]);
+      // 火焰是兩層圓頭的水滴（旋轉體：圓圓的底、往上收、頂端是圓的不是尖的），疊加混色：外層深藍、內層淡藍，看起來是一團柔柔的光，不是冰晶
+      const TEAR = [[0, 0], [.7, .08], [1, .3], [.86, .55], [.55, .75], [.22, .92], [0, 1]].map(([x, y]) => new THREE.Vector2(x, y));
+      const tear = (r, h, c, y) => [new THREE.LatheGeometry(TEAR, 7), c, M4(0, y, 0, 0, 0, 0, r, h, r)];
+      const fg = mergeParts([tear(.24, .78, '#12307f', .03), tear(.13, .5, '#2f6fd6', .06)]);
       const fim = new THREE.InstancedMesh(fg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }), fl.length);
       fim.frustumCulled = false; fim.visible = false; W.scene.add(fim); V.blue = { im: fim, fl, x: px, z: pz };
       // 蒸氣：硫磺池與兩座火山錐的火山口（原有的噴口自己有蒸氣）
@@ -407,20 +442,24 @@
     {
       const kt = kit('ne'), dark = ['#2a2220', '#33292a', '#231d1c'], lamp = ['#ff5a1f', '#ff7a2e', '#ffa040'], tex = lavaTex(), hw = .95 * K;
       // 河面：沿中心線的帶子（略高於挖低的河床，兩邊壓在堤岸底下）；湖面：一個圓盤，v 從河口往外增加，貼圖捲動時像熔岩從河口往外推
-      const pos = [], uvs = [], idx = [], N = Math.ceil(RV.L * K / .7);
-      for (let i = 0; i <= N; i++) { const p = along(RV, i / N), x = p.x * K, z = p.z * K, y = H(x, z) + .14, v = i / N * RV.L * K / 4; pos.push(x - p.tz * hw, y, z + p.tx * hw, x + p.tz * hw, y, z - p.tx * hw); uvs.push(0, v, 1, v); if (i) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } }
-      const E = RV.P[RV.P.length - 1], ex = E[0] * K, ez = E[1] * K, v0 = RV.L * K / 4, lx = LK.x * K, lz = LK.z * K, ly = (LK.lv - .2) * K, b0 = pos.length / 3, SEG = 30;
+      const pos = [], uvs = [], idx = [], N = Math.ceil(RV.L * K / .7), lx = LK.x * K, lz = LK.z * K, ly = (LK.lv - .2) * K;
+      for (let i = 0; i <= N; i++) {
+        const p = along(RV, i / N), x = p.x * K, z = p.z * K, dl = Math.hypot(p.x - LK.x, p.z - LK.z), rl = lkR(Math.atan2(p.z - LK.z, p.x - LK.x)), y0 = H(x, z) + .14;
+        const y = y0 + (ly - .03 - y0) * (1 - sm(rl - .9, rl - .1, dl)), v = i / N * RV.L * K / 4; // 流進湖以後潛到湖面下（兩片同樣的岩漿接在一起，不會在湖面上浮著一截）
+        pos.push(x - p.tz * hw, y, z + p.tx * hw, x + p.tz * hw, y, z - p.tx * hw); uvs.push(0, v, 1, v); if (i) { const a = (i - 1) * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      }
+      const E = RV.P[RV.P.length - 1], ex = E[0] * K, ez = E[1] * K, v0 = RV.L * K / 4, b0 = pos.length / 3, SEG = 30;
       pos.push(lx, ly, lz); uvs.push(.5, v0 + Math.hypot(lx - ex, lz - ez) / 4);
       for (let k = 0; k <= SEG; k++) { const a = k / SEG * PI2, r = (lkR(a) + .05) * K, x = lx + Math.cos(a) * r, z = lz + Math.sin(a) * r; pos.push(x, ly, z); uvs.push(.5 + ((x - ex) * RN[0] + (z - ez) * RN[1]) / (4 * hw), v0 + Math.hypot(x - ex, z - ez) / 4); if (k) idx.push(b0, b0 + k + 1, b0 + k); }
       const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); lg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); lg.setIndex(idx); lg.computeBoundingSphere();
       const lm = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, side: THREE.DoubleSide }), lava = new THREE.Mesh(lg, lm); chunkObj(lava, 260, false); V.lava = { tex, m: lm };
       // 堤岸上的結殼岩塊、緊貼河面兩側的發紅縫隙
-      [-1, 1].forEach(sd => { for (let s = .03; s < .97; s += 1.3 / (RV.L * K) / Q) { const p = along(RV, s), l = (1.3 + rd() * .25) * sd, x = (p.x - p.tz * l) * K, z = (p.z + p.tx * l) * K; rock(kt, M, x, z, .28 + rd() * .26, pk(dark, rd), 820 + Math.floor(rd() * 40), rd, .25, .6); if (rd() < .5) { const l2 = 1.02 * sd, x2 = (p.x - p.tz * l2) * K, z2 = (p.z + p.tx * l2) * K; gk.add(M.lamp, new THREE.BoxGeometry(.06, .04, .6 + rd() * .5), pk(lamp, rd), M4(x2, H(x2, z2) + .1, z2, 0, Math.atan2(p.tx, p.tz), 0)); } } });
+      [-1, 1].forEach(sd => { for (let s = .03; s < .97; s += 1.3 / (RV.L * K) / Q) { const p = along(RV, s), l = (1.3 + rd() * .25) * sd, x = (p.x - p.tz * l) * K, z = (p.z + p.tx * l) * K; if (Math.hypot(x / K - LK.x, z / K - LK.z) < LK.r * 1.13 + .6) continue; rock(kt, M, x, z, .28 + rd() * .26, pk(dark, rd), 820 + Math.floor(rd() * 40), rd, .25, .6); if (rd() < .5) { const l2 = 1.02 * sd, x2 = (p.x - p.tz * l2) * K, z2 = (p.z + p.tx * l2) * K; crack(gk, M.lamp, .6 + rd() * .5, .04, .06, pk(lamp, rd), x2, z2, Math.atan2(-p.tz, p.tx), .06); } } });
       // 山腰的小噴口：一座濺出來的小錐，口子發著光，旁邊黏著一團團凝固的熔岩
       { const hx = HEAD[0] * K, hz = HEAD[1] * K, hy = H(hx, hz); kt.add(M.flat, jit(new THREE.CylinderGeometry(.5, 1.25, 1.5, 8, 2, true), .12, 31), '#2c2322', M4(hx, hy + .4, hz)); kt.add(M.flat, new THREE.RingGeometry(.3, .55, 8).rotateX(-Math.PI / 2), '#3a2c28', M4(hx, hy + 1.15, hz)); gk.add(M.lamp, new THREE.CircleGeometry(.32, 8).rotateX(-Math.PI / 2), '#ffc04d', M4(hx, hy + 1.12, hz));
         for (let i = 0; i < 9; i++) { const a = rd() * PI2, r = 1.1 + rd() * 1.2; rock(kt, M, hx + Math.cos(a) * r, hz + Math.sin(a) * r, .18 + rd() * .2, '#2a2120', 860 + i, rd, .2, .6); } addCol({ x: hx, z: hz, r: 1.3 }); V.head = [hx, hy + 1.2, hz]; }
-      // 湖岸一圈岩塊（岩塊之間的縫發紅）、湖面上漂著幾塊深色的結殼
-      for (let k = 0, n = Math.round(30 * Q); k < n; k++) { const a = k / n * PI2 + rd() * .1, r = (lkR(a) + .22) * K, x = lx + Math.cos(a) * r, z = lz + Math.sin(a) * r; rock(kt, M, x, z, .28 + rd() * .3, pk(dark, rd), 880 + k, rd, .2, .62); if (k % 2) { const r2 = (lkR(a + .1) + .04) * K; gk.add(M.lamp, new THREE.BoxGeometry(.06, .04, .55), pk(lamp, rd), M4(lx + Math.cos(a + .1) * r2, ly + .03, lz + Math.sin(a + .1) * r2, 0, -a - .1, 0)); } }
+      // 湖岸一圈岩塊、岩漿的岸線一段段發紅，湖面上漂著幾塊深色的結殼
+      for (let k = 0, n = Math.round(30 * Q); k < n; k++) { const a = k / n * PI2 + rd() * .1, r = (lkR(a) + .22) * K, x = lx + Math.cos(a) * r, z = lz + Math.sin(a) * r; rock(kt, M, x, z, .28 + rd() * .3, pk(dark, rd), 880 + k, rd, .2, .62); if (k % 2) { const r2 = (lkR(a + .1) + .25) * .87 * K; gk.add(M.lamp, new THREE.BoxGeometry(.06, .04, .55), pk(lamp, rd), M4(lx + Math.cos(a + .1) * r2, ly + .02, lz + Math.sin(a + .1) * r2, 0, -a - .1, 0)); } } // 發紅的縫在岩漿的岸線上（湖底的碗在這裡和岩漿面同高）
       for (let i = 0; i < 5; i++) { const a = rd() * PI2, r = rd() * LK.r * .65 * K; kt.add(M.flat, jit(new THREE.CylinderGeometry(1, 1, .1, 6), .2, 900 + i), '#3b2219', M4(lx + Math.cos(a) * r, ly + .03, lz + Math.sin(a) * r, 0, rd() * 6, 0, .5 + rd() * .5, 1, .4 + rd() * .4)); }
       // 不能踩：沿河每 0.9 公尺一個碰撞圓（堤岸頂還站得到）、整個湖一個
       for (let s = 0; s <= 1.0001; s += .9 / (RV.L * K)) { const p = along(RV, Math.min(1, s)); addCol({ x: p.x * K, z: p.z * K, r: 1.25 * K }); }
@@ -450,7 +489,7 @@
     POOLS.forEach(([bx, bz, br], j) => {
       const kt = kit(bx < 0 ? 'sw' : 'se'), cx = bx * K, cz = bz * K, R = br * K, n = Math.round(PI2 * R / .62);
       for (let k = 0; k < n; k++) { const a = k / n * PI2 + rd() * .2, r = R * (1 + rd() * .12) + .08, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; rock(kt, M, x, z, .2 + rd() * .2, pk(['#2a2220', '#33292a', '#3a2c28'], rd), 940 + (k + j * 7) % 50, rd, .2, .6); }
-      for (let k = 0; k < 3; k++) { const a = rd() * PI2, r = R + .5 + rd() * .4, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; gk.add(M.lamp, new THREE.BoxGeometry(.5 + rd() * .5, .03, .05), '#ff6a1f', M4(x, H(x, z) + .02, z, 0, -a + (rd() - .5) * .3, 0)); }
+      for (let k = 0; k < 3; k++) { const a = rd() * PI2, r = R + .5 + rd() * .4, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r; crack(gk, M.lamp, .5 + rd() * .5, .03, .05, '#ff6a1f', x, z, -a + (rd() - .5) * .3); }
     });
 
     // 只有台地（柱子）與東邊（岩柱、火山錐）投影；熔岩流的繩紋、河岸的石塊、灰原上的小東西都貼著地面，投影只是多畫一次陰影貼圖
@@ -464,10 +503,30 @@
   }
   regionBuild(build);
 
+  /* ---------- 從火山往中央平地看：山脊後面的東西不畫 ----------
+     火山這一側的山脊（z ≈ −54 單位）稜線最低也有 23.8 公尺；視線從稜線下面穿過的區塊一個像素也看不到，但 cullChunks 只看距離與視錐，照樣每格送去畫
+     （LOW 在隧道出口往平地看，460 次繪製裡將近 300 次是山脊後面的東西）。鏡頭在火山裡每移動 2 公尺重算一次：區塊外框的四個上角，
+     視線在 z＝−54 那條線上都低於 22 公尺、穿過的位置也都在 |x| < 53 以內（兩端的角落外面是更高的分隔山脈，保守起見不算），就當成超出距離（同下面在平地時藏火山的作法） */
+  const RC = { x: 1e9, y: 0, z: 0, hid: [] }, rcBox = new THREE.Box3();
+  function ridgeCull(cam) {
+    const inV = cam.z < -60 * K && Math.abs(cam.x) < -cam.z - 8 * K && !CV.c && !inCity();
+    if (inV ? Math.hypot(cam.x - RC.x, cam.y - RC.y, cam.z - RC.z) < 2 : !RC.hid.length) return;
+    for (const u of RC.hid) u.far = u.rcFar; RC.hid.length = 0; RC.x = inV ? cam.x : 1e9; RC.y = cam.y; RC.z = cam.z;
+    if (inV) for (const c of W.chunks) {
+      const u = c.userData; if (u.z0 < -50 * K || !(u.far > 0)) continue;
+      if (u.rcTop == null) u.rcTop = rcBox.setFromObject(c).max.y;
+      let ok = true;
+      for (const pz of [u.z0, u.z1]) { const t = (-54 * K - cam.z) / (pz - cam.z); if (cam.y + (u.rcTop - cam.y) * t > 22 || Math.abs(cam.x + (u.x0 - cam.x) * t) > 53 * K || Math.abs(cam.x + (u.x1 - cam.x) * t) > 53 * K) { ok = false; break; } }
+      if (ok) { u.rcFar = u.far; u.far = -1; RC.hid.push(u); }
+    }
+    cullChunks(cam);
+  }
+
   /* ---------- 每格更新：熔岩流動、蒸氣與火星、夜裡的藍色火焰、彩蛋（離得遠就不算） ---------- */
   let zzT = 0, fQ = null, fS = null;
   regionStep((dt, t) => {
     if (!P || !V.lava) return;
+    ridgeCull(W.cam.position);
     // 在中央平地（山脊圍住的那塊）時，這一區的東西都被山脊擋住、一個像素也看不到，但 cullChunks 只看距離，照樣每格送去畫：直接當成超出距離
     const cam = W.cam.position, hid = Math.max(Math.abs(cam.x), Math.abs(cam.z)) < 44 * K && cam.y < 20 && !CV.c;
     if (hid !== V.hid) { V.hid = hid; V.chunks.forEach(o => { o.userData.far = hid ? -1 : o.userData.far0; }); }

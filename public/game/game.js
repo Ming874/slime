@@ -1095,13 +1095,19 @@ const WATER_Y = -.9 * K;
      火山口周圍與幾片熔岩原冷卻成一塊塊岩殼、縫隙透出一明一暗的岩漿光（小徑上沒有）
    - 雪原：沿風向拉長的風紋、凹地偏藍、低窪平地偶爾一片光滑的冰面、會隨視角閃爍的冰晶
    - LOW（沒有 T_HQ）：只留顏色（不做凹凸），省掉一片片的落葉、野花、岩殼（改成簡單的裂縫）、碎貝殼、浪花線、冰晶與焦散；岩漿河照樣有 */
+/* 火山地面的兩種「岩漿光」在某些地方要關掉（各區檔案在建世界時填，region-volcano.js）：
+   - crust：熔岩原岩殼縫（下面的 field）只看雜訊，一大片剛好蓋在熔岩丘、灰原、岩柱丘、台地頂上，這些地方要的是安靜的灰殼（熔岩丘只有頂上一道裂縫）。
+     每個 (x, z, 內半徑, 外半徑)（世界座標）：內半徑以內沒有縫、外半徑以外照常；外半徑 0＝沒用到
+   - lava：火山錐上 9 道岩漿河裡不畫的幾道（編號；−9＝沒用到），旁邊已經有立體的熔岩河、冷卻的熔岩流，兩種畫法的岩漿擠在一起很亂 */
+const TMASK = { crust: [...Array(12)].map(() => new THREE.Vector4(0, 0, 0, 0)), lava: new THREE.Vector4(-9, -9, -9, -9) };
 function terrainMat() {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 });
   if (!LOW) m.defines = { T_HQ: '' };
   m.onBeforeCompile = sh => {
     sh.uniforms.uPath = { value: PATH_TEX }; sh.uniforms.uTime = W.wind; sh.uniforms.uCvA = { value: CAVE_UA }; sh.uniforms.uCvB = { value: CAVE_UB }; sh.uniforms.uTnA = { value: TNL.A }; sh.uniforms.uTnB = { value: TNL.B };
+    sh.uniforms.uNoCr = { value: TMASK.crust }; sh.uniforms.uNoLv = { value: TMASK.lava };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 dirt;\nattribute vec4 gw;\nattribute float gly;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt; vGW = gw; vLy = gly; vWP = position; vWN = normal;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nuniform vec4 uTnA;\nuniform vec4 uTnB;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nuniform vec4 uTnA;\nuniform vec4 uTnB;\nuniform vec4 uNoCr[12];\nuniform vec4 uNoLv;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
       .replace('#include <color_fragment>', `#include <color_fragment>
         // 山洞口：在洞口直段的斷面裡不畫地形（uCvA＝洞口地面中心＋直段長度、uCvB＝往洞裡的方向＋半寬＋高度；斷面形狀同 caves.js 的 caveProfile）
         for (int ci = 0; ci < 8; ci++) { vec4 ca = uCvA[ci]; if (ca.w <= 0.0) continue; vec4 cb = uCvB[ci]; vec2 cr = vWP.xz - ca.xz; float ct = dot(cr, cb.xy); if (ct < 0.0 || ct > ca.w) continue;
@@ -1245,6 +1251,7 @@ function terrainMat() {
           float la = atan(cv2.y, cv2.x) * 1.4324 + (tN(cdir * 1.8 + cvl * 0.02) - 0.5) * 1.4, lid = floor(la + 0.5), lw = abs(la - lid) * 0.6981 * cvl; lid = mod(lid, 9.0); // lw：到河道中心線的距離（公尺）
           float lh = tH(vec2(lid, 4.2)), lLen = 26.0 + 34.0 * lh, lW = (0.55 + 0.5 * tH(vec2(lid, 9.7))) * (0.8 + 0.6 * smoothstep(10.0, lLen, cvl));
           float lch = (1.0 - smoothstep(lW, lW * 1.7, lw)) * smoothstep(6.0, 9.0, cvl) * (1.0 - smoothstep(lLen + 10.0, lLen + 40.0, cvl)) * npm;
+          vec4 lOff = abs(uNoLv - lid); if (min(min(lOff.x, lOff.y), min(lOff.z, lOff.w)) < 0.5) lch = 0.0; // 這一道整條不畫（見 TMASK.lava）
           if (lch > 0.01) {
             tV = mix(tV, vec3(0.035, 0.03, 0.032) * (0.85 + 0.3 * n2), lch * 0.9); tGloss = max(tGloss, lch * 0.45 * tB.z); tHt -= lch * 0.05;
             float core = 1.0 - smoothstep(lW * 0.15, lW * 0.8, lw), lHot = step(0.25, lh) * (1.0 - smoothstep(lLen * 0.5, lLen, cvl));
@@ -1253,6 +1260,7 @@ function terrainMat() {
           }
           float hot = 1.0 - smoothstep(14.0, 32.0, cvl); // 火山口周圍的上半山坡：還很燙的岩殼
           float field = max(smoothstep(0.64, 0.74, tN(wp * 0.03 + 11.0)) * smoothstep(55.0, 65.0, cvl) * soil * (1.0 - ash * 0.8), hot) * npm;
+          if (field > 0.01) for (int mi = 0; mi < 12; mi++) { vec4 q = uNoCr[mi]; if (q.w > 0.0) field *= smoothstep(q.z, q.w, distance(wp, q.xy)); } // 熔岩丘、灰原、台地這些地方不要縫（見 TMASK.crust）
           if (field > 0.01) {
             #ifdef T_HQ
               vec2 vg = wp * 0.48, vi = floor(vg), vf = fract(vg), vid = vi; float d1 = 9.0, d2 = 9.0;
