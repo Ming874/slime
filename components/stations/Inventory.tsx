@@ -23,10 +23,33 @@ export default function Inventory() {
         <Detail it={items[sel]} hb={S.hb} />
         <Equip />
       </div>
+      <Today />
       <Quest />
       <Eggs />
       <Sketches />
       <Clips />
+    </div>
+  );
+}
+
+// 今天（5.4）：玩家沒在做事時發生的事不再跳字，記在手帳的這一頁——今天的流行色、網站賣了幾件、小店的客人、企業訂單、養殖槽。
+// 手寫字、橫線紙；同一類的小事 15 分鐘內併成一行（game.js 的 note），新的在上面，最多列 12 行
+function Today() {
+  const g = G(), td = g.today?.(), out = g.outbox?.() ?? 0;
+  if (!td) return null;
+  const sp = g.trend.sp ? g.SP[g.trend.sp] : null, rows = td.log.filter((r) => r.k !== 'trend').slice(-12).reverse();
+  const hm = (t: number) => { const d = new Date(t); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const day = new Date(), wk = '日一二三四五六'[day.getDay()];
+  return (
+    <div className="rx-today">
+      <div className="rx-today-hd"><b>今天</b><span>{day.getMonth() + 1} 月 {day.getDate()} 日（{wk}）</span></div>
+      <p className="rx-today-sum">
+        {sp && <span className="rx-today-flag"><i style={{ background: sp.color2 ? `linear-gradient(135deg,${sp.color},${sp.color2})` : sp.color }} />流行色：{sp.name}（售價 ×1.35・屋頂的旗子）</span>}
+        <span>網站賣出 {td.web} 件{td.inc > 0 ? `，+${g.fmt(td.inc)}` : ''}{out > 0 ? `　出貨箱裡還有 ${out} 個包裹` : ''}</span>
+      </p>
+      {rows.length ? (
+        <ul>{rows.map((r) => <li key={r.t + r.k}><em>{hm(r.t)}</em><i className={`k-${r.k.replace(/Away|Left|Late/, '')}`} aria-hidden="true" /><span>{r.m}</span></li>)}</ul>
+      ) : <p className="rx-today-none">今天還很安靜。把捏捏擺上網站貨架，賣出去的會記在這裡。</p>}
     </div>
   );
 }

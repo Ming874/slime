@@ -678,3 +678,27 @@ body.ware #objective, body.ware #wp, body.ware #coach { display: none; } /* 目�
 .hbtn.new::after{content:"";position:absolute;right:-3px;top:-3px;width:8px;height:8px;border-radius:50%;background:#f43f5e;box-shadow:0 0 0 2px #0b0f17;pointer-events:none}
 .file-chip{position:fixed;left:-15px;top:-11px;z-index:40;width:30px;height:22px;border-radius:3px;background:linear-gradient(to bottom right,#0000 calc(50% - 1px),#d6c7a6 0 calc(50% + 1px),#0000 0) left top/50% 62% no-repeat,linear-gradient(to bottom left,#0000 calc(50% - 1px),#d6c7a6 0 calc(50% + 1px),#0000 0) right top/50% 62% no-repeat,#fffaf0;box-shadow:0 4px 10px -2px #0009;pointer-events:none;will-change:transform}
 .file-chip::after{content:"";position:absolute;left:50%;top:58%;width:8px;height:8px;margin:-4px;border-radius:50%;background:#b91c1c}
+
+/* ===== 5.5 HUD 分層（保守版）：指南針、方位角、時間條照常常駐；錢／粉絲／流行平常淡淡的，數字一變亮 3 秒；
+   目標面板照著走一陣子就收成一行；按住 Tab（觸控：點指南針）全部完整顯示（game.js 的 renderTop／objFold／hudPeek） ===== */
+#stats .hchip{opacity:.4;transition:opacity .9s ease,border-color .9s,box-shadow .9s}
+#stats .hchip.hot,body.hudall #stats .hchip,body.ware #stats #sMoney{opacity:1;transition-duration:.18s}
+#stats .hchip.hot{border-color:#fde68a66;box-shadow:0 0 14px -4px #fde68aaa}
+#stats .hchip.net{opacity:.75}
+#objective .od{color:#cbd5e1;font-size:12px}
+body:not(.hudall) #objective.mini{padding:4px 10px}
+body:not(.hudall) #objective.mini b{display:inline;margin-right:8px}
+body:not(.hudall) #objective.mini>:not(b){display:none}
+/* 收成一行時標題後面淡淡的「Tab」（觸控是「⋯」）：說明還在，按住 Tab／點面板就展開 */
+#objective .oxp{display:none}
+body:not(.hudall) #objective.mini>.oxp{display:inline-block;margin-left:8px;padding:0 5px;border-radius:4px;border:1px solid #ffffff2e;font:700 10px/1.5 Inter,sans-serif;color:#94a3b8;opacity:.7;vertical-align:1px}
+body.touch:not(.hudall) #objective.mini>.oxp{border:0;padding:0;font-size:13px;letter-spacing:1px}
+body.touch #compass,body.touch #objective{pointer-events:auto;cursor:pointer}
+/* 桌機寬 1100 px 以下：指南針（高 38 px，左緣跑到 372 px 以內）會壓到目標面板的左上角——面板往下 8 px，排在指南針下面 */
+@media (min-width:641px) and (min-height:521px){#objective{top:calc(max(12px,env(safe-area-inset-top)) + 44px)}}
+@media (max-width:640px){
+  /* 右上兩顆按鈕（46＋8＋46）＋左右各 12＋間隔 6：流行色的名字長也不會壓到背包鍵；窄的時候拿掉「×1.35」，還放不下就換到第二行（指南針在 80 px 以下，不會碰到） */
+  #stats{max-width:calc(100% - 136px)}
+  #sTrend .tx{display:none}
+  /* 直向手機的 HUD 由上往下排：錢／粉絲／流行 → 指南針（+68～+106）→ 時間條（clockLayout 放在指南針正下方，+112～+142）→ 目標面板（+152），互不重疊 */
+  body.touch #objective{top:calc(max(12px,env(safe-area-inset-top)) + 152px)}}

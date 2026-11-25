@@ -44,7 +44,11 @@ export type Game = {
   paper?: () => PaperData | null; papers?: () => PaperRow[]; paperAt?: (i: number) => PaperData | null; paperOf?: (id: string) => PaperData | null; rcptView?: (d: Rcpt) => PaperData;
   clip?: () => number; hasPaper?: (id: string) => boolean; postcardImg?: (z: string) => string;
   ZSK?: Record<string, { name: string; sub: string[]; acc: string }>; skSvg?: (z: string) => string; // 換區的地名字卡與手帳的旅行速寫（區名、副標、鉛筆線稿的 SVG 字串）
+  today?: () => Today; outbox?: () => number;
 };
+// 手帳的「今天」（game.js 的 note）：玩家沒在做事時發生的事；k＝web／webAway／trend／shop／shopLeft／corp／corpLate／farm，n＝併成一行的件數
+export type TodayRow = { t: number; k: string; m: string; n: number; inc: number };
+export type Today = { d: number; log: TodayRow[]; web: number; inc: number };
 // 手上的紙（game.js 的 paperView）：v＝letter／note／postcard／receipt／flyer／sketch；b＝內文每一行；rev＝字已經寫好；live＝要跑墨水；hint＝右下按鍵提示的透明度；art＝速寫的線稿（SVG 字串）
 export type Rcpt = { n: number; inc: number; tip: number; fan: number; sec: number; t: number; torn?: number };
 export type PaperData = {

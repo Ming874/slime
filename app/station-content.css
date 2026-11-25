@@ -107,6 +107,21 @@
 .rx-eggs li.on{background:color-mix(in srgb,#fde68a 22%,var(--card))}
 .rx-eggs li.on .rx-egg-ic{color:#b45309;background:#fde68a;box-shadow:0 0 8px #fde68a99}
 .rx-eggs li.on .rx-egg-tx b{color:var(--tx);letter-spacing:0}
+/* 今天（5.4，Inventory.tsx 的 Today）：橫線紙、手寫字；玩家沒在做事時發生的事記在這裡，不在畫面上跳字 */
+.rx-today{grid-column:1/-1;position:relative;padding:10px 16px 12px;border-radius:6px;border:1px solid color-mix(in srgb,#b45309 25%,var(--line));
+  background:repeating-linear-gradient(180deg,transparent 0 27px,color-mix(in srgb,#7dd3fc 38%,transparent) 27px 28px) 0 10px,color-mix(in srgb,#fffaf0 55%,var(--card));
+  font-family:var(--pp-hand);font-size:15.5px;line-height:28px;color:var(--tx);box-shadow:2px 3px 0 #0000000f;transform:rotate(.25deg)}
+.rx-today-hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rx-today-hd b{font-size:21px;font-weight:700;color:color-mix(in srgb,#c2410c 80%,var(--tx));letter-spacing:3px}
+.rx-today-hd span{color:var(--sub);font-size:14px}
+.rx-today-sum{margin:0;display:flex;flex-wrap:wrap;gap:0 18px}
+.rx-today-flag i{display:inline-block;vertical-align:-1px;margin:0 7px 0 2px;width:17px;height:12px;border-radius:2px 5px 5px 2px;box-shadow:inset 0 0 0 1px #0002,-2px 0 0 #6b4d33;transform:skewY(-8deg)} /* 小旗子跟著第一行字走（窄螢幕換行時不會跑到兩行中間） */
+.rx-today ul{list-style:none;margin:0;padding:0}
+.rx-today li{display:grid;grid-template-columns:3.1em 9px minmax(0,1fr);gap:9px;align-items:center}
+.rx-today li em{font-style:normal;color:var(--sub);font-size:13.5px;font-variant-numeric:tabular-nums;text-align:right}
+.rx-today li i{width:9px;height:9px;border-radius:50%;background:#94a3b8}
+.rx-today li i.k-web{background:#d4a373}.rx-today li i.k-shop{background:#f472b6}.rx-today li i.k-corp{background:#818cf8}.rx-today li i.k-farm{background:#34d399}.rx-today li i.k-lv{background:#fbbf24}.rx-today li i.k-photo{background:#fde68a}
+.rx-today-none{margin:0;color:var(--sub)}
 
 /* =====================================================================
    圖鑑：手帳裡是標本紀錄、電腦裡是百科網站

@@ -154,6 +154,10 @@ function fresh() {
     jrSeen: 0, ppN: 0, // 上次打開手帳的時間（之後收到的紙貼「新」）、拿過幾次紙（前 3 次按鍵提示全亮）
     roads: {}, // 山洞口的光柱已經走到過的區域（不再立）
     map: '', // 筆記本手繪地圖走過的格子：32×32 的位元圖（128 bytes）的 base64（map.js）
+    today: { d: 0, log: [], web: 0, inc: 0 }, // 手帳的「今天」：玩家沒在做事時發生的事（網站成交、流行色、事業、養殖槽）記在這裡，不跳 toast（5.4）
+    trendD: { d: 0, sp: null }, // 今天的流行色（每個真實日換一次；工坊屋頂的旗子跟著換顏色）
+    out: 0, // 網站貨架旁出貨箱裡還沒寄出的包裹（玩家回到工坊附近時綁上氣球飛走）
+    altN: 0, // 「按 Alt 放開滑鼠」提示出現過幾次（只在前 3 次鎖定滑鼠時出現）
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -223,6 +227,9 @@ function sanitize(o) {
     if (!Array.isArray(o.papers)) { if (s.letter) add('granny'); if (s.tutDone && o.seen) add('gift'); ROAD_IDS.forEach(z => { if (s.zones.includes(z)) add('pc_' + z); }); }
     arr(obj(o.q).notes).forEach(i => { if ([0, 1, 2].includes(i)) add('note' + i); }); if (s.eggs.includes('forest_note')) add('hole'); if (s.eggs.includes('coast_bottle')) add('bottle'); Object.keys(GN_EGG).forEach(k => { if (s.eggs.includes(GN_EGG[k])) add(k); }); } // 撿過的紙條、讀過的樹洞紙條、瓶中信與奶奶的筆記（手上讀完才收進手帳，讀檔時補上漏收的）
   s.jrSeen = Math.max(0, +s.jrSeen || 0); s.ppN = clamp(Math.floor(+s.ppN) || 0, 0, 99);
+  { const td = obj(o.today); s.today = { d: Math.floor(+td.d) || 0, log: arr(td.log).filter(e => e && typeof e.k === 'string' && typeof e.m === 'string' && isFinite(+e.t)).slice(-40).map(e => ({ t: +e.t, k: e.k.slice(0, 12), m: e.m.slice(0, 80), n: Math.max(1, Math.floor(+e.n) || 1), inc: Math.max(0, +e.inc || 0) })), web: Math.max(0, Math.floor(+td.web) || 0), inc: Math.max(0, +td.inc || 0) }; }
+  { const tr = obj(o.trendD); s.trendD = { d: Math.floor(+tr.d) || 0, sp: SP[tr.sp] ? tr.sp : null }; }
+  s.out = clamp(Math.floor(+s.out) || 0, 0, 99); s.altN = clamp(Math.floor(+s.altN) || 0, 0, 99);
   s.roads = Object.fromEntries(Object.entries(obj(o.roads)).filter(([k, v]) => ROAD_IDS.includes(k) && v).map(([k]) => [k, 1]));
   s.cave = caveSan(o.cave); // 山洞：走過哪些洞、拍過的壁畫、苔蘚（caves.js）
   s.map = nmSan(o.map); // 手繪地圖走過的格子（map.js）：舊存檔沒有＝白紙
@@ -577,6 +584,20 @@ function toast(msg) {
   setTimeout(() => d.classList.add('old'), 6000); setTimeout(() => d.remove(), 6700);
   while (box.children.length > 6) box.firstChild.remove();
 }
+/* 通知分流（5.4）：toast 只留給「玩家剛做的事」。玩家沒在做事時發生的事（網站成交、流行色、事業的客人與訂單、養殖槽）
+   改成世界裡看得到的變化（出貨箱的包裹綁氣球飛走、屋頂的旗子換色、工作電腦螢幕的小紅點），文字只記進手帳的「今天」（背包 I） */
+const localDay = (t = Date.now()) => Math.floor((t - new Date(t).getTimezoneOffset() * 6e4) / 864e5); // 玩家所在時區的第幾天（過午夜換一天）
+function todayLog() { const d = localDay(); if (!S.today || S.today.d !== d) S.today = { d, log: [], web: 0, inc: 0 }; return S.today; }
+// o.fmt：同一類的小事併成一行（「網站賣出 3 件，+¥120」、「4 位客人來店裡逛逛」），e.n／e.inc 是累計的件數與金額。
+// 一行只收「第一筆之後 15 分鐘內」的事：e.t 固定是第一筆的時間（左邊寫的就是它），那一行留在原位；過了 15 分鐘另起一行，數字不會跨場次越滾越大
+function note(k, m, o = {}) {
+  const td = todayLog(), L0 = td.log, now = Date.now(); let e = null;
+  if (k === 'web' || k === 'webAway') { td.web += o.n || 1; td.inc += o.inc || 0; }
+  if (o.fmt) for (let i = L0.length - 1; i >= 0 && now - L0[i].t < 9e5; i--) if (L0[i].k === k) { e = L0[i]; e.n = (e.n || 1) + (o.n || 1); e.inc = (e.inc || 0) + (o.inc || 0); break; } // log 依 t 排好：超過 15 分鐘的就不用往前找了
+  if (!e) { e = { t: now, k, m: '', n: o.n || 1, inc: o.inc || 0 }; L0.push(e); if (L0.length > 40) L0.splice(0, L0.length - 40); }
+  e.m = String(o.fmt ? o.fmt(e) : m).slice(0, 80);
+  if (GUI.kind === 'inv') ui('inv');
+}
 // 彈窗佇列：同時觸發多個彈窗時依序顯示，不會互相覆蓋
 const MQ = []; let mOpen = false;
 function modal(html, btns = [{ t: '好' }]) { W.modalN = (W.modalN || 0) + 1; MQ.push({ html, btns }); if (!mOpen) nextModal(); }
@@ -677,7 +698,22 @@ function instances(geo, mat, list, shadow = true) {
   list.forEach((o, i) => { e.set(o.rx || 0, o.ry || 0, o.rz || 0); q.setFromEuler(e); v.set(o.x, o.y, o.z); sc.set(o.s * (o.sx || 1), o.s * (o.sy || 1), o.s * (o.sz || 1)); m.compose(v, q, sc); im.setMatrixAt(i, m); if (o.c) im.setColorAt(i, o.c); });
   im.count = list.length; im.castShadow = shadow && !LOW; im.receiveShadow = true; im.frustumCulled = false; return im;
 }
-function textSprite(txt, color = '#e6edf5', sub = '') {
+/* 世界裡的牌子（5.5）：工作站、地標上方的牌子是圓角的木頭招牌（和告示牌同一套木紋 woodBoard、手寫字、兩顆釘子），不再是深色的圓角文字牌。
+   人和生物頭上的名牌（玩家、直播中、巨型史萊姆、新手史萊姆）傳 o.tag，保留深色小牌。字太長就把字縮小到放得下：不裁切、不擠扁 */
+const SIGN_FONT = '"Slime Hand","LXGW WenKai TC","Kaiti TC","BiauKai","DFKai-SB",serif'; // 招牌上的字幾乎都不在粗體子集裡：整塊用同一套手寫字（加粗）才不會一個字粗一個字細
+function textSprite(txt, color = '#e6edf5', sub = '', o = {}) {
+  if (!o.tag) {
+    const tex = artTex(512, 160, (g, w, h) => {
+      const rr = () => { g.beginPath(); g.roundRect ? g.roundRect(8, 8, w - 16, h - 16, 30) : g.rect(8, 8, w - 16, h - 16); };
+      g.save(); rr(); g.clip(); woodBoard(g, w, h); g.restore(); rr(); g.lineWidth = 7; g.strokeStyle = '#4a3220'; g.stroke();
+      g.fillStyle = '#3b2a1a'; [24, w - 24].forEach(x => { g.beginPath(); g.arc(x, h / 2, 5, 0, PI2); g.fill(); }); g.fillStyle = '#c9a77c'; [24, w - 24].forEach(x => { g.beginPath(); g.arc(x - 1.5, h / 2 - 1.5, 1.8, 0, PI2); g.fill(); }); // 釘子
+      const put = (t, px, y, fill, lw, max) => { g.font = '700 ' + px + 'px ' + SIGN_FONT; const wd = g.measureText(t).width + lw; if (wd > max) { px = Math.floor(px * max / wd); g.font = '700 ' + px + 'px ' + SIGN_FONT; }
+        g.lineJoin = 'round'; g.lineWidth = lw * px / 60; g.strokeStyle = '#2b1b0e'; g.strokeText(t, w / 2, y); g.fillStyle = fill; g.fillText(t, w / 2, y); };
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      put(txt, 64, sub ? 62 : 82, rgba(color, 1, .35), 9, 420); if (sub) put(sub, 32, 118, '#fef3c7', 6, 430);
+    });
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false, transparent: true })); s.scale.set(2.4, .75, 1); s.userData.ownTex = true; s.userData.wood = 1; s.name = txt; W.labels.push(s); return s;
+  }
   const c = document.createElement('canvas'); c.width = 512; c.height = 160; const g = c.getContext('2d');
   g.fillStyle = 'rgba(10,14,20,.78)'; const r = 30; g.beginPath(); g.roundRect ? g.roundRect(8, 8, 496, 144, r) : g.rect(8, 8, 496, 144); g.fill();
   g.strokeStyle = color; g.lineWidth = 4; g.stroke();
@@ -686,7 +722,42 @@ function textSprite(txt, color = '#e6edf5', sub = '') {
   if (sub) { g.fillStyle = '#8b9bb0'; fit(sub, 34); g.fillText(sub, 256, 118); }
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false, transparent: true })); s.scale.set(2.4, .75, 1); s.userData.ownTex = true; W.labels.push(s); return s;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false, transparent: true })); s.scale.set(2.4, .75, 1); s.userData.ownTex = true; s.name = txt; W.labels.push(s); return s;
+}
+/* 牌子不疊、不被切（5.5）：從某些角度兩塊牌子會疊在一起（近的蓋住遠的上緣，例如從工坊正前方看，網站貨架的招牌疊在後面「直播台（機器還沒送來）」上），
+   或被小屋的角柱、屋簷切掉一截——看到的都是半塊字。每 6 格檢查一次：由近到遠，畫面上和「更近、而且正顯示著」的牌子重疊的那一塊淡掉；
+   再從鏡頭往字的 15 個點（上、中、下三排各 5 點）打射線，任何一點被小屋、工棚、花棚擋住也淡掉（signOccStep 每格輪流檢查一塊）。
+   走到看得完整的地方就淡回來（0.2 秒）。只做投影與射線（只檢查 45 m 內的牌子；小屋約 600 個三角形），不多繪製 */
+const SDC = { ray: new THREE.Raycaster(), v: new THREE.Vector3(), w: new THREE.Vector3(), p: new THREE.Vector3(), R: new THREE.Vector3(), U: new THREE.Vector3(), list: [], keep: [], box: [] }; // box：只拿外框來擋的東西（taxiIsland 的木牌）
+function labelShown(s) { if (!s.parent || !s.layers.test(W.cam.layers)) return false; for (let o = s.parent; o; o = o.parent) if (!o.visible) return false; return true; }
+function signHidden(s, d) { // 鏡頭到字之間有沒有擋住（工坊附近的牌子；擋得到的是小屋、工棚的柱子與屋頂、花棚、計程車招呼站的木牌。樹叢、地形太多太大，不檢查）
+  const cam = W.cam; if (d > 45 || inCity() || CV.c) return false;
+  const occ = SDC.occ || (SDC.occ = [W.cottageHouse, W.shed, W.arbor].filter(Boolean)), hit = SDC.hit || (SDC.hit = []), bx = SDC.box;
+  SDC.R.setFromMatrixColumn(cam.matrixWorld, 0); SDC.U.setFromMatrixColumn(cam.matrixWorld, 1); const ray = SDC.ray;
+  for (const fy of [.22, .02, -.22]) for (const fx of [-.38, -.19, 0, .19, .38]) {
+    SDC.p.copy(SDC.v).addScaledVector(SDC.R, fx * s.scale.x).addScaledVector(SDC.U, fy * s.scale.y); const dd = SDC.p.distanceTo(cam.position);
+    ray.set(cam.position, SDC.p.sub(cam.position).divideScalar(dd)); ray.far = dd - .05;
+    for (const o of occ) { if (!labelShown(o)) continue; hit.length = 0; if (o.raycast(ray, hit), hit.length) return true; }
+    for (const b of bx) if (ray.ray.intersectBox(b, SDC.w) && SDC.w.distanceTo(cam.position) < ray.far) return true;
+  }
+  return false;
+}
+function signDeclutter() {
+  const cam = W.cam, pe = cam.projectionMatrix.elements, L = SDC.list, A = SDC.keep; L.length = A.length = 0;
+  for (const s of W.labels) {
+    const u = s.userData; if ((u.op || 0) < .05 || !labelShown(s)) { u.hide = false; continue; }
+    s.getWorldPosition(SDC.v); SDC.w.copy(SDC.v).applyMatrix4(cam.matrixWorldInverse); const z = -SDC.w.z; if (z < .3) { u.hide = false; continue; }
+    const cx = pe[0] * SDC.w.x / z, cy = pe[5] * SDC.w.y / z, k = u.hide ? 1.06 : 1, hw = pe[0] * s.scale.x * .47 * k / z, hh = pe[5] * s.scale.y * .44 * k / z; // 木板本身（扣掉透明的邊）；已經淡掉的放寬一點才回來，不會在邊界上閃
+    if (cx + hw < -1 || cx - hw > 1 || cy + hh < -1 || cy - hh > 1) { u.hide = false; continue; }
+    L.push({ s, u, d: SDC.v.distanceTo(cam.position), x0: cx - hw, x1: cx + hw, y0: cy - hh, y1: cy + hh });
+  }
+  L.sort((a, b) => a.d - b.d);
+  for (const e of L) { const hide = !!e.u.occ || A.some(b => e.x0 < b.x1 && e.x1 > b.x0 && e.y0 < b.y1 && e.y1 > b.y0); e.u.hide = hide; if (!hide) A.push(e); }
+}
+// 射線比較花時間（工坊正前方 6 塊牌子一次做完約 1.8 ms）：每格只檢查一塊，輪流來，結果記在 u.occ 給 signDeclutter 用
+function signOccStep() {
+  const L = SDC.list; if (!L.length) return; const e = L[SDC.i = ((SDC.i || 0) + 1) % L.length]; if (!e.s.parent) return;
+  e.s.getWorldPosition(SDC.v); e.u.occ = signHidden(e.s, SDC.v.distanceTo(W.cam.position));
 }
 
 /* ---------- 酥脆捏捏（裝飾桌／直播台的特寫用） ---------- */
@@ -900,7 +971,7 @@ function dnUpdate() {
   DN.night = t < 300 ? 0 : t < 360 ? sm((t - 300) / 60) : t < 540 ? 1 : 1 - sm((t - 540) / 60);
   DN.dusk = t >= 300 && t < 360 ? Math.sin(Math.PI * (t - 300) / 60) : 0; DN.dawn = t >= 540 ? Math.sin(Math.PI * (t - 540) / 60) : 0;
   const ph = t < 300 ? 'day' : t < 360 ? 'dusk' : t < 540 ? 'night' : 'dawn';
-  if (ph !== DN.phase) { const prev = DN.phase; DN.phase = ph; if (W.ready && !TITLE.on && prev) { if (ph === 'dusk') toast('夜晚快到了，夜行史萊姆要出來了'); else if (ph === 'night') toast('夜晚來臨：史萊姆身上發著微光，夜行種類出現了'); else if (ph === 'dawn') toast('天快亮了，夜行史萊姆要躲回去了'); } }
+  if (ph !== DN.phase) DN.phase = ph; // 換時段不跳字：天色、史萊姆的微光與配樂就是提示，時間條上也寫著「m:ss 後夜晚」（5.4）
   NIGHT_U.value = DN.night;
 }
 const NIGHT_U = { value: 0 }; // 所有史萊姆共用：夜裡身上發光（自發光材質，不加光源）
@@ -2980,16 +3051,14 @@ function buildWorkshop() {
   const pc = at(new THREE.Group(), BASE.pc);
   box(2.4, .1, 1.1, white, 0, .95, 0, pc); [-1.1, 1.1].forEach(x => box(.08, .95, 1, dark, x, .47, 0, pc));
   box(1.5, .9, .06, dark, 0, 1.55, -.3, pc); cyl(.05, .08, .35, 10, dark, 0, 1.12, -.3, pc);
-  const sc = document.createElement('canvas'); sc.width = 512; sc.height = 300; const sg = sc.getContext('2d');
-  sg.fillStyle = '#0b1220'; sg.fillRect(0, 0, 512, 300); sg.fillStyle = '#22d3ee'; sg.font = 'bold 34px sans-serif'; sg.fillText('SQUISH SHOP', 24, 50);
-  sg.fillStyle = '#334155'; for (let i = 0; i < 3; i++) sg.fillRect(24 + i * 160, 80, 140, 150); sg.fillStyle = '#34d399'; for (let i = 0; i < 3; i++) sg.fillRect(24 + i * 160, 240, 140, 30);
-  const stx = new THREE.CanvasTexture(sc); stx.colorSpace = THREE.SRGBColorSpace;
+  const sc = document.createElement('canvas'); sc.width = 512; sc.height = 300; const stx = new THREE.CanvasTexture(sc); stx.colorSpace = THREE.SRGBColorSpace;
+  W.pcScr = { g: sc.getContext('2d'), tx: stx, sig: '' }; pcScreen(true); // 螢幕上是網站的後台：貨架上的商品、今天賣了幾件、有客人或訂單時右上角亮紅點（5.4）
   mesh(new THREE.PlaneGeometry(1.4, .8), new THREE.MeshBasicMaterial({ map: stx }), 0, 1.55, -.265, pc);
   box(.9, .03, .3, dark, 0, 1.02, .15, pc);
   const chair = new THREE.Group(); chair.position.set(0, 0, .9); pc.add(chair); cyl(.3, .3, .08, 20, dark, 0, .55, 0, chair); box(.55, .6, .06, dark, 0, .9, .28, chair); cyl(.04, .04, .5, 8, steel, 0, .28, 0, chair);
   cyl(.04, .04, 2.6, 8, steel, 1.4, 1.3, .1, pc); mesh(new THREE.ConeGeometry(1.7, .6, 12, 1, true), std('#22d3ee', { side: THREE.DoubleSide, roughness: .6 }), 1.4, 2.7, .1, pc);
   addCol({ box: [BASE.pc[0] - 1.3, BASE.pc[1] - .7, BASE.pc[0] + 1.3, BASE.pc[1] + .5] });
-  addInter(hitBox(2.6, 2.2, 1.6, 0, 1.1, 0, pc), 'station', 'pc', '工作電腦'); label('工作電腦', '#818cf8', '把捏捏上架到網站販售', BASE.pc[0], pc.position.y + 3.4, BASE.pc[1]);
+  addInter(hitBox(2.6, 2.2, 1.6, 0, 1.1, 0, pc), 'station', 'pc', '工作電腦'); label('工作電腦', '#818cf8', '把捏捏上架到網站販售', BASE.pc[0], G(0, 7) + 2.74, 9.64); // 小屋裡的兩塊招牌掛在正面的橫樑前（5.5）：從前面任何距離看都不會被橫樑、屋簷、遮陽傘擋到
   // 手作台
   const bn = at(new THREE.Group(), BASE.bench);
   box(2.2, .12, 1.2, wood, 0, .9, 0, bn); [[-1, -.5], [1, -.5], [-1, .5], [1, .5]].forEach(([x, z]) => box(.1, .9, .1, woodD, x, .45, z, bn));
@@ -2997,7 +3066,7 @@ function buildWorkshop() {
   mesh(new THREE.SphereGeometry(.22, 16, 8, 0, PI2, Math.PI / 2, Math.PI / 2), std('#cbd5e1', { side: THREE.DoubleSide }), .6, 1.18, -.1, bn);
   mesh(new THREE.SphereGeometry(.16, 14, 10), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1 }), .6, 1.02, -.1, bn).scale.y = .5;
   const pin = cyl(.05, .05, .7, 12, woodD, -.3, 1.06, 0, bn); pin.rotation.z = Math.PI / 2;
-  addCol({ x: BASE.bench[0], z: BASE.bench[1], r: 1.2 }); addInter(hitBox(2.4, 2, 1.6, 0, 1, 0, bn), 'station', 'bench', '手作台'); label('手作台', '#fbbf24', '手工做出粗製捏捏', BASE.bench[0], bn.position.y + 3, BASE.bench[1]);
+  addCol({ x: BASE.bench[0], z: BASE.bench[1], r: 1.2 }); addInter(hitBox(2.4, 2, 1.6, 0, 1, 0, bn), 'station', 'bench', '手作台'); label('手作台', '#fbbf24', '手工做出粗製捏捏', BASE.bench[0], G(0, 7) + 2.74, 9.64);
   // 加工產線（買了哪台才出現哪台）
   const line = at(new THREE.Group(), BASE.line); W.lineG = line; buildLine(line);
   W.slotCol.line = { box: [BASE.line[0] - 7.8, BASE.line[1] - 1.2, BASE.line[0] + 9.3, BASE.line[1] + 1.2] };
@@ -3032,7 +3101,7 @@ function buildWorkshop() {
   g.traverse(o => { if (o.isMesh && o.material.visible !== false) { o.castShadow = !LOW; o.receiveShadow = true; } });
   W.neon.forEach(n => MK.dyn.add(n));
   [pc, chair, bn, dt, lv, camG, W.lineParts.belt, ...W.lineParts.m].forEach(o => mergeStatic(o, MK.dyn));
-  buildRacks(g); buildCottage(g); refreshBase(); placeLetter();
+  buildRacks(g); buildOutbox(g); buildCottage(g); refreshBase(); placeLetter();
 }
 /* 金屬髮絲紋：沿水平方向的細紋改變粗糙度與明暗，反射天空時有拉絲金屬的質感 */
 /* 網站貨架（拿著捏捏按 E 直接上架）與倉儲貨架：層數與格數跟著升級變多，上面擺的就是真的商品 */
@@ -3055,6 +3124,9 @@ function buildCottage(g) {
   parts.push([new THREE.BoxGeometry(xw * 2 + 1.1, .22, .3), '#7c3d2c', M4(0, wh + Math.tan(ra) * dep / 2 + .1, cz)]);
   // 山牆（三角形）
   [-1, 1].forEach(s => { const tri = new THREE.Shape([new THREE.Vector2(-dep / 2, 0), new THREE.Vector2(dep / 2, 0), new THREE.Vector2(0, Math.tan(ra) * dep / 2)]); const tg = new THREE.ExtrudeGeometry(tri, { depth: .2, bevelEnabled: false }); tg.rotateY(Math.PI / 2); parts.push([tg, wall, M4(s * xw - .1, wh, cz)]); });
+  // 屋脊左端的旗桿（旗子在下面另外做）與出貨箱（buildOutbox 留下的零件，換成小屋的座標）也併進來：同一種平塗材質，不多繪製
+  const fpy = wh + Math.tan(ra) * dep / 2 + .2; parts.push([new THREE.CylinderGeometry(.03, .045, 1.9, 7), '#5b4030', M4(-4.4, fpy + .95, cz)], [new THREE.SphereGeometry(.075, 10, 6), '#f2c14e', M4(-4.4, fpy + 1.93, cz)], [new THREE.CylinderGeometry(.09, .11, .1, 8), '#4a3424', M4(-4.4, fpy + .04, cz)]);
+  if (W.crateParts) { const dn = new THREE.Matrix4().makeTranslation(0, -G(0, cz), 0); W.crateParts.forEach(([geo, c, m]) => parts.push([geo, c, dn.clone().multiply(m)])); W.crateParts = null; }
   const house = mesh(mergeParts(parts), flat, 0, G(0, cz), 0, cg); house.castShadow = house.receiveShadow = !LOW; W.cottageHouse = house; // 帆布「看見才掀」的視線檢查用（隔著後牆不算看見）
   // 牆的碰撞（門洞與正面開著）
   addCol({ box: [-xw - .1, zb - .15, -1.1, zb + .15] }); addCol({ box: [1.1, zb - .15, xw + .1, zb + .15] });
@@ -3074,10 +3146,19 @@ function buildCottage(g) {
     const smokeM = new THREE.MeshBasicMaterial({ color: '#e5e7eb', transparent: true, opacity: .35, depthWrite: false }), puffs = [0, 1, 2].map(i => mesh(new THREE.IcosahedronGeometry(.25, 0), smokeM, 0, 1.8, 0, fixed));
     W.anim.push((dt, t) => { if (!fixed.visible) return; puffs.forEach((p, i) => { const k = (t * .3 + i / 3) % 1; p.position.set(Math.sin(t + i) * .2, 1.8 + k * 2.4, k * .4); p.scale.setScalar(.6 + k * 1.8); }); smokeM.opacity = .35; });
     const broken = box(.8, .7, .8, std('#6b5a50', { flatShading: true }), 0, -.15, 0, ch); R0.snow = { fixed, broken }; }
+  // 屋脊左端的旗桿：旗子是今天的流行色（trendFlag 重畫），每個真實日換一次。旗桿併在小屋裡、旗子一次繪製；只在看得到工坊時擺動
+  { const ry = y0 + wh + Math.tan(ra) * dep / 2 + .2, fp = new THREE.Group(); fp.position.set(-4.4, ry, cz); cg.add(fp);
+    const fc = document.createElement('canvas'); fc.width = 192; fc.height = 128; const ftx = new THREE.CanvasTexture(fc); ftx.colorSpace = THREE.SRGBColorSpace;
+    const fg = new THREE.PlaneGeometry(1, .64, 8, 2); fg.translate(.5, 0, 0); const base = Float32Array.from(fg.attributes.position.array);
+    const flag = mesh(fg, new THREE.MeshStandardMaterial({ map: ftx, side: THREE.DoubleSide, roughness: .85 }), .03, 1.5, 0, fp);
+    W.flag = { cv: fc, tx: ftx, sp: '' }; trendFlag();
+    W.anim.push((dt, t) => { if (!cg.visible || inCity() || CV.c || fp.getWorldPosition(tmpV).distanceToSquared(W.cam.position) > 8100) return; // 90 m 外不擺（看不出來）
+      const p = fg.attributes.position; for (let i = 0; i < p.count; i++) { const x = base[i * 3], y = base[i * 3 + 1], k = x * x; p.setZ(i, Math.sin(x * 5.2 - t * 4.6 + y * 1.4) * .11 * k + Math.sin(x * 2.3 - t * 2.1) * .05 * x); p.setY(i, y - k * .05); }
+      p.needsUpdate = true; fg.computeVertexNormals(); }); }
   // 照片牆（後牆內側，手作台上方）：最多 12 張，用同一張圖集
   { const c = document.createElement('canvas'); c.width = 512; c.height = 384; W.photoCv = c; const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; W.photoTx = tx;
     const board = mesh(new THREE.PlaneGeometry(3.6, 2.7 * .75), new THREE.MeshStandardMaterial({ map: tx, roughness: .9 }), -3.65, y0 + 2.05, zb + .12, cg); board.scale.set(1, 1, 1); W.photoBoard = board; // 喀嚓的白光貼在它前面（photoFlash）
-    const lb = textSprite('照片牆', '#fde68a', '工坊的回憶'); lb.position.set(-3.65, y0 + 3.4, zb + .4); lb.scale.set(1.6, .5, 1); cg.add(lb); drawPhotos(); }
+    const lb = textSprite('照片牆', '#fde68a', '工坊的回憶'); lb.position.set(-3.65, y0 + 3.16, zb + .4); lb.scale.set(1.4, .44, 1); lb.userData.far = 20; cg.add(lb); drawPhotos(); } // 在屋頂下（上緣離斜屋頂的底面還有 10 cm）：只在 20 m 內出現（再遠會被正面的橫樑切掉一截，signDeclutter 也會把被切到的淡掉）
   // 工棚：產線上方的屋頂（夠高，加工時的鏡頭不會被擋住）
   { const sp = [], lx = BASE.line[0], lz = BASE.line[1];
     [[-8.4, -1.9], [9.9, -1.9], [-8.4, 1.9], [9.9, 1.9], [.75, -1.9], [.75, 1.9]].forEach(([x, z]) => sp.push([new THREE.BoxGeometry(.28, 5.6, .28), beam, M4(x, 2.8, z)]));
@@ -3089,7 +3170,7 @@ function buildCottage(g) {
     for (let i = 0; i < 7; i++) ap.push([new THREE.BoxGeometry(.12, .12, 3), beam, M4(-1.5 + i * .5, 2.95, 0)]);
     [[-1.6, 1], [1.6, -1], [-1.6, -1.2], [1.6, 1.2]].forEach(([x, z], i) => ap.push([new THREE.BoxGeometry(.7, .3, .4), '#8b5a3c', M4(x, .15, z)]));
     const rd = seeded(9); for (let i = 0; i < 22; i++) ap.push([new THREE.IcosahedronGeometry(.13, 0), ['#f9a8d4', '#fde68a', '#c4b5fd', '#86efac'][i % 4], M4(-1.5 + rd() * 3, 3.05, -1.4 + rd() * 2.8)]);
-    const arb = mesh(mergeParts(ap), flat, dx, G(dx, dz), dz, g); arb.rotation.y = .5; arb.castShadow = !LOW; }
+    const arb = mesh(mergeParts(ap), flat, dx, G(dx, dz), dz, g); arb.rotation.y = .5; arb.castShadow = !LOW; W.arbor = arb; }
   // 一開始就依目前的照片決定哪些地方已修好（不要等第一次 photoCheck，否則會有一瞬間新舊兩塊招牌同時出現）
   for (const [k] of REPAIRS) { const r = R0[k]; if (!r) continue; const ok = (S.photos || []).some(p => p.k === k); r.fixed.visible = ok; r.broken.visible = !ok; }
 }
@@ -3129,18 +3210,20 @@ const FIXQ = [], FIX_C = [0, 7]; // 小屋中央
 const fixNear = (r = 30) => !inCity() && !!P && Math.hypot(P.x - FIX_C[0], P.z - FIX_C[1]) < r;
 const fixMsg = k => { const ri = REPAIRS.findIndex(r => r[0] === k), ph = S.photos.find(p => p.k === k); return '照片牆多了一張：' + (ph ? ph.txt : '') + (ri >= 0 ? '　奶奶的小屋修好了' + REPAIRS[ri][1] + '（' + REPAIRS.filter(r => S.photos.some(p => p.k === r[0])).length + '/' + REPAIRS.length + '）' : ''); };
 const fixSync = () => { W.photoN = FIXQ.length ? FIXQ[0].i : S.photos.length; drawPhotos(); };
+// 沒看到換照片的那一刻：玩家自己做到的事（第一個捏捏、來到海岸…）留一行字；網站自己成交的「第一筆訂單」不是玩家剛做的事，只記進手帳的「今天」（5.4）
+const fixTell = k => k === 'sale' ? note('photo', fixMsg(k)) : toast(fixMsg(k));
 function applyFix(k) { const r = W.repair && W.repair[k]; if (!r) return; const ok = S.photos.some(p => p.k === k) && !FIXQ.some(f => f.k === k); r.fixed.visible = ok; r.broken.visible = !ok; r.fixed.scale.setScalar(1); r.broken.scale.setScalar(1); }
 function photoCheck() {
   if (!W.repair) return; const quiet = !W.photoInit; W.photoInit = true; let changed = false;
   for (const [k, txt, f] of PHOTO_EVT) { if (S.photos.some(p => p.k === k) || S.photos.length >= 12) continue; const sp = f(); if (!sp) continue; S.photos.push({ k, txt, sp: SP[sp] ? sp : null, t: Date.now() }); changed = true;
-    if (!quiet) { if (fixNear()) FIXQ.push({ k, i: S.photos.length - 1, t: -1, w: 0 }); else toast(fixMsg(k)); } }
+    if (!quiet) { if (fixNear()) FIXQ.push({ k, i: S.photos.length - 1, t: -1, w: 0 }); else fixTell(k); } }
   if (changed || quiet) { fixSync(); for (const [k] of REPAIRS) applyFix(k); if (changed) save(); }
 }
 // 每一格（worldStep）：演排在最前面的那一筆
 function fixStep(dt) {
   const f = FIXQ[0]; if (!f) return; const idle = !GUI.kind && !W.camAway && !GX.mode && !TITLE.on && !INTRO.on && !RIDE.on, r = W.repair && W.repair[f.k];
   if (f.t < 0) {
-    f.w += dt; if (!fixNear(40) || f.w > 20) { FIXQ.shift(); toast(fixMsg(f.k)); applyFix(f.k); fixSync(); return; } // 沒看到：直接換好、留一行字
+    f.w += dt; if (!fixNear(40) || f.w > 20) { FIXQ.shift(); fixTell(f.k); applyFix(f.k); fixSync(); return; } // 沒看到：直接換好、留一行字
     if (!idle) return; f.t = 0; if (!RM()) photoFlash(f.i); sfx.shutter(); return;
   }
   const t0 = f.t; f.t += dt * 1000; const t = f.t, at = x => t0 < x && t >= x;
@@ -3166,7 +3249,7 @@ function buildRacks(g) {
   const mk = (pos, id, name, col, sub) => {
     const o = new THREE.Group(); o.position.set(pos[0], G(pos[0], pos[1]), pos[1]); g.add(o); const dyn = new THREE.Group(); o.add(dyn);
     addCol({ box: [pos[0] - 1.25, pos[1] - .45, pos[0] + 1.25, pos[1] + .45] }); addInter(hitBox(2.5, 2.6, 1.1, 0, 1.3, 0, o), 'station', id, name);
-    const lb = textSprite(name, col, sub); lb.position.set(pos[0], o.position.y + 3.6, pos[1]); g.add(lb); return dyn;
+    const lb = textSprite(name, col, sub); lb.position.set(pos[0] + Math.sign(pos[0]) * .3, o.position.y + 2.75, pos[1]); g.add(lb); dyn.userData.lb = lb; dyn.userData.y0 = o.position.y; return dyn; // 招牌壓低、往外移一點：從小屋前面看不會被屋簷擋住（貨架加高時跟著抬，見 rackFrame）
   };
   W.shelfDyn = mk(BASE.shelf, 'shelf', '網站貨架', '#818cf8', '拿著捏捏按 E 直接上架');
   W.rackDyn = mk(BASE.rack, 'rack', '倉儲貨架', '#94a3b8', '背包裡的捏捏都收在這');
@@ -3182,7 +3265,7 @@ function rackFrame(dyn, tiers, gap, mat, matD) {
   dyn.children.slice().forEach(c => { dyn.remove(c); if (c.geometry && !c.userData.shared) c.geometry.dispose(); });
   const h = .25 + tiers * gap; [-1.1, 1.1].forEach(x => [-.32, .32].forEach(z => box(.07, h, .07, matD, x, h / 2, z, dyn)));
   for (let i = 0; i < tiers; i++) box(2.3, .05, .7, mat, 0, .25 + i * gap, 0, dyn);
-  box(2.3, .05, .7, mat, 0, h, 0, dyn);
+  box(2.3, .05, .7, mat, 0, h, 0, dyn); if (dyn.userData.lb) dyn.userData.lb.position.y = dyn.userData.y0 + Math.max(2.75, h + .45); // 招牌永遠在最上層之上
 }
 function refreshProps() {
   if (!W.shelfDyn) return;
@@ -3212,6 +3295,87 @@ function shelfAct() {
   if (S.web.length >= slots()) return toast('貨架滿了，升級「網站伺服器」可以多一層');
   S.stock = S.stock.filter(q => q !== p); S.web.push(p); sfx.pop(); objSig = ''; renderHotbar(true); save();
   toast(`已上架${short(p.sp)}捏捏（售價 ${fmt(priceOf(p, 'web'))}），等顧客下單`);
+}
+/* ---------- 看得到的世界變化（5.4）：玩家沒在做事時發生的事，不跳字 ----------
+   網站成交：貨架那一格空出來、旁邊的出貨箱多一個包裹（S.out，存檔）；人在工坊附近、沒開介面時，包裹一個一個綁上氣球寄出去
+   （和城市宅配同一個紙盒）。箱子併進小屋的那一次繪製、箱裡的包裹（InstancedMesh）一次繪製，飛走的那一個多兩次（紙盒＋氣球），飛完就移除；
+   同時最多飛 2 個（LOW 1 個） */
+const OUTBOX = { x: 0, z: 0, n: 8, t: 0, pop: null }, PARCF = []; // x／z 在 buildOutbox 填（BASE 在後面才宣告）
+const flyBoxGeo = () => W.flyBox || (W.flyBox = mergeParts([[new THREE.BoxGeometry(.3, .22, .24), '#c8a878', M4(0, .11, 0)], [new THREE.BoxGeometry(.31, .04, .25), '#b45309', M4(0, .14, 0)], [new THREE.BoxGeometry(.04, .225, .245), '#b45309', M4(0, .11, 0)]]));
+const flyBoxMat = () => W.flyM || (W.flyM = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }));
+function buildOutbox(g) {
+  const x = OUTBOX.x = BASE.shelf[0] + 1.95, z = OUTBOX.z = BASE.shelf[1] + .3, o = new THREE.Group(); o.position.set(x, G(x, z), z); o.rotation.y = -.15; g.add(o); W.outbox = o;
+  // 木條釘的矮箱子：前面兩條、後面三條（前低後高，站著看得到裡面的包裹）、兩側各兩條、四根角柱、底板
+  const wd = '#b08a5e', wdD = '#8b6544', P0 = [[new THREE.BoxGeometry(.9, .05, .66), wdD, M4(0, .05, 0)]];
+  [.13, .27].forEach(y => P0.push([new THREE.BoxGeometry(.9, .1, .04), wd, M4(0, y, .33)])); [.13, .27, .41].forEach(y => P0.push([new THREE.BoxGeometry(.9, .1, .04), wd, M4(0, y, -.33)]));
+  [-1, 1].forEach(s => [.13, .27].forEach(y => P0.push([new THREE.BoxGeometry(.04, .1, .66), wd, M4(s * .45, y, 0)])));
+  [[-1, 1, .33], [1, 1, .33], [-1, 1, .47], [1, 1, .47]].forEach(([s, t, h], i) => P0.push([new THREE.BoxGeometry(.07, h, .07), wdD, M4(s * .45, h / 2, i < 2 ? .33 : -.33)]));
+  const at = M4(x, G(x, z), z, 0, o.rotation.y, 0); W.crateParts = P0.map(([geo, c, m]) => [geo, c, at.clone().multiply(m)]); // 箱子併進小屋那一次繪製（同一種平塗材質，buildCottage 接著蓋）：出貨箱不多一次繪製
+  addCol({ box: [x - .5, z - .4, x + .5, z + .4] });
+  const im = new THREE.InstancedMesh(flyBoxGeo(), flyBoxMat(), OUTBOX.n); im.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, .3, 0), .8); im.userData.shared = true; o.add(im); W.outIM = im; parcelSync(); // 固定的包圍球（箱子大小）：看不到箱子時一起剔除
+}
+// 箱裡的包裹：最多擺 8 個（2 層、每層 2×2），每個角度歪一點
+const PQ = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), e: new THREE.Euler(), v: new THREE.Vector3(), s: new THREE.Vector3() };
+function parcelAt(i, k = 1) { const L = i < 4 ? 0 : 1, j = i % 4; PQ.v.set((j % 2 ? .19 : -.19) + L * .04, .075 + L * .225, j < 2 ? -.14 : .14); PQ.q.setFromEuler(PQ.e.set(0, ((i * 37) % 7 - 3) * .09 + L * .35, 0)); PQ.s.setScalar(Math.max(.001, k)); return PQ.m.compose(PQ.v, PQ.q, PQ.s); }
+function parcelSync() {
+  const im = W.outIM; if (!im) return; const n = Math.min(OUTBOX.n, S.out || 0);
+  for (let i = 0; i < n; i++) im.setMatrixAt(i, parcelAt(i)); im.count = n; im.visible = n > 0; im.instanceMatrix.needsUpdate = true;
+}
+const nearBase = (r, x = OUTBOX.x, z = OUTBOX.z) => !!P && !inCity() && !CV.c && Math.hypot(P.x - x, P.z - z) < r;
+function webSold(r) {
+  note('web', '', { n: 1, inc: r.price, fmt: e => e.n > 1 ? `網站賣出 ${e.n} 件，+${fmt(e.inc)}` : `網站賣出${short(r.sp)}捏捏，+${fmt(r.price)}　${'★'.repeat(r.stars)}` });
+  S.out = Math.min(99, (S.out || 0) + 1); if (S.out <= OUTBOX.n) OUTBOX.pop = { i: S.out - 1, t: 0 }; parcelSync();
+  if (nearBase(16) && !GUI.kind) sfx.paper && sfx.paper('file'); // 人在貨架旁：包好放進箱子的一聲（遠了聽不到）
+}
+// 每格（worldStep）：新包裹彈進箱子；人在工坊 30 m 內、沒開介面時每 1.6 秒寄出一個（第一個等 2.2 秒，讓人先看到它出現）
+function parcelStep(dt) {
+  const im = W.outIM; if (!im) return;
+  if (OUTBOX.pop) { const p = OUTBOX.pop; p.t += dt; const u = clamp(p.t / .35, 0, 1); if (p.i < im.count) { im.setMatrixAt(p.i, parcelAt(p.i, RM() ? 1 : backOut(u))); im.instanceMatrix.needsUpdate = true; } if (u >= 1) OUTBOX.pop = null; }
+  const ok = S.out > 0 && !GUI.kind && !TITLE.on && !INTRO.on && !RIDE.on && nearBase(30);
+  if (ok) { OUTBOX.t += dt; if (OUTBOX.t > 2.2 && PARCF.length < (LOW ? 1 : 2) && !OUTBOX.pop) { OUTBOX.t = .6; parcelLaunch(); } } else OUTBOX.t = 0;
+  for (let i = PARCF.length - 1; i >= 0; i--) {
+    const f = PARCF[i]; f.t += dt; const t = f.t, p = f.g.position;
+    if (inCity() || TITLE.on || CV.c) { dropObj(f.g); PARCF.splice(i, 1); continue; }
+    if (t < .5) { balloonStep(f.bal, t, -1, t / .5); continue; } // 氣球一顆一顆鼓起來
+    if (!f.up) { f.up = 1; shopSnd.flyAway(); }
+    const u = t - .5; balloonStep(f.bal, t, -1, 1); p.set(f.p0.x + f.dx * u * u * .25 + Math.sin(u * 2.2) * .15, f.p0.y + .9 * u + .55 * u * u, f.p0.z + f.dz * u * u * .25);
+    if (t > 5.4) f.g.scale.setScalar(Math.max(.001, 1 - (t - 5.4) / .6));
+    if (t > 6) { dropObj(f.g); PARCF.splice(i, 1); }
+  }
+}
+function parcelLaunch() {
+  const n = Math.min(OUTBOX.n, S.out); S.out--; parcelSync(); if (RM() || n < 1) return; // 減少動態：包裹直接不見（氣球不飛）
+  const at = W.outbox.localToWorld(new THREE.Vector3().setFromMatrixPosition(parcelAt(n - 1))), g = new THREE.Group(); g.position.copy(at); W.scene.add(g);
+  const m = new THREE.Mesh(flyBoxGeo(), flyBoxMat()); m.userData.shared = true; m.rotation.y = W.outbox.rotation.y; g.add(m);
+  const bal = balloons(LOW ? 2 : 3, .32); bal.position.y = .22; g.add(bal); balloonStep(bal, 0, -1, 0); shopSnd.inflate && shopSnd.inflate();
+  const a = rnd(0, PI2); PARCF.push({ g, bal, t: 0, p0: at.clone(), dx: Math.cos(a), dz: Math.sin(a) });
+}
+// 工作電腦的螢幕：網站後台的小畫面。貨架上的商品（最多 5 格）、今天賣了幾件；小店有客人、企業有訂單時右上角亮紅色的牌子
+function pcScreen(force) {
+  const C = W.pcScr; if (!C) return; const td = todayLog(), wait = S.branch === 'shop' ? S.customers.length : S.branch === 'corp' ? S.contracts.length : 0;
+  const sig = S.web.slice(0, 5).map(p => p.sp).join() + '|' + td.web + '|' + wait + '|' + S.branch; if (!force && sig === C.sig) return; C.sig = sig;
+  const g = C.g, fit = (t, px, max, wt = 'bold ') => { g.font = wt + px + 'px "Noto Sans TC","Microsoft JhengHei",sans-serif'; const w = g.measureText(t).width; if (w > max) g.font = wt + Math.floor(px * max / w) + 'px "Noto Sans TC","Microsoft JhengHei",sans-serif'; };
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, r) : g.rect(x, y, w, h); };
+  g.fillStyle = '#0b1220'; g.fillRect(0, 0, 512, 300); g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillStyle = '#22d3ee'; g.font = 'bold 34px sans-serif'; g.fillText('SQUISH SHOP', 24, 52);
+  for (let i = 0; i < 5; i++) { const x = 24 + i * 94, p = S.web[i]; g.fillStyle = '#1e293b'; rr(x, 74, 82, 106, 12); g.fill();
+    if (p) { const sp = SP[p.sp]; g.fillStyle = sp.color; g.beginPath(); g.ellipse(x + 41, 138, 30, 24, 0, Math.PI, 0); g.lineTo(x + 71, 152); g.quadraticCurveTo(x + 41, 160, x + 11, 152); g.closePath(); g.fill();
+      g.fillStyle = '#0f172a'; [-9, 9].forEach(d => { g.beginPath(); g.arc(x + 41 + d, 134, 3.5, 0, PI2); g.fill(); }); } }
+  g.fillStyle = td.web ? '#34d399' : '#64748b'; fit(td.web ? `今天賣出 ${td.web} 件　+${fmt(td.inc)}` : '等第一筆訂單…', 30, 464); g.fillText(td.web ? `今天賣出 ${td.web} 件　+${fmt(td.inc)}` : '等第一筆訂單…', 24, 238);
+  g.fillStyle = '#334155'; g.fillRect(24, 258, 464, 8); g.fillStyle = '#34d399'; g.fillRect(24, 258, 464 * clamp(td.web / 10, 0, 1), 8);
+  if (wait) { const t = (S.branch === 'shop' ? '客人 ' : '訂單 ') + wait; fit(t, 28, 150); const w = g.measureText(t).width + 44; g.fillStyle = '#f43f5e'; rr(488 - w, 20, w, 44, 22); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.arc(488 - w + 20, 42, 6, 0, PI2); g.fill(); g.fillText(t, 488 - w + 34, 53); }
+  C.tx.needsUpdate = true;
+}
+// 小店來了客人、企業下了訂單：螢幕右上角亮起來、叮一聲
+function pcPing() { pcScreen(); if (nearBase(BIZ_R, BASE.pc[0], BASE.pc[1]) && GUI.kind !== 'pause') sfx.notice(.6); } // 只有營業中（人在院子裡）才會來客人：叮一聲就是「門口有人」
+// 養殖槽收成：人在附近才看得到槽上冒出「+n 凝膠」、聽到一聲
+function farmPop(n) { if (!nearBase(22, BASE.farm[0], BASE.farm[1]) || GUI.kind) return; sfx.pop && sfx.pop(); fx3(new THREE.Vector3(BASE.farm[0] + (S.up.farm - 1) * .65, G(BASE.farm[0], BASE.farm[1]) + 2, BASE.farm[1]), `+${n} 凝膠`, '#6ee7a8', 'big'); }
+// 屋頂的旗子：今天的流行色（漸層＋一隻白色小史萊姆），換色時重畫
+function trendFlag() {
+  const F = W.flag, sp = trend.sp && SP[trend.sp]; if (!F || !sp || F.sp === trend.sp) return; F.sp = trend.sp;
+  const g = F.cv.getContext('2d'), w = F.cv.width, h = F.cv.height, gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, sp.color); gr.addColorStop(1, sp.color2 || rgba(sp.color, 1, -.25)); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.fillStyle = '#ffffff33'; g.fillRect(0, h * .78, w, h * .1); g.fillStyle = '#fffaf0'; g.beginPath(); g.ellipse(w * .55, h * .52, 34, 27, 0, Math.PI, 0); g.lineTo(w * .55 + 38, h * .6); g.quadraticCurveTo(w * .55, h * .68, w * .55 - 38, h * .6); g.closePath(); g.fill();
+  g.fillStyle = '#1f2937'; [-11, 11].forEach(d => { g.beginPath(); g.arc(w * .55 + d, h * .47, 4.2, 0, PI2); g.fill(); }); g.strokeStyle = '#1f2937'; g.lineWidth = 2.6; g.beginPath(); g.arc(w * .55, h * .53, 6, .2, Math.PI - .2); g.stroke();
+  F.tx.needsUpdate = true;
 }
 /* 站上舞台就開直播，走下舞台就結束（只結束「站上去自動開始」的那一場） */
 function stageStep() {
@@ -4006,7 +4170,7 @@ function spawnStarter() {
   const sl = newSlime(sp, m, { id: ++W.sid, sc: .82, zid: 'forest', hx: x, hz: z, x, z, tut: true, pers: 'calm', yaw: 0 });
   m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); W.starter = sl;
   if (W.starterLabel) dropObj(W.starterLabel);
-  const lb = textSprite('新手史萊姆', '#6ee7a8', '對準牠，捏 3 下'); lb.position.set(x, G(x, z) + 2.2, z); if (!S.tutDone) { W.scene.add(lb); W.starterLabel = lb; }
+  const lb = textSprite('新手史萊姆', '#6ee7a8', '對準牠，捏 3 下', { tag: 1 }); lb.position.set(x, G(x, z) + 2.2, z); if (!S.tutDone) { W.scene.add(lb); W.starterLabel = lb; }
 }
 /* ---------- 行為與動畫 ---------- */
 // 玩家走得到的地面：坡度不超過玩家能爬的、不在山脊上、在同一區（不會跑到能量門另一邊）
@@ -4232,6 +4396,8 @@ function bindInput() {
     if (GUI.kind === 'paper' && (k === 'KeyI' || k === 'Tab')) { e.preventDefault(); if (!e.repeat && paperArmed()) { closeGui(); setTimeout(() => { if (!GUI.kind && !TITLE.on) { W.jrTo = 'clips'; openGui('inv'); } }, PC0.end + 20); } return; }
     // M：筆記本翻到手繪地圖（已經在看地圖就收起來；開著別的介面就換成筆記本，手上的紙與運轉中的產線除外）
     if (k === 'KeyM' && GUI.kind !== 'paper' && !(GUI.kind === 'line' && M.active)) { e.preventDefault(); if (e.repeat) return; if (GUI.kind === 'pause') { if (tab === 'map') closeGui(); else showSec('map'); } else openGui('pause', 'map'); return; }
+    // 沒開介面時按住 Tab：HUD 全部完整顯示（5.5），放開就收；輕按（0.25 秒內放開）照舊打開手帳（在 keyup 判斷）
+    if (k === 'Tab' && !GUI.kind) { e.preventDefault(); if (!e.repeat && !IN.tabT) { IN.tabT = performance.now(); hudPeek(true); } return; }
     // Tab 在暫停選單裡留給鍵盤在按鈕之間移動
     if (k === 'KeyI' || (k === 'Tab' && GUI.kind !== 'pause')) { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
     if (GUI.kind) {
@@ -4251,13 +4417,17 @@ function bindInput() {
     if (k === 'KeyQ' && !e.repeat && WARE.h && WARE.h.ph === 'read') wareBack(); // Q：把手上的商品放回去
     if (/^Digit[1-9]$/.test(k)) { if (WARE.h) wareBack(true); S.hb = +k.slice(5) - 1; renderHotbar(true); }
   });
-  addEventListener('keyup', e => { KEYS.delete(e.code); RIDE.hk.delete(e.code); if (e.code === 'Space') makeAction('hold', false); if (e.code === 'KeyE' || e.code === 'KeyF') IN.holdE = false; if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) M.kdir = 0; });
-  addEventListener('blur', () => { KEYS.clear(); RIDE.hk.clear(); IN.hold = IN.holdE = false; });
+  addEventListener('keyup', e => { KEYS.delete(e.code); RIDE.hk.delete(e.code); if (e.code === 'Space') makeAction('hold', false); if (e.code === 'KeyE' || e.code === 'KeyF') IN.holdE = false; if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) M.kdir = 0;
+    if (e.code === 'Tab' && IN.tabT) { const tap = performance.now() - IN.tabT < 250; IN.tabT = 0; hudPeek(false); if (tap && !GUI.kind && !TITLE.on && $('#modal').hidden) openGui('inv'); } });
+  addEventListener('blur', () => { KEYS.clear(); RIDE.hk.clear(); IN.hold = IN.holdE = false; if (IN.tabT) { IN.tabT = 0; hudPeek(false); } });
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => { if (GUI.kind) return; if (WARE.h) wareBack(true); S.hb = (S.hb + (e.deltaY > 0 ? 1 : 8)) % 9; renderHotbar(true); }, { passive: true });
   addEventListener('keyup', e => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
   document.addEventListener('pointerlockchange', () => {
-    document.body.classList.toggle('plock', locked()); // 滑鼠鎖住時才顯示右上角的「按 Alt 放開滑鼠」提示（menus.css）
+    document.body.classList.toggle('plock', locked()); // 滑鼠鎖住時才可能顯示右上角的「按 Alt 放開滑鼠」提示（menus.css）
+    // 5.5：提示只在前 3 次鎖定時出現、每次 8 秒（之後要看就按住 Tab）
+    if (locked() && (S.altN || 0) < 3) { S.altN = (S.altN || 0) + 1; document.body.classList.add('althint'); clearTimeout(W.altT); W.altT = setTimeout(() => document.body.classList.remove('althint'), 8000); }
+    else if (!locked()) { document.body.classList.remove('althint'); clearTimeout(W.altT); } // 放開滑鼠就收掉：第 4 次鎖定不會接著上一次還沒走完的 8 秒
     if (locked()) { W.altFree = false; restoreHint(); }
     $('#startHint').hidden = locked() || TOUCH || !!GUI.kind || TITLE.on;
     if (!locked() && GUI.kind === 'paper' && !W.unlockByUs) { W.unlockByUs = false; closeGui(); return; } // 瀏覽器用 Esc 解除鎖定：當作收起紙，不打開筆記本（點一下畫面再鎖回來）
@@ -4300,6 +4470,9 @@ function bindInput() {
   $('#btnRun').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); IN.run = !IN.run; if (IN.run) { IN.sneak = false; $('#btnSneak').classList.remove('on'); } $('#btnRun').classList.toggle('on', IN.run); });
   $('#btnSneak').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); IN.sneak = !IN.sneak; if (IN.sneak) { IN.run = false; $('#btnRun').classList.remove('on'); } $('#btnSneak').classList.toggle('on', IN.sneak); });
   addEventListener('resize', () => { resizeWorld(); W.clkLay = ''; });
+  // 觸控沒有 Tab：點一下指南針，HUD 完整顯示 4 秒（再點一下收起）
+  $('#compass').addEventListener('pointerdown', e => { if (!TOUCH || GUI.kind || TITLE.on) return; e.preventDefault(); e.stopPropagation(); hudPeek(!document.body.classList.contains('hudall'), 4000); });
+  $('#objective').addEventListener('pointerdown', e => { if (!TOUCH || GUI.kind || TITLE.on) return; e.preventDefault(); e.stopPropagation(); hudPeek(!document.body.classList.contains('hudall'), 4000); }); // 收成一行的目標面板：點它也能展開
 }
 // 跳躍緩衝：落地前 0.15 秒內按下也會跳；離開地面 0.12 秒內仍可起跳（土狼時間）
 function jump() { if (P) P.jb = .15; }
@@ -4610,12 +4783,30 @@ function renderObjective() {
   else { const rt = caveRoute(tx, tz); if (rt) { o = Object.assign({}, o, { x: rt.x, z: rt.z, n: rt.n, d: o.d + `（先穿過${rt.cave.def.name}）`, here: `走進${rt.cave.def.name}，沿著地上的發光痕跡走到出口。` }); tx = rt.x; tz = rt.z; } }
   const key = o.t + '|' + (o.n || o.track || ''), same = tx != null && inCity(tx) === inCity(), dist = same ? Math.hypot(tx - P.x, tz - P.z) : 1e9;
   if (W.arrKey !== key) { W.arrKey = key; W.arr = false; }
-  if (!W.arr && dist < 8) { W.arr = true; if (o.n && !o.quiet) { toast(`已抵達${o.n}`); sfx.tick(); } } // 走進店頭不跳「已抵達」（店員的招呼就是回饋）
+  if (!W.arr && dist < 8) { W.arr = true; if (o.n && !o.quiet) sfx.tick(); } // 抵達不跳字（5.4）：星標在 8 m 內消失、目標面板換成「下一步」，加一聲輕響；走進店頭連這聲也不要（店員的招呼就是回饋）
   else if (W.arr && dist > 12) W.arr = false;
   if (W.arr) o = Object.assign({}, o, { d: o.track === 'slime' ? `對準史萊姆${ENTER()} 3 次採集凝膠。` : (o.here || `已抵達${o.n || '目標地點'}，對準它${ENTER()}使用。`), t: o.n ? `${o.t}（已抵達${o.n}）` : o.t, arrived: true });
+  objFold(key, !!o.arrived, dist);
   const s = o.t + o.d + (o.extra || ''); W.obj = o; if (s === objSig) return; objSig = s;
   $('#objective').classList.toggle('arrived', !!o.arrived);
-  $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目前目標'}</b>${esc(o.t)}<div style="color:#cbd5e1;font-size:12px">${esc(o.d)}</div>${o.extra || ''}`;
+  // .oxp：收成一行時標題後面淡淡的「Tab」（觸控是「⋯」，點面板就展開 4 秒），告訴玩家說明還在、怎麼打開
+  $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目前目標'}</b>${esc(o.t)}<span class="oxp" aria-hidden="true">${TOUCH ? '⋯' : 'Tab'}</span><div class="od">${esc(o.d)}</div>${o.extra || ''}`;
+}
+// 目標面板收成一行（5.5）：玩家照著走才收，只留「目前目標　標題」——有地點的目標，往目標靠近了 12 m（至少 5 秒）；
+// 沒有地點的目標（存錢、在城裡找東西），已經四處走了 60 m、掛滿 30 秒。站著不動、卡住的玩家不會收（原本掛滿 25 秒就收，迷路的人反而看不到說明）。
+// 收起後又離目標越走越遠 15 m（迷路了）就再展開；換了目標、抵達（面板換成「下一步」）時也完整展開；按住 Tab 也會展開（game.css 的 body.hudall）
+const OBJF = { k: '', arr: false, t0: 0, best: 0, gain: 0, walk: 0, px: 0, pz: 0, mini: false };
+function objFold(key, arr, dist) {
+  const now = performance.now(), F = OBJF, far = dist > 1e8, reset = () => Object.assign(F, { t0: now, best: dist, gain: 0, walk: 0, px: P.x, pz: P.z, mini: false });
+  if (F.k !== key || F.arr !== arr) { F.k = key; F.arr = arr; reset(); }
+  else if (!arr) {
+    F.walk += Math.min(30, Math.hypot(P.x - F.px, P.z - F.pz)); F.px = P.x; F.pz = P.z; // 每秒算一次；搭車、傳送一次最多算 30 m
+    if (dist < F.best) { F.gain += F.best - dist; F.best = dist; }
+    const age = (now - F.t0) / 1000;
+    if (!F.mini) { if (far ? F.walk >= 60 && age > 30 : F.gain >= 12 && age > 5) F.mini = true; }
+    else if (!far && dist > F.best + 15) reset();
+  }
+  const el = $('#objective'); if (el.classList.contains('mini') !== F.mini) el.classList.toggle('mini', F.mini);
 }
 /* 目標引導標記：在畫面上標出目標位置與距離；不在畫面內時貼齊邊緣並以箭頭指出方向；靠近 8 公尺內自動隱藏 */
 const WPV = new THREE.Vector3(), WP_HIDE = 8;
@@ -4656,7 +4847,7 @@ function renderClock() {
   const rem = Math.max(1, Math.ceil(DN_END[DN.phase] - DN.t)), sig = DN.phase + rem; if (sig === W.clkSig) return; W.clkSig = sig;
   const pct = (DN.p * 100).toFixed(2) + '%', now = DN_PHASE[DN.phase], nx = DN_PHASE[DN_NEXT[DN.phase]], m = Math.floor(rem / 60), sec = rem % 60;
   el.className = 'dn-' + DN.phase; el.querySelector('.dn-mk').style.left = pct; el.querySelector('u').style.width = pct;
-  el.querySelector('b').textContent = now; el.querySelector('small span').textContent = m + ':' + String(sec).padStart(2, '0'); // 一律 m:ss，數字寬度不跳 el.querySelector('em').textContent = nx;
+  el.querySelector('b').textContent = now; el.querySelector('small span').textContent = m + ':' + String(sec).padStart(2, '0'); el.querySelector('em').textContent = nx; // 一律 m:ss，數字寬度不跳；後面接下一個時段的名字（原本被註解吃掉了）
   el.setAttribute('aria-label', `現在是${now}，${m ? m + ' 分 ' : ''}${sec} 秒後${nx}（月光谷的一天 10 分鐘：白天 5、黃昏 1、夜晚 3、黎明 1 分鐘）`);
   clockLayout(el);
 }
@@ -4680,8 +4871,8 @@ function clockLayout(el) {
   put({ sm: 1, left: (cmp.left + cmp.width / 2) + 'px', top: below + 'px', transform: 'translateX(-50%)' }); // 都擠不下（很窄的直向手機）：放指南針下方
 }
 function renderCompass() {
-  const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .8, items = [], o0 = W.obj;
-  const sig = `${P.yaw.toFixed(3)}|${Math.round(P.x * 2)}|${Math.round(P.z * 2)}|${w}|${o0 && o0.x}|${o0 && o0.z}|${S.zones.length}`; if (sig === cmpSig) return; cmpSig = sig;
+  const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .8, items = [], o0 = W.obj, biz = bizWait();
+  const sig = `${P.yaw.toFixed(3)}|${Math.round(P.x * 2)}|${Math.round(P.z * 2)}|${w}|${o0 && o0.x}|${o0 && o0.z}|${S.zones.length}|${biz}`; if (sig === cmpSig) return; cmpSig = sig;
   const put = (ang, html, cls, color) => { let r = Math.atan2(Math.sin(ang - P.yaw), Math.cos(ang - P.yaw)); if (Math.abs(r) > range / 2) return; items.push(`<span class="cmk ${cls}" style="left:${(.5 - r / range) * w}px;${color ? '--pc:' + color : ''}">${html}</span>`); };
   // 方位：北（紅字）、東西南、四個斜向；刻度每 5 度一格，每 15 度長一點
   [['北', 0, ' n'], ['西', Math.PI / 2, ''], ['南', Math.PI, ''], ['東', -Math.PI / 2, '']].forEach(([n, a, c]) => put(a, n, 'dir' + c));
@@ -4695,6 +4886,7 @@ function renderCompass() {
     const o = W.obj; if (o && o.x != null) put(bearing(o.x, o.z), `<i></i><b>${dist(o.x, o.z)}m</b>`, 'pin goal', o.c || '#c4b5fd');
     LMS.forEach(L => { const known = S.zones.includes(L.zone); put(bearing(L.x, L.z), `<i></i><b>${known ? L.name : '？'}</b>`, 'pin lm' + (known ? '' : ' unk'), known ? '#e2e8f0' : '#64748b'); });
     Object.keys(GATES).forEach(k => { if (S.zones.includes(k) && !S.seenZone?.[k]) put(bearing(GATES[k].ex, GATES[k].ez), '<i></i>', 'pin gate', '#fbbf24'); });
+    if (biz && !inCity()) put(bearing(BASE.pc[0], BASE.pc[1]), `<i></i><b>${biz}</b>`, 'pin biz', '#fb7185'); // 小店有客人、企業有訂單：指南針上工作電腦的方向亮一個粉紅色的小牌（不跳字，5.4）
   }
   el.innerHTML = items.join('');
   const deg = Math.round(((-P.yaw * 180 / Math.PI) % 360 + 360) % 360) % 360, dn = ['北', '東北', '東', '東南', '南', '西南', '西', '西北'][Math.round(deg / 45) % 8];
@@ -4717,13 +4909,26 @@ function renderXP() {
   $('#xpbar i').style.width = clamp(pct, 0, 100) + '%'; $('#xpbar span').textContent = lv;
   $('#xpbar').title = max ? `Lv ${lv}（滿級）　經驗 ${x}` : `Lv ${lv}　經驗 ${x - a} / ${b - a}（再 ${b - x} 升級）`;
 }
+// 錢、粉絲、流行的小牌（5.5）：平常淡淡的不搶畫面（game.css 的 #stats），數字一變就亮 3 秒；按住 Tab（觸控：點指南針）全部亮
+const TOPV = {};
 function renderTop() {
-  $('#sMoney').textContent = fmt(S.money); $('#sFans').textContent = '粉絲 ' + Math.floor(S.fans);
-  const t = trend.sp ? SP[trend.sp] : null; $('#sTrend').innerHTML = t ? `流行 ${dot(t.color)}${short(trend.sp)} ×1.35` : '流行 —';
+  const t = trend.sp ? SP[trend.sp] : null, v = { sMoney: fmt(S.money), sFans: '粉絲 ' + Math.floor(S.fans), sTrend: t ? `流行 ${dot(t.color)}${short(trend.sp)}<span class="tx"> ×1.35</span>` : '流行 —' }; // 窄螢幕拿掉「×1.35」（game.css）
+  for (const k in v) { if (TOPV[k] === v[k]) continue; const el = $('#' + k); if (k === 'sTrend') el.innerHTML = v[k]; else el.textContent = v[k]; if (TOPV[k] != null && W.ready && !TITLE.on) hudHot(el); TOPV[k] = v[k]; }
   if (GUI.kind === 'pause') ui('pause'); // 暫停選單（音效、靈敏度、雲端存檔狀態）由 React 重繪
 }
+function hudHot(el, ms = 3000) { if (!el) return; el.classList.add('hot'); clearTimeout(el._hot); el._hot = setTimeout(() => el.classList.remove('hot'), ms); }
+// 按住 Tab（觸控：點一下指南針，4 秒後自己收）：HUD 全部完整顯示——小牌全亮、目標面板展開、Alt 提示出現
+function hudPeek(on, ms) { document.body.classList.toggle('hudall', !!on); clearTimeout(W.peekT); if (on && ms) W.peekT = setTimeout(() => document.body.classList.remove('hudall'), ms); }
 const trendPool = () => unlockedSpecies().filter(s => !s.cave || (S.codex[s.id] && S.codex[s.id].made > 0)); // 洞穴史萊姆要先做過才會變成流行色
-function pickTrend() { trend.sp = pick(trendPool()).id; renderTop(); toast('流行色更新：' + SP[trend.sp].name + '（售價 ×1.35）'); }
+// 今天的流行色：每個真實日換一次（原本每 90 秒換一次、每次跳一行字）。換的那一刻只記進手帳的「今天」，工坊屋頂的旗子換成那個顏色
+function trendDaily() {
+  const d = localDay(), pool = trendPool(); if (!pool.length) return;
+  if (!S.trendD || S.trendD.d !== d || !pool.some(s => s.id === S.trendD.sp)) {
+    const prev = S.trendD && S.trendD.sp; let sp = pick(pool).id; for (let i = 0; i < 4 && sp === prev && pool.length > 1; i++) sp = pick(pool).id; // 盡量不連兩天同色
+    S.trendD = { d, sp }; note('trend', `今天的流行色：${SP[sp].name}（售價 ×1.35）`);
+  }
+  if (trend.sp !== S.trendD.sp) { trend.sp = S.trendD.sp; renderTop(); trendFlag(); }
+}
 
 /* ============================================================
    介面視窗（工作站 / 背包 / 選單）
@@ -5711,10 +5916,10 @@ function webTick() {
   const first = S.sales < 2; if (!S.web.length || (!first && Math.random() > clamp(0.25 + S.fans / 400 + (rating() - 3) * .1, .05, .9))) return null;
   const p = pick(S.web), coll = p.wonky && Math.random() < .3; let price = priceOf(p, 'web'); if (!first && !coll && Math.random() > pace(p, 'web') * .7) return null;
   if (coll) price = Math.round(price / .6 * 1.6); // 收藏家：歪得剛剛好，願意出高價
-  addMoney(price); S.sales++; S.fans += .3; gainXP(2); S.web = S.web.filter(q => q !== p);
+  addMoney(price); S.sales++; S.fans += .3; const up = gainXP(2, '', { quiet: true }); if (up) note('lv', `網站的訂單讓你升級了：Lv ${up}`); S.web = S.web.filter(q => q !== p); // 自己賣出去的升級不跳字（經驗條照樣閃一下），記進手帳
   const stars = clamp(Math.round(1 + 2.2 * effCrisp(p) + 1.8 * clamp(fair(p, 'web') / refPrice(p, 'web'), 0, 1.3)), 1, 5); S.rate.push(stars); if (S.rate.length > 40) S.rate.shift(); // 星數照改版前「合理」定價算：等級高、標價高是應該的，不扣星
   const cutTxt = p.cut ? (p.cq > .85 ? `${CUTS[p.cut].n}切面平整發亮，好美！` : p.cq < .45 ? '切面有點歪歪的。' : '') : '';
-  S.reviews.unshift(coll ? { s: 5, t: '收藏家：歪得剛剛好，收藏了！', who: pick(NAMES), sp: SP[p.sp].name } : { s: stars, t: pick(REVIEWS[stars]) + (cutTxt ? ' ' + cutTxt : ''), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars };
+  S.reviews.unshift(coll ? { s: 5, t: '收藏家：歪得剛剛好，收藏了！', who: pick(NAMES), sp: SP[p.sp].name } : { s: stars, t: pick(REVIEWS[stars]) + (cutTxt ? ' ' + cutTxt : ''), who: pick(NAMES), sp: SP[p.sp].name }); S.reviews.length = Math.min(S.reviews.length, 8); return { price, stars, sp: p.sp };
 }
 function renderWeb() { ui('web'); } // 畫面改由 React 負責（components/stations/）
 
@@ -5762,15 +5967,22 @@ function branchTick(dt) {
     while (BT.fac >= 1) { BT.fac -= 1; if (S.stock.length >= cap()) break; const sp = Object.keys(S.gel).filter(k => S.gel[k] >= 2).sort((a, b) => S.gel[b] - S.gel[a])[0]; if (!sp) break; S.gel[sp] -= 2; S.stock.push(makeProduct(sp, clamp(0.55 + 0.05 * S.auto + rnd(-.05, .05), .2, 1))); }
     FAC.working = S.stock.length < cap() && Object.values(S.gel).some(v => v >= 2);
   }
+  // 小店、企業只在玩家人在工坊附近時「營業」：不在的時候不會來新的客人與訂單，等待中的期限也暫停（原本人在雪原也照樣倒數、扣好感與信譽，
+  // 而且這些事已經不跳字了，玩家根本不知道）。在的時候：工作電腦的螢幕亮紅牌、叮一聲，指南針上工作電腦的方向有粉紅色的小牌（bizWait）
+  const open = !TITLE.on && !INTRO.on && nearBase(BIZ_R, BASE.pc[0], BASE.pc[1]);
+  if (!open && (S.branch === 'corp' || S.branch === 'shop')) { bizPause(dt * 1000); return; }
   if (S.branch === 'corp') {
-    const now = Date.now(); S.contracts = S.contracts.filter(c => { if (now > c.dl) { S.rep = Math.max(0, S.rep - 1); toast('訂單逾期，企業信譽 -1'); return false; } return true; }); BT.ct += dt;
-    if (BT.ct > 20 && S.contracts.length < 3) { BT.ct = 0; const us = unlockedSpecies(), n = 2 + Math.floor(Math.random() * 3), any = Math.random() < .4, sp = any ? 'any' : pick(us).id, min = clamp(.35 + .05 * S.rep + rnd(0, .15), .3, .9), base = any ? us.reduce((a, s) => a + s.price, 0) / us.length : SP[sp].price; const cut = Math.random() < .35 ? pick(Object.keys(CUTS)) : null; S.contracts.push({ id: S.nextId++, sp, n, min, cut, reward: Math.round(n * base * (0.4 + 1.1 * (min + .1)) * 1.5 * (1 + S.rep * .05) * (cut ? 1.25 : 1)), dl: now + 240000 }); toast('收到新的企業訂單（工作電腦 → 事業）'); }
+    const now = Date.now(); S.contracts = S.contracts.filter(c => { if (now > c.dl) { S.rep = Math.max(0, S.rep - 1); note('corpLate', '', { fmt: e => `${e.n} 張企業訂單逾期了（信譽 −${e.n}）` }); return false; } return true; }); BT.ct += dt;
+    if (BT.ct > 20 && S.contracts.length < 3) { BT.ct = 0; const us = unlockedSpecies(), n = 2 + Math.floor(Math.random() * 3), any = Math.random() < .4, sp = any ? 'any' : pick(us).id, min = clamp(.35 + .05 * S.rep + rnd(0, .15), .3, .9), base = any ? us.reduce((a, s) => a + s.price, 0) / us.length : SP[sp].price; const cut = Math.random() < .35 ? pick(Object.keys(CUTS)) : null; S.contracts.push({ id: S.nextId++, sp, n, min, cut, reward: Math.round(n * base * (0.4 + 1.1 * (min + .1)) * 1.5 * (1 + S.rep * .05) * (cut ? 1.25 : 1)), dl: now + 240000 }); note('corp', '', { fmt: e => e.n > 1 ? `收到 ${e.n} 張新的企業訂單` : `收到新的企業訂單：${sp === 'any' ? '任意' : SP[sp].name}捏捏 ${n} 個` }); pcPing(); }
   }
   if (S.branch === 'shop') {
-    const now = Date.now(); S.customers = S.customers.filter(c => { if (now > c.dl) { S.regulars[c.name] = Math.max(0, (S.regulars[c.name] || 0) - 1); toast(`${c.name} 等太久離開了`); return false; } return true; }); BT.sc += dt;
-    if (BT.sc > 10 && S.customers.length < 3) { BT.sc = 0; const reg = Object.keys(S.regulars).filter(k => S.regulars[k] >= 3), name = reg.length && Math.random() < .5 ? pick(reg) : pick(REG_NAMES); if (!S.customers.some(c => c.name === name)) { S.customers.push({ id: S.nextId++, name, sp: pick(unlockedSpecies()).id, min: rnd(.3, .7), dl: now + 45000 }); toast(`${name} 來店了（工作電腦 → 事業）`); } }
+    const now = Date.now(); S.customers = S.customers.filter(c => { if (now > c.dl) { S.regulars[c.name] = Math.max(0, (S.regulars[c.name] || 0) - 1); note('shopLeft', '', { fmt: e => e.n > 1 ? `${e.n} 位客人等太久，先離開了` : `${c.name} 等太久，先離開了` }); return false; } return true; }); BT.sc += dt;
+    if (BT.sc > 10 && S.customers.length < 3) { BT.sc = 0; const reg = Object.keys(S.regulars).filter(k => S.regulars[k] >= 3), name = reg.length && Math.random() < .5 ? pick(reg) : pick(REG_NAMES); if (!S.customers.some(c => c.name === name)) { S.customers.push({ id: S.nextId++, name, sp: pick(unlockedSpecies()).id, min: rnd(.3, .7), dl: now + 45000 }); note('shop', '', { fmt: e => e.n > 1 ? `${e.n} 位客人來店裡逛逛` : `${name} 來店裡逛逛` }); pcPing(); } }
   }
 }
+const BIZ_R = 45; // 工坊的院子（小屋、貨架、產線、養殖槽、計程車招呼站都在這個範圍裡）
+function bizPause(ms) { if (!(ms > 0)) return; for (const c of S.customers || []) c.dl += ms; for (const c of S.contracts || []) c.dl += ms; }
+const bizWait = () => S.branch === 'shop' && S.customers.length ? '客人 ' + S.customers.length : S.branch === 'corp' && S.contracts.length ? '訂單 ' + S.contracts.length : '';
 const FAC = { v: null, built: -1, arms: [], blocks: [], t: 0, working: false };
 function initFac() {
   if (FAC.v) return; try { FAC.v = makeView($('#facCv'), '#0b1220', 36); } catch (e) { return; }
@@ -5899,8 +6111,8 @@ document.addEventListener('click', e => {
 function creditsHTML() { const L0 = MUS.list; if (!L0) return ''; const a = Object.values(L0).filter(t => t && t.title); return a.length ? '<p class="small" style="color:var(--sub);margin-top:8px"><b>配樂</b>：' + a.map(t => esc(t.title) + ' — ' + esc(t.author || '') + '（' + esc(t.license || '') + '）').join('；') + '</p>' : ''; }
 function showHelp() {
   const keys = TOUCH
-    ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span></div>'
-    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>M</kbd><span>筆記本裡的手繪地圖（走過的地方才會畫上去）</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
+    ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span><kbd>指南針</kbd><span>點一下：完整顯示錢、粉絲、流行與目標</span></div>'
+    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌（手帳的「今天」記著網站成交、流行色等小事）</span><kbd>按住 Tab</kbd><span>完整顯示畫面上的資訊（錢、粉絲、流行、目標）</span><kbd>M</kbd><span>筆記本裡的手繪地圖（走過的地方才會畫上去）</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
   modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。捏一下之後約 0.3 秒，外圈會亮一圈，亮著的時候捏下一下就是「完美」；三下是 Do、Mi、Sol，三下都完美會響起和弦、多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。拿著捏捏對準網站貨架就能上架；站上直播舞台就開直播。多人時：巨型史萊姆要兩人一起捏、拿著凝膠對準朋友可以送給對方、朋友站在產線旁會幫你裹糖。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
 }
 
@@ -5926,8 +6138,7 @@ function startPlay() {
   playReady();
 }
 function playReady() {
-  $('#startHint').hidden = TOUCH || locked(); W.camAway = false; zoneArrive(true);
-  const hi = S.tutDone ? '歡迎回到月光谷。左上角是目前目標。' : '歡迎來到月光谷！跟著畫面中央的提示一步一步來。'; if (ZC.on) setTimeout(() => { if (!TITLE.on) toast(hi); }, ZC.hold + (ZC.first ? 700 : 350)); else toast(hi); // 老玩家：開場結束先浮出地名字卡，收起來之後才說歡迎回來（不同時跳兩則）
+  $('#startHint').hidden = TOUCH || locked(); W.camAway = false; zoneArrive(true); // 不再跳「歡迎回到月光谷」：穿越機開場就是歡迎、老玩家有地名字卡，新手有畫面中央的教學小卡
   if (!S.seen) { S.seen = true; save(); } // 奶奶的信不再跳出來：它就躺在手作台上（placeLetter），拿起來讀。S.seen 是「有存檔」的依據（hasSave／savesInfo）
 }
 function avatarSVG(id) {
@@ -6232,7 +6443,7 @@ function giantStep() {
   if (W.giant && (!NET.on || (NET.host && NET.players.size < 2))) { dropSlime(W.giant); W.slimes = W.slimes.filter(s => s !== W.giant); W.giant = null; }
   // 巨型史萊姆頭上的標籤（客戶端看到的是鏡像）
   const g = W.slimes.find(s => s.giant);
-  if (g && !W.giantLabel) { W.giantLabel = textSprite('巨型史萊姆', '#fbbf24', '兩個人在 1.5 秒內一起捏'); W.giantLabel.userData.keep = true; W.scene.add(W.giantLabel); }
+  if (g && !W.giantLabel) { W.giantLabel = textSprite('巨型史萊姆', '#fbbf24', '兩個人在 1.5 秒內一起捏', { tag: 1 }); W.giantLabel.userData.keep = true; W.scene.add(W.giantLabel); }
   if (W.giantLabel) { W.giantLabel.visible = !!g; if (g) W.giantLabel.position.set(g.x, H(g.x, g.z) + 4.4, g.z); }
 }
 function giantWin(sl) { const m = { t: 'giant', x: sl.x, z: sl.z }; bcast(m); giantReward(sl.x, sl.z); }
@@ -6355,8 +6566,8 @@ function avatarsStep(dt) {
   NET.players.forEach((p, id) => {
     if (id === NET.me || p.x == null) return; seen.add(id); let a = AV.get(id);
     if (!a) {
-      const g = avatarMesh(p.color || '#22d3ee'), tag = textSprite(p.name || '玩家', p.color || '#22d3ee'); tag.position.y = 2.3; tag.scale.set(1.8, .56, 1); g.add(tag);
-      const lt = textSprite('LIVE 直播中', '#fb7185'); lt.position.y = 2.85; lt.scale.set(1.7, .53, 1); lt.visible = false; g.add(lt);
+      const g = avatarMesh(p.color || '#22d3ee'), tag = textSprite(p.name || '玩家', p.color || '#22d3ee', '', { tag: 1 }); tag.position.y = 2.3; tag.scale.set(1.8, .56, 1); g.add(tag);
+      const lt = textSprite('LIVE 直播中', '#fb7185', '', { tag: 1 }); lt.position.y = 2.85; lt.scale.set(1.7, .53, 1); lt.visible = false; g.add(lt);
       g.position.set(p.x, p.y, p.z); W.scene.add(g); const hb = hitBox(1, 2, 1, 0, 1, 0, g); hb.userData.av = id; a = { g, lt, hb, x: p.x, y: p.y, z: p.z, yaw: p.yaw, wasLive: false, bob: 0 }; AV.set(id, a);
     }
     if (a.heldKey !== (p.held || '')) {
@@ -6374,7 +6585,7 @@ function avatarsStep(dt) {
     if (live && !a.wasLive) toast(`${p.name} 開始直播了！到工坊的直播台可以觀看`); a.wasLive = live;
   });
   AV.forEach((a, id) => { if (!seen.has(id)) { dropObj(a.g); AV.delete(id); } });
-  if (liveName && W.liveTagName !== liveName) { if (W.liveTag) dropObj(W.liveTag); W.liveTag = textSprite('直播中：' + liveName, '#fb7185', '走近直播台即可觀看'); W.liveTag.position.set(9, WS_Y + 4.8, 3.5); W.liveTag.scale.set(3.2, 1, 1); W.scene.add(W.liveTag); W.liveTagName = liveName; }
+  if (liveName && W.liveTagName !== liveName) { if (W.liveTag) dropObj(W.liveTag); W.liveTag = textSprite('直播中：' + liveName, '#fb7185', '走近直播台即可觀看', { tag: 1 }); W.liveTag.position.set(9, WS_Y + 4.8, 3.5); W.liveTag.scale.set(3.2, 1, 1); W.scene.add(W.liveTag); W.liveTagName = liveName; }
   if (W.liveTag) W.liveTag.visible = !!liveName; if (!liveName) W.liveTagName = null;
 }
 
@@ -6712,6 +6923,7 @@ function taxiIsland() {
   const fa = .1, nx = Math.cos(fa), nz = -Math.sin(fa), tx = Math.sin(fa), tz = Math.cos(fa), sx = cx, sz = cz - hz - .4, sy = top;
   [-.66, .66].forEach(d => P0.push([new THREE.BoxGeometry(.1, 2.42, .1), '#6b4d33', M4(sx + tx * d, sy + 1.21, sz + tz * d, 0, fa, 0)])); P0.push([new THREE.BoxGeometry(.06, .98, 1.62), '#7d5c3a', M4(sx - nx * .01, sy + 1.84, sz - nz * .01, 0, fa, 0)], [new THREE.BoxGeometry(.16, .06, 1.7), '#5b4330', M4(sx, sy + 2.36, sz, 0, fa, 0)]);
   const m = new THREE.Mesh(mergeParts(P0), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0 })); m.castShadow = !LOW; m.receiveShadow = true; W.scene.add(m);
+  SDC.box.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(sx, sy + 1.62, sz), new THREE.Vector3(.24, 1.5, 1.72))); // 木牌（含頂上的橫木）的外框：工坊牌子的遮擋檢查用（signHidden：下計程車往工坊看，它會擋住手作台的招牌；整座島 6 千多個三角形太多，只拿這個盒子）
   const tex = artTex(512, 290, (g, w, h) => {
     woodBoard(g, w, h); artText(g, '計程車招呼站', w / 2, 92, 60, '#fef3c7', w - 44); artText(g, '→ 大城市', w / 2 + 64, 188, 50, '#fde047', 290);
     g.lineJoin = 'round'; g.lineWidth = 5; g.strokeStyle = '#2b1b0e'; const r = (x, y, ww, hh, c) => { g.fillStyle = c; g.beginPath(); g.roundRect ? g.roundRect(x, y, ww, hh, 9) : g.rect(x, y, ww, hh); g.fill(); g.stroke(); };
@@ -7417,7 +7629,8 @@ function buildCity() {
     const rc = CZ.sg.shop[id], sw = Math.min(w - 2, 8); A0.S(sw, sw / 4, 0, rc, x, 5.6, -13.7);
     if (id === 'arms') W.armsSign = { c: rc.c, name, accent, x, blit: () => { const [px, py, pw, ph] = rc.px, At = W.cityAtlas; At.g.drawImage(rc.c, px, py, pw, ph); if (At.tex) At.tex.needsUpdate = true; } };
     if (open) buildShopRoom(id, g); else addInter(hitBox(w - 2, 3.4, 2.2, x, 1.7, -12.6, g), 'station', 'hospital', name); // 四間店不再有型錄介面：走進去拿起來看
-    const lb = textSprite(name, accent, sub); lb.position.set(x, 9.2, -13.5); g.add(lb); if (id === 'arms') W.armsLabel = lb;
+    // 樓頂上的小木牌（店名＋賣什麼）。生活百貨的樓頂是大螢幕（9.4 m 起）：那塊改掛在店名大招牌下面、門楣的綠帶前面（帶子凸到 −13.47，牌子在 −13.2），不貼在螢幕上蓋住廣告字
+    const lb = textSprite(name, accent, sub); if (id === 'mall') lb.position.set(x, 4.1, -13.2); else lb.position.set(x, 9.2, -13.5); g.add(lb); if (id === 'arms') W.armsLabel = lb;
   };
   shop('mach', SHOPS.mach.x, SHOPS.mach.w, SHOPS.mach.col, '機械行', '加工機器與升級', '#22d3ee');
   shop('mall', SHOPS.mall.x, SHOPS.mall.w, SHOPS.mall.col, '生活百貨', '倉儲、網路、跑鞋', '#34d399');
@@ -9620,7 +9833,7 @@ function drsStep(dt) {
   if (k !== DRS.k) { DRS.k = k; W.r.setPixelRatio(DRS.base * k); W.r.setSize(innerWidth, innerHeight, false); }
 }
 /* ---------- 主迴圈 ---------- */
-let lastT = performance.now(), secAcc = 0, webAcc = 0, trendAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
+let lastT = performance.now(), secAcc = 0, webAcc = 0, saveAcc = 0, hudN = 0, pickN = 0;
 const tmpC = new THREE.Color(), tmpC2 = new THREE.Color(), tmpV = new THREE.Vector3(), tmpM = new THREE.Matrix4();
 const ENVC = [0, 1, 2, 3, 4].map(() => new THREE.Color());
 const SUN_D = new THREE.Vector3(30, 55, 22).normalize(), SUN_R = new THREE.Vector3().crossVectors(SUN_D, new THREE.Vector3(0, 1, 0)).normalize(), SUN_U = new THREE.Vector3().crossVectors(SUN_R, SUN_D).normalize();
@@ -9857,18 +10070,24 @@ function applyQuality(reset) {
 function qualityStep(dt) {
   QL.frames++; QL.acc += dt; if (QL.acc < 1) return; const fps = QL.frames / QL.acc; QL.frames = 0; QL.acc = 0;
   if (S.quality !== 'auto') return;
-  if (fps < 28) { if (++QL.lowT >= 5 && QL.lvl < 3) { QL.lvl++; QL.lowT = 0; applyQuality(); toast('畫面有點卡，已自動降低畫質（' + ['', '關閉飄浮粒子', '減少遠景植被', '縮短可視距離、簡化地面'][QL.lvl] + '）'); } } else QL.lowT = 0;
+  if (fps < 28) { if (++QL.lowT >= 5 && QL.lvl < 3) { QL.lvl++; QL.lowT = 0; applyQuality(); console.info('畫面有點卡，自動降低畫質：' + ['', '關閉飄浮粒子', '減少遠景植被', '縮短可視距離、簡化地面'][QL.lvl]); } } else QL.lowT = 0; // 不跳字：和動態解析度一樣安靜地調
 }
 function worldStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
   W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on && !RIDE.on) playerStep(dt); if (!INTRO.on) warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數；開場期間也不倒數
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
-  deliverStep(dt); shipStep(dt); giftStep(dt); fixStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
+  deliverStep(dt); shipStep(dt); giftStep(dt); fixStep(dt); parcelStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
   const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else if (RIDE.on) rideStep(dt); else cameraStep(dt); viewModelStep(dt); frostStep(dt); knTipStep(); avatarsStep(dt); // 搭計程車：鏡頭交給 rideStep（在 envStep／caveEnv 之後，隧道的霧、光、曝光會蓋過去）
   if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); stageStep(); upgradeFx(dt);
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
-  for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }
+  // 牌子：太近（2.4～5 m）淡掉；太遠也淡掉（預設 45～60 m；fog:false 的牌子原本會浮在霧裡），u.far 可以設更近（屋頂下的牌子）
+  // 木頭招牌夜裡跟著暗一點、偏藍（不受光的 Sprite 原本整晚都像打著燈），字的對比夠，照樣看得清楚
+  const nk = DN.night * (CV.c ? 0 : 1), wr = 1 - .34 * nk, wg = 1 - .3 * nk, wb = 1 - .14 * nk;
+  // u.op：距離決定的透明度；u.vis：疊到別的牌子、被小屋切到時淡掉（signDeclutter 每 6 格判斷一次）
+  if ((W.sdN = (W.sdN || 0) + 1) % 6 === 1) signDeclutter(); else signOccStep();
+  for (const s of W.labels) { s.getWorldPosition(tmpV); const u = s.userData, d = tmpV.distanceTo(W.cam.position), f = u.far || 60, op = GUI.kind === 'line' ? 0 : u.keep ? 1 : smooth(2.4, 5, d) * (1 - smooth(f * .75, f, d));
+    u.op = op; u.vis = u.vis == null ? 1 : clamp(u.vis + (u.hide ? -1 : 1) * dt * 5, 0, 1); const o = op * u.vis; s.material.opacity = o; s.visible = o > .02; if (u.wood && s.visible) s.material.color.setRGB(wr, wg, wb); }
   renderCoach();
   // 準心對到會說話的對象時，改由他頭上的「…」提示，畫面中央不顯示文字（talk.js 的 tkLabel）
   if (!GUI.kind && !RIDE.on && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = WARE.h ? wareLabel(TARGET) : tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
@@ -9881,12 +10100,12 @@ function worldStep(dt) {
 }
 function loop(now) {
   const dt = clamp((now - lastT) / 1000, 0, .1); lastT = Math.max(lastT, now);
-  trendAcc += dt; if (trendAcc > 90) { trendAcc = 0; pickTrend(); }
   if (S.up.farm > 0) { if (!S.farmT) S.farmT = Date.now(); else if (Date.now() - S.farmT >= FARM_MS) farmCollect(1); }
-  webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
+  // 網站成交：不跳字。貨架上那一格空出來、出貨箱多一個包裹（玩家在工坊附近時綁上氣球寄出去），錢的小牌亮 3 秒，手帳的「今天」記一筆
+  webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { webSold(r); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; nmStep(); checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
+  if (secAcc >= 1) { secAcc = 0; nmStep(); checkBranch(); trendDaily(); pcScreen(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
@@ -9914,15 +10133,16 @@ function farmCollect(cycles, quiet) {
   if (!(S.up.farm > 0) || cycles < 1) return 0; const us = unlockedSpecies(), n = cycles * 4 * S.up.farm;
   for (let i = 0; i < n; i++) { const sp = pick(us); S.gel[sp.id] = (S.gel[sp.id] || 0) + 1; discover(sp.id); }
   S.farmT += cycles * FARM_MS; if (Date.now() - S.farmT >= FARM_MS) S.farmT = Date.now();
-  if (!quiet) { toast(`養殖槽自動收集了 ${n} 份凝膠`); sfx.pop && sfx.pop(); }
+  if (!quiet) { note('farm', `養殖槽收成 ${n} 份凝膠`); farmPop(n); } // 不跳字：人在養殖槽附近才看得到槽上冒出「+n」、聽到一聲，其他時候只記進手帳
   renderHotbar(true); if (tab === 'make' && !M.active) renderMake(); save(); return n;
 }
 const farmLeft = () => S.up.farm > 0 && S.farmT ? Math.max(0, Math.ceil((S.farmT + FARM_MS - Date.now()) / 1000)) : 0;
 function offlineCatchUp() {
-  if (S.up.farm > 0 && S.farmT) { const c = Math.min(4, Math.floor((Date.now() - S.farmT) / FARM_MS)); if (c > 0) { const n = farmCollect(c, true); setTimeout(() => toast(`離線期間養殖槽收集了 ${n} 份凝膠`), 1400); } }
+  if (S.last > 0) bizPause(Date.now() - S.last); // 關掉遊戲的時候店也沒開：等待中的客人與訂單從離開的那一刻接著等
+  if (S.up.farm > 0 && S.farmT) { const c = Math.min(4, Math.floor((Date.now() - S.farmT) / FARM_MS)); if (c > 0) { const n = farmCollect(c, true); note('farm', `不在的時候，養殖槽收成了 ${n} 份凝膠`); } }
   const el = Math.min((Date.now() - S.last) / 1000, 1800); if (el < 8 || !S.web.length) return;
   let gain = 0, n = 0; for (let i = 0; i < Math.floor(el / 4); i++) { const before = S.earned; if (webTick()) { gain += S.earned - before; n++; } }
-  if (n) setTimeout(() => toast(`離線期間網站賣出 ${n} 件，+${fmt(gain)}`), 800);
+  if (n) { note('webAway', `不在的時候，網站賣出 ${n} 件，+${fmt(gain)}`, { n, inc: gain }); S.out = Math.min(99, (S.out || 0) + n); } // 包裹在出貨箱裡等玩家回到工坊才寄出
 }
 
 /* ---------- 給 React 介面用（components/stations/）----------
@@ -9943,6 +10163,7 @@ window.SlimeGame = {
   wareState, get ship() { return S.ship; }, // 商品狀態（城市與網購共用的規則）、還沒演的到貨（手帳的「宅配中」）
   mapView: nmView, mapDraw: nmDraw, // 筆記本的手繪地圖（map.js、components/stations/NoteMap.tsx）
   eggs: eggList, // 月光谷的小秘密：[{ id, name, hint, found }]（手帳的探索日誌）
+  today: todayLog, outbox: () => S.out || 0, // 手帳的「今天」：網站成交、流行色、事業、養殖槽（5.4）；出貨箱裡還沒寄出的包裹
   // 手上的紙（components/stations/Paper.tsx）與手帳的剪貼區：papers() 新的在前；paperAt(i) 重讀第 i 張（i＝S.papers 的索引）
   paper: paperNow, papers: () => S.papers.map((r, i) => { const s = paperSpec(r); return s && { i, id: r.id, v: s.v, name: s.name, zone: s.zone || '', gift: !!s.gift, torn: !!s.torn, gn: !!s.gn, t: r.t, isNew: r.t > S.jrSeen }; }).filter(Boolean).reverse(),
   paperAt: i => { const r = S.papers[i], s = paperSpec(r); return s ? paperView(s, { flip: CLIP.flip, t: r.t }) : null; }, paperOf: id => PAPERS[id] ? paperView(PAPERS[id], { rev: 0, live: 1 }) : null, rcptView: d => paperView(rcptSpec(d), {}), clip: () => CLIP.i, hasPaper, postcardImg: z => postcardArt(z).img(), PAPERS,
@@ -9950,16 +10171,16 @@ window.SlimeGame = {
 };
 
 /* ---------- 啟動 ---------- */
-offlineCatchUp(); trend.sp = pick(trendPool()).id; renderTop();
+offlineCatchUp(); trendDaily(); renderTop();
 if (initWorld()) { nmWarm(); renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動'; }
 window.dispatchEvent(new Event('slime:ready')); // 通知 React 收起載入畫面（components/LoginGate.tsx）
 addEventListener('beforeunload', save); addEventListener('pagehide', () => { save(); cloud('leave'); if (NET.on) netLeave(true); });
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = Date.now(); save(); cloud('leave'); return; }
-  if (!hiddenAt) return; const el = Math.min((Date.now() - hiddenAt) / 1000, 1800); hiddenAt = 0; lastT = performance.now(); DRS.skip = 2; DRS.acc = DRS.n = 0; if (el < 8 || !S.web.length) return;
+  if (!hiddenAt) return; bizPause(Date.now() - hiddenAt); const el = Math.min((Date.now() - hiddenAt) / 1000, 1800); hiddenAt = 0; // 切到別的分頁：小店與企業的期限也暫停 lastT = performance.now(); DRS.skip = 2; DRS.acc = DRS.n = 0; if (el < 8 || !S.web.length) return;
   let gain = 0, n = 0; for (let i = 0; i < Math.floor(el / 4) && S.web.length; i++) { const r = webTick(); if (r) { gain += r.price; n++; } }
-  if (n) { toast(`離開期間網站賣出 ${n} 件，+${fmt(gain)}`); sfx.coin(); renderTop(); renderHotbar(); }
+  if (n) { note('webAway', `離開的時候，網站賣出 ${n} 件，+${fmt(gain)}`, { n, inc: gain }); S.out = Math.min(99, (S.out || 0) + n); parcelSync(); sfx.coin(); renderTop(); renderHotbar(); }
 });
 let autoStart = false; try { autoStart = !!sessionStorage.getItem('squish_autostart'); sessionStorage.removeItem('squish_autostart'); } catch (e) { }
 if (autoStart) startPlay(); else showTitle();
