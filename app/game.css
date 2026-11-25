@@ -568,3 +568,4 @@ body.ware #objective { display: none; }
 @keyframes wGot { 0% { transform: scale(1); } 40% { transform: scale(1.22); border-color: #86efac; } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #sMoney.pay, .hbtn.got { animation: none; } }
 #talk .bkw.kp .tb.bark { font-size: max(16px, calc(var(--tkfs) * .94)); } /* 店員的一句話（價格、差多少錢）：手機也至少 16px */
+#says.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } /* 吊牌卡畫在 3D 裡：螢幕報讀器從這裡讀名稱、價格、說明 */

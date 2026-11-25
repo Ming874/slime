@@ -8126,7 +8126,7 @@ function wareStep(dt) {
     const u = clamp(e / WT.take, 0, 1); if (rm) { wCopy(B, C); cOp = clamp(e / 150, 0, 1); } else { pal(); wLerp(A, B, out3(u), ease3(u), ease3(u), C); if (e > WT.take) C.s *= 1 + .04 * Math.sin(Math.PI * clamp((e - WT.take) / 70, 0, 1)); C.q.multiply(wq2.setFromEuler(new THREE.Euler(0, 0, .05 * Math.sin(u * Math.PI)))); }
     grip = true; hk = rm ? 1 : ease3(clamp(e / 300, 0, 1));
     wMiniOn(C, R, h.spin, Mn); if (!rm && u < 1) { wv1.copy(tg.p); cam.worldToLocal(wv1); Mn.p.lerpVectors(wv1, Mn.p, out3(u)); Mn.s *= .4 + .6 * u; }
-    if (e >= 200 && !h.said) { h.said = 1; kpSay(h.shop, 'pick:' + h.wid); }
+    if (e >= 200 && !h.said) { h.said = 1; kpSay(h.shop, 'pick:' + h.wid); wareAria(h.st); }
     if (e >= WT.ready) h.ph = 'read';
   } else if (h.ph === 'read') {
     const sp = Math.hypot(P.vx, P.vz); if (sp > .6) { h.mvT += dt; h.stT = 0; } else { h.stT += dt; h.mvT = 0; } // 走動時放低到右下角，停下來又舉起
@@ -8199,9 +8199,11 @@ function warePayStep(h, e, rm, R, B, C, Mn) {
   if (e >= WT.end) { WARE.bag.visible = false; wareEnd(); return false; }
   return grip;
 }
+// 螢幕報讀器：名稱、價格、說明（卡片是 3D 畫布，DOM 裡沒有字）
+function wareAria(st, paid) { const e = $('#says'); if (!e) return; e.textContent = paid ? '已付款 ' + fmt(st.cost) + '，' + st.name : st.name + '，' + (st.why === 'has' ? '已購買' : st.why === 'max' ? '滿級' : fmt(st.cost) + (st.why === 'poor' ? '，還差 ' + fmt(st.d) : st.why === 'need' ? '，要先有' + st.need : '')) + '，' + wareDesc(st.id); }
 // 扣錢（第一枚硬幣落進托盤那一刻）：之後不能取消，走開、關掉頁面也已經存檔
 function wareCharge(h) {
-  if (h.ev.charged) return; const go = purchase(h.t, h.k, 'city'); if (!go) { wareEnd(); return; } h.ev.charged = 1; h.go = go;
+  if (h.ev.charged) return; const go = purchase(h.t, h.k, 'city'); if (!go) { wareEnd(); return; } h.ev.charged = 1; h.go = go; wareAria(h.st, true);
   const p = wTray(h.shop, new THREE.Vector3()).add(tmpV.set(0, .35, 0)); fx3(p, '−' + fmt(h.cost), '#fde047', 'big');
   const m = $('#sMoney'); if (m) { m.classList.remove('pay'); void m.offsetWidth; m.classList.add('pay'); setTimeout(() => m.classList.remove('pay'), 700); }
 }
