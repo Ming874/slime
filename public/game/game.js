@@ -7978,6 +7978,7 @@ const WT = { take: 380, ready: 450, back: 300, put: 320, purse: 200, coin0: 300,
 const WARE = { h: null, R: null, g: null, fz: null, pose: '', gadN: null, mode: '' };
 const wareE = () => WARE.fz != null ? WARE.fz : performance.now() - WARE.h.t0; // 測試時設 WARE.fz 把畫面停在某一刻（同 GX.fz）
 const wv1 = new THREE.Vector3(), wv2 = new THREE.Vector3(), wq1 = new THREE.Quaternion(), wq2 = new THREE.Quaternion(), WQ_FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const wE = new THREE.Euler(); // 每格重用（拿著商品時不產生垃圾）
 const wPose = () => ({ p: new THREE.Vector3(), q: new THREE.Quaternion(), s: 1 });
 function wareInit() {
   if (WARE.g) return; const g = WARE.g = new THREE.Group(); W.cam.add(g); g.visible = false;
@@ -8025,7 +8026,7 @@ function wWorld(p, q, sw, R, out) { out.p.copy(p); W.cam.worldToLocal(out.p); ou
 function wLerp(a, b, up, uq, us, out) { out.p.lerpVectors(a.p, b.p, up); out.q.slerpQuaternions(a.q, b.q, uq); out.s = a.s + (b.s - a.s) * us; return out; }
 function wCopy(a, out) { out.p.copy(a.p); out.q.copy(a.q); out.s = a.s; return out; }
 // 縮小模型在卡片上的位置：左 36% 那一格（卡片的像素座標），慢慢轉
-function wMiniOn(c, R, spin, out) { out.p.set(-R.w / 2 + R.w * .18, -R.h * .04, 0).multiplyScalar(c.s).applyQuaternion(c.q).add(c.p); const f = Math.max(.5, 1 - 40 * c.s / Math.max(.05, -out.p.z)); out.p.multiplyScalar(f); out.q.copy(c.q).multiply(wq1.setFromEuler(new THREE.Euler(.32, spin, 0))); out.s = R.h * .52 * c.s * f; return out; } // 往鏡頭拉近一點（沿著視線，畫面上的位置不變）
+function wMiniOn(c, R, spin, out) { out.p.set(-R.w / 2 + R.w * .18, -R.h * .04, 0).multiplyScalar(c.s).applyQuaternion(c.q).add(c.p); const f = Math.max(.5, 1 - 40 * c.s / Math.max(.05, -out.p.z)); out.p.multiplyScalar(f); out.q.copy(c.q).multiply(wq1.setFromEuler(wE.set(.32, spin, 0))); out.s = R.h * .52 * c.s * f; return out; } // 往鏡頭拉近一點（沿著視線，畫面上的位置不變）
 const WP = { a: wPose(), b: wPose(), c: wPose(), m: wPose(), n: wPose(), t: wPose() };
 /* ---------- 吊牌卡的畫布：名稱、價格、等級、兩行短說明、去向；結帳後重畫成送貨單 ---------- */
 function wareCard(h, mode) {
@@ -8123,7 +8124,7 @@ function wareStep(dt) {
   wRead(R, B); const pal = () => wWorld(tg.p, tg.q, tg.w, R, A); let grip = false, hk = 1, cOp = 1, mOp = 1, show = true, mini = true;
   const lowPose = out => { const RL = { w: R.w * .7, h: R.h * .7 }; RL.x = innerWidth - RL.w - 24; RL.y = innerHeight - RL.h * .78; return wRead(RL, out); };
   if (h.ph === 'take') {
-    const u = clamp(e / WT.take, 0, 1); if (rm) { wCopy(B, C); cOp = clamp(e / 150, 0, 1); } else { pal(); wLerp(A, B, out3(u), ease3(u), ease3(u), C); if (e > WT.take) C.s *= 1 + .04 * Math.sin(Math.PI * clamp((e - WT.take) / 70, 0, 1)); C.q.multiply(wq2.setFromEuler(new THREE.Euler(0, 0, .05 * Math.sin(u * Math.PI)))); }
+    const u = clamp(e / WT.take, 0, 1); if (rm) { wCopy(B, C); cOp = clamp(e / 150, 0, 1); } else { pal(); wLerp(A, B, out3(u), ease3(u), ease3(u), C); if (e > WT.take) C.s *= 1 + .04 * Math.sin(Math.PI * clamp((e - WT.take) / 70, 0, 1)); C.q.multiply(wq2.setFromEuler(wE.set(0, 0, .05 * Math.sin(u * Math.PI)))); }
     grip = true; hk = rm ? 1 : ease3(clamp(e / 300, 0, 1));
     wMiniOn(C, R, h.spin, Mn); if (!rm && u < 1) { wv1.copy(tg.p); cam.worldToLocal(wv1); Mn.p.lerpVectors(wv1, Mn.p, out3(u)); Mn.s *= .4 + .6 * u; }
     if (e >= 200 && !h.said) { h.said = 1; kpSay(h.shop, 'pick:' + h.wid); wareAria(h.st); }
@@ -8168,7 +8169,7 @@ function warePayStep(h, e, rm, R, B, C, Mn) {
   const mat = wMat(sh, wv2), flatQ = WQ_FLAT;
   if (e < WT.give) { // 0–320：卡片平躺飛到結帳墊、縮小模型站在墊子左邊
     const u = clamp(e / WT.put, 0, 1); wWorld(mat, flatQ, .5, R, WP.t); wLerp(h.from, WP.t, out3(u), ease3(u), ease3(u), C);
-    wv1.copy(mat).add(tmpV.set(-.36, .1, 0)); wWorld(wv1, wq2.setFromEuler(new THREE.Euler(0, h.spin, 0)), .2, R, WP.n); WP.n.s = .22; wLerp(h.mf, WP.n, out3(u), ease3(u), ease3(u), Mn); // 縮小模型站在墊子左邊（世界裡直立、慢慢轉），大小 22 公分
+    wv1.copy(mat).add(tmpV.set(-.36, .1, 0)); wWorld(wv1, wq2.setFromEuler(wE.set(0, h.spin, 0)), .2, R, WP.n); WP.n.s = .22; wLerp(h.mf, WP.n, out3(u), ease3(u), ease3(u), Mn); // 縮小模型站在墊子左邊（世界裡直立、慢慢轉），大小 22 公分
     grip = e < WT.purse; WARE.hk = 1 - ease3(clamp(e / WT.purse, 0, 1)); if (e >= WT.stamp && h.go !== 'bag') { WARE.miniOn = h.go === 'wear' ? e < WT.stamp + 240 : false; WARE.mOp = h.go === 'wear' ? 1 - clamp((e - WT.stamp) / 240, 0, 1) : 1; }
     if (h.go !== 'ship' && e >= WT.stamp) WARE.cOp = 1 - clamp((e - WT.stamp) / 200, 0, 1); // 紙包／穿上：卡片淡出
   }
@@ -8219,7 +8220,7 @@ function wareCoinsPay(h, e) {
   if (!h.ev.p0) { h.ev.p0 = VM.purse.getWorldPosition(new THREE.Vector3()); h.ev.tr = wTray(h.shop, new THREE.Vector3()); }
   const m = tmpM4 || (tmpM4 = new THREE.Matrix4()), p0 = h.ev.p0, p1 = h.ev.tr, v = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1);
   for (let i = 0; i < n; i++) { const t0 = WT.coin0 + i * WT.gap, u = clamp((e - t0) / WT.fly, 0, 1); if (u >= 1 && !h.ev['c' + i]) { h.ev['c' + i] = 1; shopSnd.coin(i); }
-    v.lerpVectors(p0, p1, u).add(tmpV.set((i - n / 2) * .03 * u, Math.sin(u * Math.PI) * .25 + (u >= 1 ? i * .009 : 0), 0)); q.setFromEuler(new THREE.Euler(u * 6, 0, u * 2)); sc.setScalar(e < t0 ? .001 : 1); m.compose(v, q, sc); C.setMatrixAt(i, m); }
+    v.lerpVectors(p0, p1, u).add(tmpV.set((i - n / 2) * .03 * u, Math.sin(u * Math.PI) * .25 + (u >= 1 ? i * .009 : 0), 0)); q.setFromEuler(wE.set(u * 6, 0, u * 2)); sc.setScalar(e < t0 ? .001 : 1); m.compose(v, q, sc); C.setMatrixAt(i, m); }
   C.instanceMatrix.needsUpdate = true;
 }
 // 錢不夠（1500 ms）：攤開零錢包抖三下、只掉出幾枚硬幣和一小團灰塵；店員搖頭、說差多少、吊牌貼一顆 ♡，東西飛回原位
@@ -8234,7 +8235,7 @@ function warePoorStep(h, e, rm, R, B, C, Mn) {
   if (at(300)) kpDo(h.shop, 'shake', 600); if (at(400)) wish();
   if (at(500)) { shopSnd.dust(); const p = VM.purse.getWorldPosition(new THREE.Vector3()); if (W.goo) W.goo.emit(p, 6, '#9ca3af', { gy: P.y + .02, up: .4, speed: .5, size: .03 }); ev.p0 = p; }
   // 只掉出 n 枚：從零錢包往下掉到地上
-  const Cn = WARE.coins; if (e >= 500 && e < 1000 && h.n > 0) { Cn.visible = true; Cn.count = h.n; const m = tmpM4 || (tmpM4 = new THREE.Matrix4()), v = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); for (let i = 0; i < h.n; i++) { const tt = (e - 500) / 1000, y = Math.max(P.y + .01, ev.p0.y - 4.9 * tt * tt); v.set(ev.p0.x + (i - 1) * .05, y, ev.p0.z + i * .02); q.setFromEuler(new THREE.Euler(y > P.y + .02 ? tt * 9 : Math.PI / 2, 0, 0)); sc.setScalar(e < 800 ? 1 : 1 - (e - 800) / 200); m.compose(v, q, sc); Cn.setMatrixAt(i, m); } Cn.instanceMatrix.needsUpdate = true; } else Cn.visible = false;
+  const Cn = WARE.coins; if (e >= 500 && e < 1000 && h.n > 0) { Cn.visible = true; Cn.count = h.n; const m = tmpM4 || (tmpM4 = new THREE.Matrix4()), v = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); for (let i = 0; i < h.n; i++) { const tt = (e - 500) / 1000, y = Math.max(P.y + .01, ev.p0.y - 4.9 * tt * tt); v.set(ev.p0.x + (i - 1) * .05, y, ev.p0.z + i * .02); q.setFromEuler(wE.set(y > P.y + .02 ? tt * 9 : Math.PI / 2, 0, 0)); sc.setScalar(e < 800 ? 1 : 1 - (e - 800) / 200); m.compose(v, q, sc); Cn.setMatrixAt(i, m); } Cn.instanceMatrix.needsUpdate = true; } else Cn.visible = false;
   if (e >= 1000) { const u = clamp((e - 1000) / 300, 0, 1); wWorld(h.it.tag.p, h.it.tag.q, h.it.tag.w, R, WP.a); wLerp(h.from, WP.a, out3(u), ease3(u), ease3(u), C); wMiniOn(C, R, h.spin, Mn); wv1.copy(h.it.tag.p); W.cam.worldToLocal(wv1); Mn.p.lerp(wv1, in3(u)); Mn.s *= 1 - .6 * u; grip = true; WARE.hk = 1 - ease3(clamp((e - 1150) / 150, 0, 1)); if (e >= 1300) { WARE.cOp = WARE.mOp = 0; } }
   if (at(1300)) { shopSnd.heart(); shopSnd.put(); }
   if (e >= WT.poor) { wareEnd(); return false; }
