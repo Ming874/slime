@@ -96,7 +96,8 @@
   });
 
   /* ---------- 隨機的樹與石頭：這些地方不長（世界座標） ---------- */
-  const ZONES = [[-10.5, -30.5, 7.5], [-18, -35.5, 6], [-5.5, -26.5, 4.2], [-35.5, 18.5, 6.5]]; // 白樺丘、苔石丘（基礎單位：x, z, 半徑）
+  const STAR = { x: 11.5, z: -32.2, ry: -.34 }; // 看星星的躺椅（彩蛋「對流星許願」的引子）：北邊小徑東側的小丘頂，椅子朝著山谷
+  const ZONES = [[-10.5, -30.5, 7.5], [-18, -35.5, 6], [-5.5, -26.5, 4.2], [-35.5, 18.5, 6.5], [STAR.x, STAR.z, 3.2]]; // 白樺丘、苔石丘、看星星的小丘（基礎單位：x, z, 半徑）
   const clearing = (x, z) => fbm(x * .05 + 3.1, z * .05 - 1.7, 61) < .37; // 林間空地：低頻雜訊挖出幾片大小不一的草地（約四分之一；再多就變成一整片空草原）
   regionAvoid((x, z) => {
     const bx = x / K, bz = z / K, r = Math.max(Math.abs(bx), Math.abs(bz)); if ((bx - SNOW.x) ** 2 + (bz - SNOW.z) ** 2 < 25) return true; if (r > 41.6) return false;
@@ -541,6 +542,35 @@
     if (t > 1.4 && !HAM.said) { HAM.said = true; eggHit('plain_hammock', '躺在吊床上晃呀晃……白樺葉子之間的天空好藍。'); }
   }
 
+  /* ---------- 北：看星星的躺椅（彩蛋「對流星許願」的引子，10.3） ----------
+     流星本來只有「晴朗的夜裡在中央平地抬頭看天空久一點」才看得到，平常完全沒有線索。小丘頂上擺一張往後仰的帆布躺椅、
+     一個枕頭和摺好的小毯子，旁邊一罐摺好的紙星星（撒了幾顆在草地上，夜裡會亮）：白天經過就知道「有人在這裡看天空」。
+     躺上去（E）鏡頭慢慢仰起來看天空，最多躺 9 秒；晚上躺著，game.js 的 starStep 3 秒後就會有流星。全部併進東北那一組（0 次新繪製） */
+  const STARC = { on: 0, t: 0, said: 0 };
+  function buildStarGaze(ks, kf) {
+    const x = STAR.x * K, z = STAR.z * K, y = H(x, z), B = M4(x, y, z, 0, STAR.ry, 0), L = (lx, ly, lz) => V3(lx, ly, lz).applyMatrix4(B), op = { by: y, ax: x, az: z };
+    const put = (k, geo, col, lx, ly, lz, rx = 0, ry = 0, sx = 1, sy = sx, sz = sx, o) => k.add(geo, col, B.clone().multiply(M4(lx, ly, lz, rx, ry, 0, sx, sy, sz)), Object.assign({}, op, o));
+    // 木頭骨架：兩邊的扶手（坐墊那段低、靠背那段往後仰）、椅腳、撐桿、前後橫桿
+    [-.3, .3].forEach(sx => { seg(ks, L(sx, .3, .55), L(sx, .36, -.25), .03, '#a07850', 6, .03, op); seg(ks, L(sx, .36, -.25), L(sx, .98, -.7), .03, '#a07850', 6, .03, op);
+      seg(ks, L(sx, 0, .5), L(sx, .3, .52), .028, '#8b6544', 5, .028, op); seg(ks, L(sx, 0, -.25), L(sx, .36, -.25), .028, '#8b6544', 5, .028, op); seg(ks, L(sx, 0, -.78), L(sx, .72, -.56), .026, '#8b6544', 5, .026, op); });
+    seg(ks, L(-.3, .3, .55), L(.3, .3, .55), .026, '#8b6544', 5, .026, op); seg(ks, L(-.3, .98, -.7), L(.3, .98, -.7), .026, '#8b6544', 5, .026, op);
+    // 帆布：藍白藍三條，坐墊與靠背各一片；靠背上一顆枕頭、坐墊前端一條摺好的毯子
+    [-.19, 0, .19].forEach((cx, i) => { const c = i === 1 ? '#fef3c7' : '#7cb7f2'; put(ks, new THREE.BoxGeometry(.19, .025, .82), c, cx, .32, .15, .075); put(ks, new THREE.BoxGeometry(.19, .025, .78), c, cx, .68, -.48, .94); });
+    put(ks, new THREE.SphereGeometry(.17, 10, 6), '#fde68a', 0, 1, -.62, .94, 0, 1.4, .45, .8); put(ks, new THREE.BoxGeometry(.52, .07, .22), '#c4b5fd', 0, .37, .4, .075); put(ks, new THREE.BoxGeometry(.52, .02, .23), '#a78bfa', 0, .41, .4, .075);
+    // 一罐摺好的紙星星（夜裡微微發亮），幾顆撒在草地上
+    put(kf, new THREE.CylinderGeometry(.1, .1, .24, 10), '#fff3c4', .62, .12, .1, 0, 0, 1, 1, 1, { gl: .5 }); put(kf, new THREE.CylinderGeometry(.07, .072, .05, 8), '#a16207', .62, .265, .1);
+    ['#fde047', '#f9a8d4', '#93c5fd', '#c4b5fd', '#86efac', '#fdba74'].forEach((c, i) => { const a = i * 1.1 + .4, r = .2 + (i % 3) * .08; put(kf, new THREE.OctahedronGeometry(.04, 0), c, .62 + Math.cos(a) * r, .025, .1 + Math.sin(a) * r, .3, i, 1, .55, 1, { gl: .9 }); });
+    addCol({ x, z, r: .55 });
+    addInter(hitBox(.8, 1.1, 1.5, x, y + .55, z, W.scene), 'nook', 'plain_star', '躺下來看天空', { act: starAct }).hit.rotation.y = STAR.ry;
+  }
+  function starAct() { if (STARC.on) return; Object.assign(STARC, { on: 1, t: 0, px: P.x, pz: P.z }); if (S.sound) { try { const t = audio().currentTime; noise(audio(), t, .25, 900, .7, .03, 'lowpass'); tone(392, t + .1, .35, .025, 'triangle'); } catch (e) { } } }
+  function starLie(dt) {
+    if (!STARC.on) return; STARC.t += dt; const t = STARC.t;
+    if (Math.hypot(P.x - STARC.px, P.z - STARC.pz) > .8 || GUI.kind || t > 9) { STARC.on = 0; return; } // 走開、打開介面或躺夠了
+    if (t < 3) P.pitch += (1.05 - P.pitch) * Math.min(1, dt * 2); // 往後一靠，看著天空（流星要抬頭 3 秒：game.js 的 starStep）
+    if (t > 2.2 && !STARC.said && DN.night < .5) { STARC.said = 1; bark(SELF, '天空好藍……晚上躺在這裡，一定看得到好多星星。'); }
+  }
+
   /* ---------- 西南：苔石丘（疊石柱、老樹、夜光蘑菇） ---------- */
   function buildKnoll(ks, kf) {
     const rd = seeded(711), KX = -35.5, KZ = 18.5, P = (bx, bz) => [(KX + bx) * K, (KZ + bz) * K];
@@ -709,6 +739,7 @@
     buildPlateau(kits.en.s, kits.en.f);
     buildBirch(kits.wn.s, kits.wn.f);
     buildKnoll(kits.ws.s, kits.ws.f);
+    buildStarGaze(kits.en.s, kits.en.f);
     buildFoot({ en: kits.en, wn: kits.wn, ws: kits.ws, es: kits.es });
     buildMeadows({ en: kits.en, wn: kits.wn, ws: kits.ws, es: kits.es });
     buildPathGlow({ en: kits.en, wn: kits.wn, ws: kits.ws, es: kits.es });
@@ -718,6 +749,6 @@
   regionStep((dt, t) => {
     if (!P) return; if (MT) MT.U.value = DN.night;
     const bx = P.x / K, bz = P.z / K; if (inCity() || Math.max(Math.abs(bx), Math.abs(bz)) > 60) { if (DF) DF.im.visible = false; if (BF) BF.im.visible = false; return; } // 不在中央平地附近（或在城市）：什麼都不用算，蟲子也不畫
-    dfStep(dt, t); bfStep(dt, t); scopeStep(dt); hamStep(dt); stepStep();
+    dfStep(dt, t); bfStep(dt, t); scopeStep(dt); hamStep(dt); starLie(dt); stepStep();
   });
 })();

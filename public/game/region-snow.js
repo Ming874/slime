@@ -473,6 +473,13 @@
     for (let i = 0; i < (LOW ? 6 : 10); i++) { const a = rdm() * PI2, R = mesaR(a) - .9; if (Math.abs(wrapA(a - Math.atan2(RAMP.bz - MESA.z, RAMP.bx - MESA.x))) < .4) continue; const x = MESA.x + Math.cos(a) * R, z = MESA.z + Math.sin(a) * R; snowRock(kt, M, x * K, z * K, .35 + rdm() * .5, 1320 + i, rdm); }
     { const [X, Z] = P(-99.6, -36.8), a = kt.at(X, Z, -.1); a(M.flat, new THREE.CylinderGeometry(.08, .13, .9, 6), '#5b4030', 0, .45, 0); [[.8, 1.1, .95], [.6, .95, 1.5], [.42, .8, 1.95]].forEach(([r, h, y], i) => { a(M.flat, jit(new THREE.ConeGeometry(r, h, 8, 2), .2, 1330 + i), '#2c5a46', 0, y, 0); a(M.flat, new THREE.ConeGeometry(r * .8, h * .38, 8), '#f8fafc', 0, y + h * .3, 0); }); addCol({ x: X, z: Z, r: .5, tree: 1 }); }
     flowers(kt, GLOW, -104 * K, -36.4 * K, LOW ? 3 : 6, rdm, 1);
+    // 彩蛋「台地上的極光」的引子（10.3）：台地中央的雪地上印著一個雪天使（有人在這裡躺下來、揮著手腳看天空），旁邊一個紅色保溫瓶和一雙手套
+    { const [X, Z] = P(-102.3, -43.3), ry = .5, c = Math.cos(ry), s = Math.sin(ry), w = (lx, lz) => [X + lx * c + lz * s, Z - lx * s + lz * c];
+      const flat = (geo, lx, lz, dy, sx = 1, sy = 1) => { const [x, z] = w(lx, lz); kt.add(M.flat, geo, '#b2c7de', M4(x, H(x, z) + dy, z, -Math.PI / 2, 0, ry, sx, sy, 1)); }; // 壓下去的雪比較暗、偏藍
+      flat(new THREE.CircleGeometry(.95, 7, -.87, 2.18), .12, -.55, .045); flat(new THREE.CircleGeometry(.95, 7, 1.83, 2.18), -.12, -.55, .046); // 揮出來的兩片翅膀
+      flat(new THREE.CircleGeometry(1, 6, 4.1, 1.22), 0, .05, .047); flat(new THREE.CircleGeometry(.27, 10), 0, -.3, .049, 1, 1.5); flat(new THREE.CircleGeometry(.2, 10), 0, -.95, .049); // 腳、身體、頭
+      { const [x, z] = w(.75, -.95), y = H(x, z); kt.add(M.flat, new THREE.CylinderGeometry(.06, .06, .24, 10), '#dc2626', M4(x, y + .12, z)); kt.add(M.flat, new THREE.CylinderGeometry(.064, .064, .06, 10), '#e5e7eb', M4(x, y + .27, z)); }
+      [[.95, -.55], [1.08, -.42]].forEach(([lx, lz], i) => { const [x, z] = w(lx, lz); kt.add(M.flat, new THREE.SphereGeometry(.08, 8, 5), '#f472b6', M4(x, H(x, z) + .03, z, 0, ry + i * .6, 0, 1, .4, 1.4)); }); }
   }
   function centerScene(kt, M, GLOW, rdm) {
     // 路口的導覽圖：兩根柱子、木框、遮雨的小屋頂（積著雪）；圖面在 signs() 的貼圖上

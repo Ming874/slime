@@ -2726,6 +2726,10 @@ function nookObsidian(M) {
   const mx = cx, mz = cz, my = H(mx, mz) - .1, mm = M4(mx, my, mz, 0, face, 0);
   kt.add(M.obs, jit(new THREE.BoxGeometry(1.9, 3, .55, 2, 3, 1), .06, 5).translate(0, 1.5, 0), '#120e1a', mm);
   kt.add(M.obs, new THREE.BoxGeometry(1.5, 2.3, .02).translate(0, 1.65, .29), '#0b0911', mm);
+  // 彩蛋的引子（10.3）：一串沾著紫水晶粉的小圓腳印從小徑那頭走過來，在鏡石正前方並排停住——有誰在這裡站著照過鏡子（夜光材質，天黑後微微發亮）
+  { const nx = Math.sin(face), nz = Math.cos(face), px = -nz, pz = nx;
+    for (let i = 0, d = 5.2; d > 1.9; i++, d -= .5) { const sd = i % 2 ? .08 : -.08, x = mx + nx * d + px * sd, z = mz + nz * d + pz * sd; kt.add(M.night, new THREE.CircleGeometry(.085, 8), '#7c6aa6', M4(x, H(x, z) + .02, z, -Math.PI / 2, 0, face, 1, 1.3, 1)); }
+    [-1, 1].forEach(sd => { const x = mx + nx * 1.55 + px * sd * .14, z = mz + nz * 1.55 + pz * sd * .14; kt.add(M.night, new THREE.CircleGeometry(.095, 8), '#8b7bb8', M4(x, H(x, z) + .02, z, -Math.PI / 2, 0, face, 1, 1.3, 1)); }); }
   kt.done(200); addCol({ x: mx, z: mz, r: 1 });
   // 鏡子裡的「倒影」：一張害羞的史萊姆臉（站在正前方、面對它一下子才會慢慢浮現）
   const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
@@ -2756,6 +2760,10 @@ function nookTube(M) {
   for (let i = 0; i < 7; i++) { const a = .5 + rd() * 2.1, x = cx - L / 2 + 1 + rd() * (L - 2); kt.add(M.lamp, new THREE.BoxGeometry(1.2 + rd() * 1.4, .035, .035), '#b4441a', M4(x, y + Math.sin(a) * (R0 - .03), cz + Math.cos(a) * (R0 - .03), a, 0, 0)); }
   for (let i = 0; i < 6; i++) { const x = cx - L / 2 + 1.5 + i * 1.6, h = .15 + rd() * .2, dz = (rd() < .5 ? -1 : 1) * (.5 + rd() * .5); kt.add(M.flat, new THREE.ConeGeometry(.07, h, 5), '#3a2c28', M4(x, y + Math.sqrt(R0 * R0 - dz * dz) - h / 2 + .03, cz + dz, Math.PI, 0, 0)); }
   const my = H(cx, cz); for (let k = 0; k < 6; k++) kt.add(M.lamp, new THREE.OctahedronGeometry(.1 + rd() * .08, 0), k % 2 ? '#fb923c' : '#fdba74', M4(cx + 1.2 + (rd() - .5) * .5, my + .12, cz - 1.25 + (rd() - .5) * .4, rd(), rd(), 0, .7, 1.8, .7));
+  // 彩蛋的引子（10.3）：還溫溫的地上留著一串發紅的小圓腳印，從西邊洞口走進來、突然斷掉，隔一大步才是一個濺開的圓印——有誰在這裡跳了一下
+  for (let i = 0, x = cx - L / 2 - 1.2; x < cx - 1.5; i++, x += .5) { const z = cz + .45 + (i % 2 ? .07 : -.07); kt.add(M.lamp, new THREE.CircleGeometry(.08, 8), '#5c2410', M4(x, H(x, z) + .02, z, -Math.PI / 2, 0, -Math.PI / 2, 1, 1.3, 1)); }
+  { const x = cx + .35, z = cz + .4, y = H(x, z) + .025; kt.add(M.lamp, new THREE.CircleGeometry(.24, 10), '#8a3414', M4(x, y, z, -Math.PI / 2, 0, 0, 1.15, 1, 1));
+    for (let k = 0; k < 6; k++) { const a = k / 6 * PI2 + .3, r = .36 + (k % 2) * .12; kt.add(M.lamp, new THREE.CircleGeometry(.04 + (k % 3) * .012, 6), '#7a2e12', M4(x + Math.cos(a) * r, y, z + Math.sin(a) * r, -Math.PI / 2, 0, 0)); } }
   kt.done(110);
   const sl = new THREE.Mesh(toyGeo('#ff7a59', true), M.toy); sl.position.set(cx + .6, my + .02, cz - 1.15); sl.rotation.y = -.3; sl.scale.setScalar(.55); chunkObj(sl, 50, false, [cx, cz, 2]);
   addCol({ box: [cx - L / 2, cz + 1.8, cx + L / 2, cz + R1 + .3] }); addCol({ box: [cx - L / 2, cz - R1 - .3, cx + L / 2, cz - 1.8] });
@@ -3537,21 +3545,131 @@ function buildGates() {
   Object.keys(GATES).forEach(k => {
     if (S.zones.includes(k)) return; const c = CAVES.find(o => o.def.gate === k); if (!c) return;
     const w = c.Wd[0], h = c.Hh[0], g = new THREE.Group(); g.position.set(c.X[0] + c.TX[0] * 1.4, c.y0, c.Z[0] + c.TZ[0] * 1.4); g.rotation.y = Math.atan2(c.TX[0], c.TZ[0]); W.scene.add(g);
-    const rockM = std('#475569', { flatShading: true, roughness: .9 });
-    [-1, 1].forEach(o => { const r = mesh(jit(new THREE.CylinderGeometry(.32, .48, h * .95, 7, 3), .25, o + 3), rockM, o * w * .9, h * .47, 0, g); r.castShadow = !LOW; });
+    // 兩根石柱與門中央的封印石合併成一個網格（原本兩根柱子各一次繪製＋文字牌；「還要什麼才能過」改由封印石上的凹槽說，見下面的 gateSeal）
+    const fr = [-1, 1].map(o => [jit(new THREE.CylinderGeometry(.32, .48, h * .95, 7, 3), .25, o + 3), '#475569', M4(o * w * .9, h * .47, 0)]), seal = gateSeal(k, fr, Math.min(2.05, h * .42), -.14, 1);
+    const rock = mesh(mergeParts(fr), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0 }), 0, 0, 0, g); rock.castShadow = !LOW; g.add(seal.fill);
     const mat = new THREE.MeshBasicMaterial({ color: '#a78bfa', map: gateTex, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     mesh(new THREE.PlaneGeometry(w * 1.85, h * .94), mat, 0, h * .47, 0, g);
-    const run = textSprite('能量門', '#c4b5fd'); run.position.set(0, h + 1.8, -2.6); g.add(run); // 要解開哪個謎題：對準時準心旁會寫（gate 的 targetLabel），目標面板也寫著
     const it = addInter(hitBox(w * 1.85, h, .6, 0, h / 2, 0, g), 'gate', k, '能量門');
-    caveSetLayers(g, 1); W.gates[k] = { g, mat, col: null, it, fade: 0 };
+    caveSetLayers(g, 1); W.gates[k] = { g, mat, col: null, it, fade: 0, seal };
   });
   buildColdWall(); buildRoads();
-  W.anim.push((dt, t) => { if (gateTex) gateTex.offset.y = t * .3; Object.keys(W.gates).forEach(k => { const gt = W.gates[k]; if (gt.fade > 0) { gt.fade -= dt; gt.mat.opacity = .55 * Math.max(0, gt.fade); if (gt.fade <= 0) { dropObj(gt.g); delete W.gates[k]; } } else gt.mat.opacity = .45 + Math.sin(t * 2) * .1; }); });
+  W.anim.push((dt, t) => { if (gateTex) gateTex.offset.y = t * .3; Object.keys(W.gates).forEach(k => { const gt = W.gates[k]; if (gt.fade > 0) { gt.fade -= dt; gt.mat.opacity = .55 * Math.max(0, gt.fade); sealOpen(gt.seal, gt.fade); if (gt.fade <= 0) { dropObj(gt.g); delete W.gates[k]; } } else { sealStep(k, gt, dt); gt.mat.opacity = .45 + Math.sin(t * 2) * .1 + gt.seal.pulse * .3; } }); });
 }
 function openGate(k) {
   const gt = W.gates[k]; if (!gt) return; gt.fade = 1.5;
   for (const arr of W.cols.values()) { const i = arr.indexOf(gt.col); if (i >= 0) arr.splice(i, 1); }
   W.inter = W.inter.filter(it => it !== gt.it);
+}
+/* ---------- 能量門上的封印（11.2 用世界說「還不能」） ----------
+   門中央浮著一塊圓形的封印石：上半圈 N 個小史萊姆形狀的凹槽＝要先用前一區的史萊姆做出 N 個捏捏（QUEST.need），每做出一個亮一格（那一區的顏色）；
+   中間的圖案＝謎題的進度（海岸門：五片古地圖，撿到一片亮一片；火山門：潮汐石四步，點亮一步亮一顆，點錯就一起熄掉）。
+   捏捏是在工坊做的，人不在門前：走回門前 28 公尺內才一格一格亮給你看（叮一聲、冒一點光點）。撞到門、對門按 E、去碰還被封著的謎題時，
+   沒亮的凹槽閃兩下＋低低的嗡聲——取代原本「能量門還封著：解開…」「被一股力量封印著……先做出 N 個捏捏」的 toast 與門上的文字牌。
+   石頭（封印石、外圈）併進門柱的網格；會亮的部分（小史萊姆、地圖片、寶石）是另一個不吃光的頂點色網格，亮暗只改頂點色：一座門共 2 次繪製（原本柱子 2 次＋文字牌 1 次）。
+   凹槽的框與中間的內圈也在不吃光的網格裡（淡紫色）：夜裡石頭暗成一片時，還數得出有幾格是空的；撞門時閃的是空凹槽的「框」（亮白），裡面只透一點淡紫，
+   不會閃成那一區的顏色（原本閃到最亮時跟亮著的凹槽只差一對眼睛，分不出哪幾格亮了）。
+   海岸門的五片古地圖是歪七扭八、還沒拼好的（各自轉一個角度、往外散開一點）：五片都撿齊、封印全亮了門還不開＝還要去旁邊的石台把地圖拼回去；門打開時才一片片轉回來拼成一個圓（sealFit） */
+const SEAL_OFF = new THREE.Color('#2a2540'), SEAL_RIM = new THREE.Color('#7d72ad'), SEAL_EYE = new THREE.Color('#1f2937'), SEAL_HUM = new THREE.Color('#7c6fb0'), SEAL_W = new THREE.Color('#ffffff'), SEAL_C = new THREE.Color(), SEAL_FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+const sealProg = k => { const Q = QUEST[k], q = qState(); return { a: Math.min(Q.need, madeIn(Q.from)), b: k === 'coast' ? q.frags.length : q.tide.length }; };
+const sealHave = (o, p) => o.i < (o.k === 'a' ? p.a : p.b);
+// fr：石頭零件的陣列（封印石併進去）；(0, y, z)＝封印石中心（父物件的本地座標），s＝縮放，正面朝 −z。回傳 { fill（會亮的網格）, slots, pulse… }
+function gateSeal(k, fr, y, z, s) {
+  const Q = QUEST[k], R = .8, B = M4(0, y, z, 0, 0, 0, s), at = (x, yy, zz, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => B.clone().multiply(M4(x, yy, zz, rx, ry, rz, sx, sy, sz));
+  const fp = [], slots = []; let nv = 0;
+  const put = (geo, m, c = '#2a2540') => { const g = geo.index ? geo.toNonIndexed() : geo; if (g !== geo) geo.dispose(); fp.push([g, c, m]); nv += g.attributes.position.count; return [nv - g.attributes.position.count, nv]; };
+  // 石頭：封印石、外圈；中間圖案的內圈是淡紫色、不吃光（夜裡也看得到）
+  fr.push([new THREE.CylinderGeometry(R, R, .16, 22), '#4a4560', at(0, 0, 0, Math.PI / 2)], [new THREE.TorusGeometry(R, .065, 6, 28), '#8b80b8', at(0, 0, -.08)]); put(new THREE.TorusGeometry(.35, .035, 5, 22), at(0, -.06, -.085), '#' + SEAL_RIM.getHexString());
+  // 上半圈：N 個小史萊姆凹槽（半圓的框＋底座，裡面一隻圓頂小史萊姆；亮的時候才看得到眼睛）
+  const n = Q.need, col = new THREE.Color(ZONES.find(o => o.id === Q.from).acc);
+  for (let i = 0; i < n; i++) {
+    const a = Math.PI * (n === 1 ? .5 : .83 - .66 * i / (n - 1)), x = -Math.cos(a) * .55, yy = Math.sin(a) * .55 - .1; // 正面朝 −z：本地 −x 在看的人右手邊，第一格放左邊
+    const f0 = nv; put(new THREE.TorusGeometry(.155, .03, 4, 12, Math.PI), at(x, yy, -.09)); put(new THREE.BoxGeometry(.37, .035, .05), at(x, yy - .01, -.09)); const f1 = nv; // 框：顏色由 sealPaint 上
+    const [b0, b1] = put(new THREE.SphereGeometry(.12, 12, 6, 0, PI2, 0, Math.PI / 2), at(x, yy, -.1, 0, 0, 0, 1, .9, .55)), e0 = nv;
+    [-1, 1].forEach(e => put(new THREE.SphereGeometry(.018, 6, 4), at(x + e * .04, yy + .055, -.166)));
+    slots.push({ k: 'a', i, b0, b1, e0, e1: nv, f0, f1, col, hum: SEAL_HUM, p: new THREE.Vector3(x, yy + .06, -.16).applyMatrix4(B), on: 0, fl: 0 });
+  }
+  // 中間：謎題的圖案。海岸門＝五片古地圖（扇形），火山門＝四顆潮汐石的寶石（菱形；沒亮的一律暗色，不洩漏是哪四種顏色）
+  const mid = (i, geo, m, c, x, yy) => { const [b0, b1] = put(geo, m); slots.push({ k: 'b', i, b0, b1, e0: 0, e1: 0, col: new THREE.Color(c), hum: SEAL_HUM, p: new THREE.Vector3(x, yy, -.12).applyMatrix4(B), on: 0, fl: 0 }); };
+  if (k === 'coast') for (let i = 0; i < 5; i++) { const a = Math.PI / 2 + (i + .5) * PI2 / 5; mid(i, new THREE.CircleGeometry(.29, 3, Math.PI / 2 + i * PI2 / 5 + .06, PI2 / 5 - .12), at(0, -.06, -.095, 0, Math.PI, 0), '#f5deb0', -Math.cos(a) * .16, -.06 + Math.sin(a) * .16); }
+  else TIDE_ORDER.forEach((ci, i) => { const a = Math.PI / 2 - i * Math.PI / 2, x = -Math.cos(a) * .15, yy = -.06 + Math.sin(a) * .15; mid(i, new THREE.OctahedronGeometry(.075, 0), at(x, yy, -.1, 0, 0, 0, 1, 1.3, .6), TIDE[ci].c, x, yy); });
+  const fill = new THREE.Mesh(mergeParts(fp), new THREE.MeshBasicMaterial({ vertexColors: true })), p = sealProg(k), st = { fill, slots, pulse: 0, chk: 0, bumpT: -1e9, anim: false, y, z, s };
+  slots.forEach(o => { o.on = sealHave(o, p) ? 1 : 0; }); // 載入時已經做到的直接亮著，不重演一次
+  if (k === 'coast') { // 五片古地圖還沒拼好：記下每一片原本的頂點，各自繞自己的中心轉一個角度、往外散開一點（sealFit）
+    const pa = fill.geometry.attributes.position, M = slots.filter(o => o.k === 'b'), cen = q => { let x = 0, yy = 0; for (let v = q.b0; v < q.b1; v++) { x += pa.getX(v); yy += pa.getY(v); } return [x / (q.b1 - q.b0), yy / (q.b1 - q.b0)]; };
+    const C = M.map(cen), mx = C.reduce((a, c) => a + c[0], 0) / C.length, my = C.reduce((a, c) => a + c[1], 0) / C.length;
+    st.mp = M.map((o, i) => { const [cx, cy] = C[i], L = Math.hypot(cx - mx, cy - my) || 1; return { b0: o.b0, b1: o.b1, cx, cy, a: [.7, -.35, 1, -.8, .3][i], ox: (cx - mx) / L * .065 * s, oy: (cy - my) / L * .065 * s, p: pa.array.slice(o.b0 * 3, o.b1 * 3) }; });
+    sealFit(st, 0);
+  }
+  sealPaint(st); return st;
+}
+// 頂點色：亮的＝那一格的顏色（剛亮起來時先白一下），沒亮的＝暗暗的凹槽（被撞時閃兩下）；open＝門正在打開（0～1，全部亮成白色）
+function sealPaint(st, open = 0) {
+  const ca = st.fill.geometry.attributes.color, ph = st.pulse > 0 ? Math.sin((1.2 - st.pulse) / .6 * Math.PI) ** 2 : 0; // pulse 從 1.2 倒數：閃兩下
+  for (const o of st.slots) {
+    if (o.on) SEAL_C.copy(o.col).lerp(SEAL_W, Math.max(o.fl * .85, open)); else SEAL_C.copy(SEAL_OFF).lerp(o.hum, Math.max(ph * (o.k === 'a' ? .45 : .75), open * .6));
+    for (let v = o.b0; v < o.b1; v++) ca.setXYZ(v, SEAL_C.r, SEAL_C.g, SEAL_C.b);
+    const e = o.on ? SEAL_EYE : SEAL_C; for (let v = o.e0; v < o.e1; v++) ca.setXYZ(v, e.r, e.g, e.b);
+    if (o.f1) { SEAL_C.copy(SEAL_RIM).lerp(SEAL_W, Math.max(o.on ? 0 : ph * .9, open)); for (let v = o.f0; v < o.f1; v++) ca.setXYZ(v, SEAL_C.r, SEAL_C.g, SEAL_C.b); } // 空凹槽的框閃亮白
+  }
+  ca.needsUpdate = true;
+}
+function sealStep(k, gt, dt) {
+  const st = gt.seal; if (!st) return; let paint = st.pulse > 0 || st.anim; st.pulse = Math.max(0, st.pulse - dt);
+  if ((st.chk -= dt) <= 0) {
+    st.chk = .5; const p = sealProg(k);
+    for (const o of st.slots) if (o.on && !sealHave(o, p)) { o.on = 0; paint = true; } // 潮汐石點錯了：中間的寶石一起熄掉
+    const nx = Math.hypot(P.x - gt.g.position.x, P.z - gt.g.position.z) < 28 && st.slots.find(o => !o.on && sealHave(o, p)); // 走回門前：還沒亮給你看的，一次亮一格
+    if (nx) { nx.on = 1; nx.fl = 1; paint = true; sealDing(gt.g, nx); }
+  }
+  st.anim = false; for (const o of st.slots) if (o.fl > 0) { o.fl = Math.max(0, o.fl - dt * 1.3); st.anim = paint = true; }
+  if (paint) sealPaint(st);
+}
+// 門打開（fade 1.5→0）：前 0.45 秒五片古地圖轉回來拼成一個圓，接著整個封印亮成白色
+const sealOpen = (st, fade) => { if (!st) return; if (st.mp) sealFit(st, smooth(0, 1, (1.5 - fade) / .45)); sealPaint(st, clamp((1.2 - fade) / .5, 0, 1)); };
+// 海岸門的五片古地圖：f＝0 歪七扭八（還沒拼）、1 拼好
+function sealFit(st, f) {
+  const pa = st.fill.geometry.attributes.position;
+  for (const m of st.mp) { const a = m.a * (1 - f), c = Math.cos(a), sn = Math.sin(a), d = 1 - f; for (let v = m.b0, j = 0; v < m.b1; v++, j += 3) { const x = m.p[j] - m.cx, y = m.p[j + 1] - m.cy; pa.setXYZ(v, m.cx + x * c - y * sn + m.ox * d, m.cy + x * sn + y * c + m.oy * d, m.p[j + 2]); } }
+  pa.needsUpdate = true;
+}
+function sealDing(g, o) {
+  if (W.goo) W.goo.emit(g.localToWorld(o.p.clone()), 7, '#' + o.col.getHexString(), { gy: g.position.y + .02, up: 1.4, speed: .8, size: .04 });
+  if (S.sound) { try { const t0 = audio().currentTime, f = (o.k === 'a' ? 660 : 880) * (1 + o.i * .125); tone(f, t0, .5, .045, 'triangle'); tone(f * 2, t0 + .06, .3, .015); } catch (e) { } }
+}
+function sealHum() { if (!S.sound) return; try { const ac = audio(), t0 = ac.currentTime; sweep(196, 147, t0, .45, .05, 'triangle'); tone(98, t0, .6, .04); noise(ac, t0, .3, 500, .7, .02, 'lowpass'); } catch (e) { } }
+// 撞到門、對門按 E：沒亮的凹槽閃兩下＋光幕亮一下＋低低的嗡聲（1.5 秒內只一次，一直往前推不會連發）
+function gateBump(k) {
+  const gt = W.gates[k], st = gt && gt.seal, now = performance.now(); if (!st || gt.fade > 0 || now - st.bumpT < 1500) return;
+  st.bumpT = now; st.pulse = 1.2; sealHum();
+}
+// 對準能量門時，#prompt（準心下方 24px）在 4 公尺內會蓋住封印石的下半部（古地圖下面兩片、第三顆潮汐寶石）：
+// 封印石在畫面上跟提示重疊，就把提示移到封印石下緣的下面（每 3 格跟著準心的挑選做一次；沒對準門就還原）
+const SEAL_PV = new THREE.Vector3(), SEAL_PV2 = new THREE.Vector3();
+function sealPromptDodge(t) {
+  const el = $('#prompt'), gt = t && t.type === 'gate' && t.it && W.gates[t.it.id], st = gt && gt.seal; let top = '';
+  if (st && !(gt.fade > 0) && el.firstChild) {
+    gt.g.localToWorld(SEAL_PV.set(0, st.y, st.z)).project(W.cam); gt.g.localToWorld(SEAL_PV2.set(0, st.y - .87 * st.s, st.z)).project(W.cam);
+    const vh = innerHeight, cx = (SEAL_PV.x * .5 + .5) * innerWidth, cy = (-SEAL_PV.y * .5 + .5) * vh, r = Math.abs(SEAL_PV2.y - SEAL_PV.y) * .5 * vh, pw = el.offsetWidth / 2 + 6, py = vh / 2 + 24;
+    if (SEAL_PV.z < 1 && Math.abs(cx - innerWidth / 2) < r + pw && cy + r > py && cy - r < py + 34) top = Math.round(Math.min(vh - 130, cy + r + 8)) + 'px';
+  }
+  if (el.style.top !== top) el.style.top = top;
+}
+// 還被封著的謎題（古地圖碎片、石台、紙條、潮汐石）：碰它的時候，上方浮出一塊小小的、和能量門一模一樣的封印石（同樣的凹槽與亮法），閃兩下再沉回去。
+// 每區一塊、第一次用到才建，平常不畫；浮著的 2.6 秒內 2 次繪製
+function sealPop(k, obj, up = 1.3) {
+  const all = W.sealPop || (W.sealPop = {}); let sp = all[k];
+  if (!sp) {
+    const fr = [], g = new THREE.Group(), seal = gateSeal(k, fr, 0, 0, .42); g.add(new THREE.Mesh(mergeParts(fr), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0 })), seal.fill); g.visible = false; W.scene.add(g);
+    sp = all[k] = { g, seal, t: 0 };
+    W.anim.push(dt => {
+      if (sp.t <= 0) return; sp.t = Math.max(0, sp.t - dt); const s = Math.min(1, (2.6 - sp.t) / .25, sp.t / .35);
+      sp.g.scale.setScalar(Math.max(.001, s)); sp.g.quaternion.copy(W.cam.quaternion).multiply(SEAL_FLIP); // 正面（−z）一直朝著鏡頭
+      sp.seal.pulse = Math.max(0, sp.seal.pulse - dt); sealPaint(sp.seal); if (sp.t <= 0) sp.g.visible = false;
+    });
+  }
+  const p = sealProg(k); sp.seal.slots.forEach(o => { o.on = sealHave(o, p) ? 1 : 0; o.fl = 0; });
+  obj.getWorldPosition(sp.g.position); sp.g.position.y += up; sp.g.visible = true; sp.t = 2.6; sp.seal.pulse = 1.2; sealPaint(sp.seal); sealHum();
 }
 function discoverZone(k, o = {}) { // o.quiet：自己買保暖衣觸發的解鎖（人在大城市，看不到世界的回應）只留一行字
   if (S.zones.includes(k)) return; S.zones.push(k); const up = gainXP(50, '發現新區域', { quiet: o.quiet }); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
@@ -3608,7 +3726,7 @@ function puzzleTap(it) {
   const zoneOf = { frag: 'coast', altar: 'coast', note: 'volcano', tide: 'volcano' }[pz.type];
   // 解開後（或正在開門的 0.5 秒內）再點不會打亂狀態
   if (S.zones.includes(zoneOf) || W.solving === zoneOf) return toast('這道謎題已經解開了。');
-  if (!questReady(zoneOf)) { const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`); }
+  if (QUEST[zoneOf] && !questReady(zoneOf)) return sealPop(zoneOf, it.obj, { tide: 2.5, altar: 2.3 }[pz.type] || 1.3); // 還被封著：浮出和能量門一樣的封印石（凹槽＝還要做幾個捏捏），不跳字
   const above = (h = 1) => it.obj.position.clone().setY(it.obj.position.y + h);
   if (pz.type === 'frag') {
     if (!q.frags.includes(pz.i)) { q.frags.push(pz.i); gainXP(5); } fx3(above(1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
@@ -4446,12 +4564,65 @@ function regionOK(x, z) {
 }
 /* 雪原的刺骨寒氣：第 4 堂起改在冰洞入口擋（caves.js 的 caveBlock），這裡只剩洞口的寒氣外觀 */
 const coldBlocked = () => false;
-function refreshCold() { if (W.coldWall) W.coldWall.visible = !S.own.coat; snowCard(); }
+function refreshCold() { if (W.coldWall) W.coldWall.visible = !S.own.coat; if (W.coldMan) W.coldMan.m.geometry = W.coldMan.g[S.own.coat ? 1 : 0]; snowCard(); }
 function buildColdWall() {
   const c = CAVES.find(o => o.id === 'ice'); if (!c) return; const wd = c.Wd[0], ht = c.Hh[0], w = new THREE.Group();
   w.position.set(c.X[0] + c.TX[0] * 1.2, c.y0, c.Z[0] + c.TZ[0] * 1.2); w.rotation.y = Math.atan2(c.TX[0], c.TZ[0]); W.scene.add(w); W.coldWall = w;
   mesh(new THREE.PlaneGeometry(wd * 1.9, ht * .95), new THREE.MeshBasicMaterial({ color: '#bae6fd', map: gateTex, transparent: true, opacity: .3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), 0, ht * .48, 0, w);
-  const lb = textSprite('刺骨寒氣', '#bae6fd'); lb.position.set(0, ht + 1.6, -2.4); lb.scale.set(3.6, 1.12, 1); w.add(lb); caveSetLayers(w, 1); refreshCold(); // 要保暖衣：撞上去時的提示與目標面板（coatObjective）會說，開場飛過時不讀字
+  caveSetLayers(w, 1); buildColdMan(c); refreshCold(); // 「需要保暖衣」的文字牌拿掉了：改由洞口凍得發抖的小雪人說
+}
+/* ---------- 寒氣屏障前的小雪人（11.2 用世界說「還不能」） ----------
+   沒有保暖衣時：抱著自己縮成一團、抖個不停，臉頰凍得發青、八字眉、牙齒打顫，鼻尖掛著一根小冰柱；撞到寒氣時它打一個大噴嚏。
+   買了保暖衣（refreshCold）：換上紅圍巾和毛帽、張開手臂、臉頰紅紅的笑著，不再發抖——不用文字牌也看得懂「裡面很冷，要穿暖一點」。
+   兩種樣子各合併成一個幾何，換幾何就好：1 次繪製（取代原本洞口上方的文字牌）。
+   站在冰洞口裡、寒氣前面一點點，靠告示牌的另一邊：被寒氣擋住時人停在洞口外 1.2 公尺，它就在前方偏左 30° 左右、整隻在畫面裡
+   （原本站在洞口外 3 公尺的側邊：人被擋住時它在背後，噴嚏只聽得到、字也冒不出來）。在山洞的範圍裡，碰撞交給 caves.js 的 c.obst（穿了保暖衣走進去會繞過它） */
+function coldManGeo(warm) {
+  const V = (x, y, z) => new THREE.Vector3(x, y, z), Sp = (r, w = 12, h = 9) => new THREE.SphereGeometry(r, w, h);
+  const stick = (a, b, r = .022) => { const d = new THREE.Vector3().subVectors(b, a), L = d.length(); return [new THREE.CylinderGeometry(r * .8, r, L, 5), '#6b4d33', new THREE.Matrix4().compose(a.clone().add(b).multiplyScalar(.5), new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), d.normalize()), V(1, 1, 1))]; };
+  const p = [[Sp(.4, 14, 10), '#f8fafc', M4(0, .36, 0, 0, 0, 0, 1, .92, 1)], [Sp(.29), '#f1f5f9', M4(0, .86, 0)], [Sp(.22), '#f8fafc', M4(0, 1.27, 0)],
+    [new THREE.ConeGeometry(.035, .18, 7), '#f97316', M4(0, 1.26, .29, Math.PI / 2)], [Sp(.028, 6, 5), '#334155', M4(0, .92, .285)], [Sp(.028, 6, 5), '#334155', M4(0, .78, .27)]];
+  [-1, 1].forEach(s => p.push([Sp(.026, 6, 5), '#1f2937', M4(s * .075, 1.32, .195)], [Sp(.045, 7, 5), warm ? '#fda4af' : '#93c5fd', M4(s * .13, 1.22, .17, 0, 0, 0, 1, .6, .4)]));
+  if (!warm) {
+    [-1, 1].forEach(s => p.push([new THREE.BoxGeometry(.075, .016, .016), '#1f2937', M4(s * .075, 1.39, .2, 0, 0, -s * .4)])); // 八字眉
+    for (let i = 0; i < 4; i++) p.push([new THREE.BoxGeometry(.036, .012, .012), '#1f2937', M4(-.05 + i * .033, 1.19 + (i % 2) * .012, .205, 0, 0, i % 2 ? .55 : -.55)]); // 打顫的嘴
+    p.push([new THREE.ConeGeometry(.013, .075, 5), '#dbeafe', M4(0, 1.225, .37, Math.PI)]); // 鼻尖的小冰柱
+    [-1, 1].forEach(s => { const sh = V(s * .25, .98, .04), el = V(s * .33, .78, .2), hd = V(-s * .13, .97, .3); p.push(stick(sh, el), stick(el, hd, .018), stick(hd, V(-s * .19, 1.02, .27), .01)); }); // 抱著自己：兩隻樹枝手臂在胸前交叉成 X
+  } else {
+    p.push([new THREE.TorusGeometry(.05, .013, 4, 10, Math.PI), '#1f2937', M4(0, 1.215, .2, 0, 0, Math.PI)]); // 笑
+    p.push([new THREE.TorusGeometry(.19, .055, 6, 16), '#ef4444', M4(0, 1.08, 0, Math.PI / 2)], [new THREE.TorusGeometry(.2, .02, 4, 16), '#fde68a', M4(0, 1.08, 0, Math.PI / 2)], [new THREE.BoxGeometry(.1, .3, .045), '#ef4444', M4(.11, .95, .23, -.15, 0, .15)], [new THREE.BoxGeometry(.1, .025, .05), '#fde68a', M4(.13, .86, .25, -.15, 0, .15)]); // 紅圍巾（黃條紋、垂下來的一角）
+    p.push([new THREE.SphereGeometry(.21, 12, 6, 0, PI2, 0, Math.PI / 2), '#ef4444', M4(0, 1.37, -.01)], [new THREE.TorusGeometry(.205, .035, 5, 16), '#fde68a', M4(0, 1.38, -.01, Math.PI / 2)], [Sp(.06, 8, 6), '#ffffff', M4(0, 1.6, -.01)]); // 毛帽與毛球
+    [-1, 1].forEach(s => { const sh = V(s * .25, .95, 0), hd = V(s * .62, 1.28, .06); p.push(stick(sh, hd), stick(hd, V(s * .7, 1.38, .08), .012), stick(hd, V(s * .72, 1.25, .1), .012)); }); // 張開手臂
+  }
+  return nookMerge(p, true);
+}
+function buildColdMan(c) {
+  const tx = c.TX[0], tz = c.TZ[0], nx = -tz, nz = tx, x = c.X[0] + tx * .75 - nx * 1.15, z = c.Z[0] + tz * .75 - nz * 1.15, y = caveQ(c, x, z, 0).y - .04; // 寒氣在洞口往裡 1.2 公尺；告示牌在 +n 那一邊
+  const g = [coldManGeo(false), coldManGeo(true)], m = new THREE.Mesh(g[S.own.coat ? 1 : 0], nookMats().soft); m.position.set(x, y, z); m.rotation.order = 'YXZ'; m.rotation.y = Math.atan2(-tx + nx * .7, -tz + nz * .7); // 面向走過來的人（YXZ：前後彎腰是對著它自己的正面）
+  chunkObj(m, 90, true, [x, z, 1]); (c.obst || (c.obst = [])).push({ ax: x, az: z, bx: x, bz: z, r: .5 });
+  const mat = W.coldWall && W.coldWall.children[0] && W.coldWall.children[0].material;
+  W.coldMan = { m, g, x, y, z, ry: m.rotation.y, sn: 0, snT: -1e9, sayT: -1e9, wp: 0, mat, who: null };
+  W.anim.push((dt, t) => {
+    const o = W.coldMan; if (Math.abs(P.x - o.x) > 50 || Math.abs(P.z - o.z) > 50) return; o.sn = Math.max(0, o.sn - dt);
+    if (o.mat && (o.wp > 0 || o.mat.opacity !== .3)) { o.wp = Math.max(0, o.wp - dt); o.mat.opacity = .3 + Math.sin(Math.min(1, o.wp / .9) * Math.PI) * .38; } // 撞到時寒氣在眼前亮一下
+    if (S.own.coat) { o.m.rotation.set(0, o.ry + Math.sin(t * .9) * .12, Math.sin(t * 1.3) * .03); o.m.position.set(o.x, o.y, o.z); return; } // 穿暖了：慢慢左右看、輕輕晃
+    const k = .035 + o.sn * .1, ach = o.sn > .7 ? (1 - o.sn) / .3 : o.sn; // 噴嚏：先往後仰、再往前一彎
+    o.m.rotation.set(Math.sin(t * 33 + 1) * k * .4 + (o.sn > .7 ? -ach * .25 : ach * .35), o.ry, Math.sin(t * 41) * k);
+    o.m.position.set(o.x + Math.sin(t * 57) * .01, o.y, o.z);
+  });
+}
+// 沒穿保暖衣撞到寒氣：眼前的寒氣亮一下、小雪人打一個大噴嚏（鼻子噴出一小團雪），頭上冒一句話——白底的對話泡泡（talk.js 的 bark），
+// 順便說保暖衣去哪裡買（武器店還沒開：要等 Lv 5）；雪人不在畫面裡時泡泡貼在畫面邊上、尾巴指向它。噴嚏 2.5 秒內只一次，那句話 8 秒內只說一次（一直往前推不會一直彈出來）
+function coldBump() {
+  const o = W.coldMan, now = performance.now(); if (!o || now - o.snT < 2500) return; o.snT = now; o.sn = 1; o.wp = .9;
+  setTimeout(() => {
+    const fx = Math.sin(o.ry), fz = Math.cos(o.ry); if (W.goo) W.goo.emit(new THREE.Vector3(o.x + fx * .4, o.y + 1.24, o.z + fz * .4), 9, '#eef6ff', { gy: o.y + .02, up: 1.1, speed: .45, size: .035, dx: fx * 1.3, dz: fz * 1.3 });
+    if (S.sound) { try { const ac = audio(), t0 = ac.currentTime; sweep(900, 1500, t0, .18, .02, 'triangle'); noise(ac, t0 + .2, .35, 2400, .7, .06, 'bandpass'); } catch (e) { } }
+    if (now - o.sayT > 8000 && typeof bark === 'function') {
+      o.who = o.who || spotWho('coldman', '小雪人', [o.x, o.y + 1.75, o.z], [o.x + fx * .25, o.y + 1.2, o.z + fz * .25]);
+      if (bark(o.who, '哈——啾！裡面好冷好冷……' + (armsOpen() ? '穿上保暖衣再來吧，大城市的武器店有賣喔。' : '要穿保暖衣才進得去。大城市的武器店要等你 Lv ' + ARMS_LV + ' 才開喔。'), { pin: true })) o.sayT = now;
+    }
+  }, 300);
 }
 function barrierMsg(msg) { const now = performance.now(); W.barT = W.barT || {}; if (now - (W.barT[msg] || 0) < 4000) return; W.barT[msg] = now; toast(msg); }
 function barrierWhy(x, z) {
@@ -4629,7 +4800,7 @@ function targetLabel(t) {
   if (t.type === 'station') { const h = held(); if (t.it.id === 'shelf' && h && h.t === 'prod') return `${key}把手上的${short(h.p.sp)}捏捏上架`; return `${key}使用${t.it.name}`; }
   if (t.type === 'ware') { const st = wareState(t.it.t, t.it.k); return `${key}拿起來看　${esc(st.name)} ${st.why === 'has' ? '（已購買）' : st.why === 'max' ? '（滿級）' : fmt(st.cost)}`; }
   if (t.type === 'counter') { const n = kpNpc(t.it.shop); return n ? `${key}跟${esc(n.d.name)}聊聊` : ''; }
-  if (t.type === 'gate') return `能量門 · 需解開「${GATES[t.it.id].title}」`;
+  if (t.type === 'gate') return key + '摸摸能量門'; // 還要什麼才能過，看門上封印石的凹槽（11.2），不寫在提示上
   if (t.type === 'slot') return `${t.it.name}還沒送來　<span style="color:var(--sub)">${t.it.sub}</span>`; // 帆布棧板：沒有按鍵（按 E 不做事），只說去哪裡買
   if (t.type === 'cave') return caveLabel(t, key);
   if (t.type === 'puzzle' || t.type === 'nook') return `${key}${t.it.name}`; // nook：小場景裡可以互動的東西（樹洞、瓶子、冰柱…）
@@ -4680,7 +4851,7 @@ function doActAt(t) {
   else if (t.type === 'npc') npcTalk(t.n);
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'nook') t.it.act(t.it);
-  else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路：先解開「${GATES[k].title}」（探索日誌在背包裡）。`); }
+  else if (t.type === 'gate') gateBump(t.it.id); // 封印石上沒亮的凹槽閃兩下（取代 toast）
   else if (t.type === 'cave') caveAct(t.it);
 }
 
@@ -8209,7 +8380,7 @@ const NPC_DEF = [
     lines: ['Hello！我是從很遠的地方來旅行的。', '這座鐘塔好美，我已經拍了一百張照片。', '我聽說附近有一座會發光的森林，在哪裡呢？', '這裡的人都好親切，每個人都跟我打招呼。', '我想帶一個捏捏回國當紀念品，你有推薦的嗎？', '咖啡館的熱可可是我喝過最好喝的！', '我在旅遊書上看到「史萊姆捏捏」，原來這麼受歡迎。', '週末的市集好熱鬧，我買了好多東西。', '我的中文還在學，說錯了請不要笑我。', '下一站我想去看海，聽說東邊有一座燈塔。'] },
 ];
 // 跟狀態有關的話題：時間、天色、市集、玩家的進度。條件不成立的話題不會出現
-function npcTopics() {
+function npcTopics(who) { // who：說話的居民 id（彩蛋傳聞不讓他用第三人稱說自己）
   const out = [], add = (k, t) => out.push({ k: 'c:' + k, t }), d = new Date(), hh = d.getHours(), zs = S.zones.map(z => ZONES.find(x => x.id === z).name);
   if (DN.night > .5) add('night', '天黑了，月光谷那邊的螢火蟲應該都出來了吧？');
   if (DN.phase === 'dusk') add('dusk', '黃昏的時候，整座鐘塔會被染成橘色，你看！');
@@ -8228,14 +8399,52 @@ function npcTopics() {
   if (S.cafe.d !== Math.floor(Date.now() / 864e5) || !S.cafe.done) add('cafe', '咖啡館老闆好像在找某種捏捏，去問問看吧。');
   add('board', '廣場南邊的公告欄貼了這週的限定訂單，報酬不錯喔。');
   if (S.money >= 2000) add('rich', '你看起來生意很好，有沒有想過買新的機器？');
+  rumorTopics(add, who);
   return out;
+}
+/* 彩蛋傳聞（10.3）：居民輪流說一句「還沒找到的彩蛋」的線索（聽來的、看到過的，指向世界裡看得到的引子：躺椅、雪天使、發光的罐子、小腳印……）。
+   先說去得了的地方（中央平地、大城市、已經解鎖的區域），每問一句就輪到下一個彩蛋。話題池裡固定兩格（c:egg、c:egg2）：
+   和其他話題一樣用 npcLine 的 seen 輪替，一位居民聊完一輪才會再說傳聞（每個彩蛋一個 key 的話，新 key 永遠沒聽過，居民會只剩傳聞可說） */
+const EGG_RUMOR = {
+  forest_frog: '池塘睡蓮上那隻小青蛙很愛模仿人，你跳，牠就跟著跳喔。', forest_note: '聽說你奶奶以前常把紙條夾在池塘邊那棵老柳樹的樹洞裡。',
+  forest_ring: '森林西南邊那圈彩色蘑菇，月亮出來的時候，好像有誰在那裡跳舞。', forest_picnic: '花海裡那張紅白格子野餐墊，黃昏蹲下來休息一下最舒服了。',
+  forest_log: '南邊那根空心的大倒木，我小時候最愛從這頭鑽到那頭。', forest_rock: '往雪原的小徑旁有塊圓圓的石頭，我發誓它對我眨過眼睛。',
+  forest_star: '北邊小丘上有人擺了一張躺椅，晴朗的晚上躺在那裡，常常看得到流星。',
+  plain_scope: '東北台地上那架望遠鏡對著南邊的山脊頂，好像看得到什麼白白的小東西。', plain_hammock: '西北的白樺林裡有人掛了一張吊床，躺上去看天空超療癒。',
+  plain_stones: '巨樹東邊的小溪有一排踏腳石，一顆一顆踩過去，鞋子都不會濕。',
+  coast_crab: '潮池邊的小貝殼會走路！放輕腳步慢慢蹲過去，牠才不會躲起來。', coast_bottle: '北邊沙灘那艘擱淺的小船裡，有東西一閃一閃的。',
+  coast_arch: '黃昏的時候站到南邊海岸的岩拱底下，整片海都是橘色的。', coast_conch: '海岸小徑旁那個大海螺，多吹幾次好像會唱歌。',
+  coast_nest: '海角觀景台的望遠鏡對著外海的海蝕柱，柱子頂上好像有鳥窩。', coast_glow: '海角腳下的小湖邊，有人放了一罐亮藍色的水……聽說是晚上從湖裡舀的。',
+  coast_swing: '南邊沙丘頂上有張吊椅，坐上去晃一晃，海風吹起來好舒服。', coast_prints: '南邊沙灘上有一串圓圓的小腳印，不知道是誰留下來的。',
+  coast_chime: '小湖南邊那棵被沖上岸的大樹，樹根上掛著會叮叮噹噹的東西。',
+  volcano_onsen: '火山西邊有個冒熱氣的池子，泡下去連腳趾都放鬆了。', volcano_tamago: '溫泉旁邊吊著竹籃，放顆蛋進去，耐心等一下就有溫泉蛋吃。',
+  volcano_mirror: '黑曜石林裡有塊像鏡子的石頭，前面還有一串發紫的小腳印，站上去照照看？', volcano_tube: '冷掉的熔岩管裡，地上有一串發紅的小腳印，走到一半好像跳了一下……',
+  volcano_bluefire: '火山東南邊冒硫磺煙的地方，天黑以後會冒出藍色的火。', volcano_flower: '火山北邊灰灰的平原上有一串小圓印，走到盡頭記得低頭看看。',
+  snow_fish: '在冰湖上用力跳幾下，冰底下的魚會游過來看你喔。', snow_igloo: '冰湖邊的小冰屋裡，好像有誰在睡午覺，進去要輕輕的。',
+  snow_turn: '冰湖邊最小的那個雪人會偷看人，背對它一下再回頭試試。', snow_icicle: '西邊結冰的瀑布下有一排冰柱，每一根敲起來的聲音都不一樣。',
+  snow_aurora: '雪原觀景台地上，有人在雪地裡躺出一個雪天使……聽說晴朗的夜裡在那裡抬頭，天空會動。', snow_owl: '風吹雪丘那棵歪掉的樹上，有一團圓滾滾的東西在打瞌睡。',
+  snow_hare: '雪地上有一串小小的腳印，雪兔很怕生，要躡手躡腳地靠近。',
+  city_cat: '生活百貨旁的巷口有隻橘貓，慢慢走過去，牠會陪你散步喔。', city_soda: '咖啡館牆邊的販賣機，偶爾會掉出一罐綠色、會發光的汽水！',
+  city_pigeons: '陳伯伯腳邊的鴿子膽子好小，衝過去牠們就全飛起來了。', city_screen: '生活百貨樓頂的大螢幕，偶爾會播到很眼熟的人喔。',
+  city_sill: '咖啡館二樓的花箱裡，常常有個小傢伙在偷看路人。', city_fan: '城裡有個超級直播迷，等你再有名一點，他一定認得出你。',
+  city_cuckoo: '鐘塔每五分鐘，鐘面底下的小門會打開，有個小傢伙出來報時。', city_manhole: '廣場步道上的人孔蓋，晚上縫裡好像有眼睛在發亮……',
+  city_ding: '街角便利商店的自動門很有禮貌，走過去它會跟你打招呼。',
+};
+// 傳聞的主角自己在說話：陳伯伯說「我腳邊的鴿子」、Leo 不說「城裡有個超級直播迷」（'' ＝這個人不說這一則；他認出你的時候自己會說，見 fanLine）
+const EGG_RUMOR_SELF = { city_pigeons: { chen: '我腳邊這些鴿子膽子好小，你一衝過來，牠們就全飛起來了。' }, city_fan: { leo: '' } };
+const eggRumor = (id, who) => { const o = EGG_RUMOR_SELF[id]; return o && who && who in o ? o[who] : EGG_RUMOR[id]; };
+const eggZone = id => { const z = id.split('_')[0]; return z === 'plain' ? 'forest' : z; };
+function rumorTopics(add, who) {
+  const left = eggList().filter(e => !e.found && eggRumor(e.id, who)); if (!left.length) return;
+  const go = left.filter(e => { const z = eggZone(e.id); return z === 'city' || z === 'forest' || S.zones.includes(z); }), L = go.length ? go : left, i = W.rumorI = ((W.rumorI || 0) + 1) % L.length;
+  add('egg', eggRumor(L[i].id, who)); if (L.length > 1) add('egg2', eggRumor(L[(i + 1) % L.length].id, who));
 }
 function npcLine(n) {
   const st = S.npc[n.d.id] || (S.npc[n.d.id] = { n: 0, seen: [] });
   if (!st.n) { st.n = 1; return { k: 'hi', t: '你好！我是' + n.d.name + '，' + n.d.role + '。你是月光谷那間工坊的新主人吧？' }; }
   if (n.d.id === 'chen' && W.pgScare && performance.now() - W.pgScare < 25000) { W.pgScare = 0; st.n++; return { k: 'c:pg', t: '哎呀，鴿子都被你嚇飛了！別擔心，牠們繞一圈就會回來吃麵包屑。' }; } // 嚇飛一次說一次（「再聊一句」不會一直重複）
   if (n.d.fan) { const f = fanLine(); if (f) return f; }
-  const pool = [...n.d.lines.map((t, i) => ({ k: 'p' + i, t })), ...npcTopics()];
+  const pool = [...n.d.lines.map((t, i) => ({ k: 'p' + i, t })), ...npcTopics(n.d.id)];
   let left = pool.filter(l => !st.seen.includes(l.k));
   if (!left.length) { st.seen = st.seen.slice(-2); left = pool.filter(l => !st.seen.includes(l.k)); }
   const l = left[Math.floor(Math.random() * left.length)]; st.seen.push(l.k); if (st.seen.length > 60) st.seen = st.seen.slice(-60); st.n++; return l;
@@ -9013,7 +9222,7 @@ function benchMake() {
 }
 /* ---------- 古地圖拼圖 ---------- */
 function openAltar() {
-  const q = qState(); if (!questReady('coast')) return toast('石台被一股力量封印著……');
+  const q = qState(); if (!questReady('coast')) { const a = W.puz.find(p => p.pz.type === 'altar'); return a ? sealPop('coast', a.obj, 2.3) : toast('石台被一股力量封印著……'); } // 封印石浮出來說還差幾個捏捏（11.2）
   if (q.frags.length < 5) return toast(`石台上刻著地圖的輪廓，但你只有 ${q.frags.length}/5 片碎片。`);
   openGui('mapg');
 }
@@ -10124,7 +10333,7 @@ function showStep(dt) {
 function simAim(dt) {
   stageStep(); renderCoach();
   // 準心對到會說話的對象時，改由他頭上的「…」提示，畫面中央不顯示文字（talk.js 的 tkLabel）
-  if (!GUI.kind && !RIDE.on && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = WARE.h ? wareLabel(TARGET) : tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
+  if (!GUI.kind && !RIDE.on && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = WARE.h ? wareLabel(TARGET) : tkLabel(TARGET); setHTML($('#prompt'), lbl); sealPromptDodge(TARGET); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
   else if (GUI.kind || RIDE.on) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
   ringBeat();
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）

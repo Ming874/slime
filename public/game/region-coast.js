@@ -334,6 +334,16 @@
     fl.forEach(f => { kN.add(M.flat, ...stick(V(f.x, f.g - .05, f.z), V(f.x, f.y - .03, f.z), .022, '#f48fb1', 6)); kN.add(M.flat, new THREE.SphereGeometry(.032, 6, 5), '#f48fb1', M4(f.x, f.g + .55, f.z)); });
     if (LOW) fl.forEach(f => kN.add(M.flat, flamingoGeo(), null, M4(f.x, f.y, f.z, 0, f.ry, 0)));
     else { const im = new THREE.InstancedMesh(flamingoGeo(), M.soft, fl.length); im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false; fl.forEach((f, i) => im.setMatrixAt(i, M4(f.x, f.y, f.z, 0, f.ry, 0))); chunkObj(im, 70, false, [cx, cz, 16]); DYN.fl = im; DYN.fls = fl; }
+    // 彩蛋「會發光的小湖」的引子（10.3）：南岸一塊平石頭上擺著一罐顏色不太對勁的水（亮青色，夜裡自己發光）、靠著一支小撈網，
+    // 岸邊濕沙上沾著幾點青色的光點——有人從湖裡舀了夜光藻回來看。罐子裡的水與光點進夜光那組，其餘進近景組（不多一次繪製）。
+    // LOW 沒有夜光那組（NM＝平面材質，夜裡是一團深藍）：這罐水和光點自己一組、用會發光的材質，只在 45 公尺內畫——LOW 走到小湖邊才多 1 次繪製
+    { const a = 1.25, r = rf(a) + 1.1, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y = H(x, z), kJ = LOW ? nookKit() : G(kN), JM = LOW ? M.night : NM;
+      kN.add(M.flat, rk(905), '#9a9f98', M4(x, y + .06, z, 0, .4, 0, .42, .16, .36));
+      kJ.add(JM, new THREE.CylinderGeometry(.13, .12, .28, 10), '#22d3ee', M4(x + .05, y + .36, z));
+      kN.add(M.flat, new THREE.TorusGeometry(.125, .02, 4, 12), '#e0f2fe', M4(x + .05, y + .5, z, Math.PI / 2)); kN.add(M.flat, new THREE.CylinderGeometry(.1, .095, .06, 8), '#a16207', M4(x + .05, y + .53, z));
+      kN.add(M.flat, ...stick(V(x - .25, y, z + .3), V(x - .1, y + .95, z - .05), .018, '#a07850', 5)); kN.add(M.flat, new THREE.TorusGeometry(.13, .014, 4, 12), '#e7e5e4', M4(x - .08, y + 1.05, z - .1, .3, 0, .25));
+      for (let i = 0; i < 9; i++) { const b = a + (i - 4) * .09, rr = rf(b) + .15 + (i % 3) * .2, px = cx + Math.cos(b) * rr, pz = cz + Math.sin(b) * rr; kJ.add(JM, new THREE.SphereGeometry(.035 + (i % 2) * .015, 6, 4), i % 2 ? '#67e8f9' : '#22d3ee', M4(px, H(px, pz) + .01, pz, 0, 0, 0, 1, .4, 1)); }
+      if (LOW) kJ.done(45); }
   }
 
   /* ---------- 漂流木營火（夜裡點著）、吊床小丘、舊碼頭的殘樁 ---------- */

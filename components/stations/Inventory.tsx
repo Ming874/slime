@@ -137,7 +137,7 @@ function Equip() {
 }
 
 // 月光谷的小秘密（彩蛋，登記與發現在 game.js 的 regEgg／foundEgg）：找到的寫名字，還沒找到的只給一句提示
-const EGG_ZONE: Record<string, string> = { home: '工坊', forest: '中央平地', coast: '海岸', volcano: '火山', snow: '雪原', cave: '山洞', city: '大城市' };
+const EGG_ZONE: Record<string, string> = { home: '工坊', forest: '中央平地', plain: '中央平地', coast: '海岸', volcano: '火山', snow: '雪原', cave: '山洞', city: '大城市' };
 function Eggs() {
   const list = G().eggs?.() ?? [];
   if (!list.length) return null;

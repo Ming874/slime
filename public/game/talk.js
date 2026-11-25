@@ -27,7 +27,7 @@ const tkNow = () => TK.fz != null ? TK.fz : performance.now(); // 測試時設 T
 const SELF = { id: 'self', k: 'self', name: '' }; // 自己的心裡話：畫面下方的想法雲
 const GEST = { wave: 1000, nod: 520, tilt: 900, hop: 640 }; // 居民的小動作長度
 // 居民話題 → 動作、貼紙、彩蛋（npcLine 回傳的 k）
-const NPC_FX = { hi: { g: 'wave' }, 'c:night': { emo: 'zz' }, 'c:late': { emo: 'zz' }, 'c:live': { emo: 'heart' }, 'c:fans': { emo: 'heart' }, 'f:x': { emo: 'heart' }, 'c:frozen': { emo: 'sweat' }, 'c:pg': { emo: 'sweat' }, 'c:rich': { emo: 'star' }, 'c:river': { emo: 'star', g: 'tilt' }, 'c:mkt': { emo: 'note' }, 'f:hi': { emo: 'bang', g: 'hop', egg: 'city_fan' } };
+const NPC_FX = { hi: { g: 'wave' }, 'c:night': { emo: 'zz' }, 'c:late': { emo: 'zz' }, 'c:live': { emo: 'heart' }, 'c:fans': { emo: 'heart' }, 'f:x': { emo: 'heart' }, 'c:frozen': { emo: 'sweat' }, 'c:pg': { emo: 'sweat' }, 'c:rich': { emo: 'star' }, 'c:river': { emo: 'star', g: 'tilt' }, 'c:mkt': { emo: 'note' }, 'f:hi': { emo: 'bang', g: 'hop', egg: 'city_fan' }, 'c:egg': { emo: 'star', g: 'tilt' } }; // c:egg、c:egg2：彩蛋傳聞（game.js 的 rumorTopics），歪頭小聲說
 const EMO_URL = {}; // 貼紙：emoTex 的畫布轉成 dataURL，每種只轉一次
 const TK_MUTE = /[\s，、。！？；：…～「」『』（）—·・,.!?;:~()'"\-]/; // 打字時不出聲的字
 const TK_C = [['ar', 0, 0], ['al', 0, 0], ['r', 0, 0], ['l', 0, 0]]; // 泡泡的四個候選位置（右上、左上、頭的右邊、頭的左邊）
@@ -541,7 +541,7 @@ function tkHead(n, m, dist, t) {
   m.head.rotation.x = rx; m.head.rotation.z = rz;
 }
 // 居民的一句話 → 一拍（動作、貼紙、彩蛋）
-function npcBeat(n, l) { const fx = NPC_FX[l.k] || {}; return { t: l.t, k: l.k, g: fx.g, emo: fx.emo, egg: fx.egg }; }
+function npcBeat(n, l) { const fx = NPC_FX[l.k] || (l.k.startsWith('c:egg') ? NPC_FX['c:egg'] : {}); return { t: l.t, k: l.k, g: fx.g, emo: fx.emo, egg: fx.egg }; }
 // 嘴：全城一塊深紅小方塊，只在打字時掛在說話的人臉上開合（多 1 次繪製呼叫）
 function tkMouth(t) {
   const n = TK.on && TK.ty && TK.who && TK.who.n, M0 = TK.mouth;

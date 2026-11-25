@@ -894,7 +894,7 @@ function caveMove(dx, dz) {
     for (const c of CAVES) for (const e of c.ends) {
       if (Math.abs(nx - e.x) > 10 || Math.abs(nz - e.z) > 10) continue;
       const q = caveQ(c, nx, nz, e.i); if (q.s < -1.2 || q.s > c.L + 1.2 || Math.abs(q.l) > q.w * .95) continue;
-      const dir = e.s ? -1 : 1, why = caveBlock(c, dir); if (why) { barrierMsg(why); return false; }
+      const dir = e.s ? -1 : 1, why = caveBlock(c, dir); if (why) { if (why !== true) barrierMsg(why); return false; } // true＝擋住了，但由世界回應（不跳字）
       caveEnter(c, dir); return caveSlide(c, caveQ(c, nx, nz, e.i), nx, nz);
     }
     return undefined;
@@ -929,8 +929,9 @@ const CAVE_OQ = { cx: 0, cz: 0, d: 0 };
 function caveObstQ(o, x, z) { const ex = o.bx - o.ax, ez = o.bz - o.az, e2 = ex * ex + ez * ez, t = e2 > 1e-6 ? clamp(((x - o.ax) * ex + (z - o.az) * ez) / e2, 0, 1) : 0; CAVE_OQ.cx = o.ax + ex * t; CAVE_OQ.cz = o.az + ez * t; CAVE_OQ.d = Math.hypot(x - CAVE_OQ.cx, z - CAVE_OQ.cz); return CAVE_OQ; }
 function caveBlock(c, dir) {
   const def = c.def; if (dir < 0) return '';
-  if (def.gate && !S.zones.includes(def.gate)) return ({ coast: '東方', volcano: '北方' }[def.gate] || '') + '能量門還封著：解開「' + GATES[def.gate].title + '」才能通過。';
-  if (def.coat && !S.own.coat) return '刺骨的寒氣從冰洞裡吹出來……沒有保暖衣進不去。' + (armsOpen() ? '到大城市的武器店買一件吧。' : '升到 Lv ' + ARMS_LV + ' 後，大城市會開設武器店。');
+  // 能量門與寒氣不再跳字（11.2）：門上封印石沒亮的凹槽閃兩下、洞口凍得發抖的小雪人打個大噴嚏（game.js 的 gateBump／coldBump）
+  if (def.gate && !S.zones.includes(def.gate)) { gateBump(def.gate); return true; }
+  if (def.coat && !S.own.coat) { coldBump(); return true; }
   if (def.night && DN.night < .5) return '岩壁上有一道細細的裂縫，白天看起來只是岩石……也許夜裡再來看看？';
   return '';
 }
