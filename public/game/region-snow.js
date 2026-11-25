@@ -125,6 +125,15 @@
     const bed = SBED[0] + (SBED[1] - SBED[0]) * n.s / TR.stream.L;
     return Math.min(h, d < 1 ? bed + .22 * sm(.45, 1, d) : bed + .22 + Math.max(0, h - bed - .22) * sm(1, 3.8, d));
   }
+  // 冰洞口：小河起點前面的冰崖腳，往冰崖裡挖一個平底的凹槽，放得下冰洞（拱、裡面藍色的洞壁、上面蓋冰的圓頂，見 glacierScene）。
+  // 原本拱擺在冰崖的半腰（比河床高 3 公尺）、斜斜地對著冰崖，拱裡塞滿了冰崖面與冰舌，只剩右上角一條細細的深藍月牙
+  const CAVM = { x: STREAM[0][0] - GLA.dx * .6, z: STREAM[0][1] - GLA.dz * .6, nx: -GLA.dx, nz: -GLA.dz, hw: 2.4, dp: 2.6, fl: SBED[0] + .12 }; // 拱的中心、朝外（正對冰崖面）、凹槽半寬與深、洞底高（基礎單位）
+  const caveAB = (x, z) => { const rx = x - CAVM.x, rz = z - CAVM.z; return [-(rx * CAVM.nx + rz * CAVM.nz), rx * CAVM.nz - rz * CAVM.nx]; }; // [往冰崖裡多深, 橫向（往右為正）]
+  function caveNotch(x, z, h) {
+    const [a, b] = caveAB(x, z); if (a < -1.5 || a > CAVM.dp + .8 || Math.abs(b) > CAVM.hw + .8) return h;
+    const k = (1 - sm(CAVM.hw, CAVM.hw + .7, Math.abs(b))) * (1 - sm(CAVM.dp, CAVM.dp + .7, a)) * sm(-1.5, -.7, a); // 洞壁要陡：地形網格一格 1.8 公尺（LOW 2.5），凹槽比洞大一格，斜的格子才不會穿進洞裡
+    return Math.min(h, h + (CAVM.fl - h) * k);
+  }
   function terrain(x, z, h0) {
     if (RAW || x > -64 || Math.abs(z) > -x - 10) return h0;
     if (!TR) trInit();
@@ -135,7 +144,7 @@
     if (z > 24) h = south(x, z, h);
     let keep = 1; for (const [kx, kz, r0, r1] of KEEP) { const d = Math.hypot(x - kx, z - kz); if (d < r1) keep *= sm(r0, r1, d); }
     h = h0 + (h - h0) * keep;
-    if (z < -44 && x < -136) h = stream(x, z, h);
+    if (z < -44 && x < -136) h = caveNotch(x, z, stream(x, z, h));
     // 區域邊界、冰洞口、小徑：淡到 0（小徑兩側 3 單位內完全不動，坡度維持原樣）
     let m = sm(66, 74, -x) * sm(0, 9, -x - 12 - Math.abs(z)) * sm(10, 15, Math.hypot(x - CAVE[0], z - CAVE[1]));
     if (m > 0 && x > -104 && Math.abs(z) < 14) m *= sm(3, 8, near(TR.path, x, z, 9).d);
@@ -150,6 +159,7 @@
     if (Math.hypot(x - MESA.x, z - MESA.z) < mesaR(Math.atan2(z - MESA.z, x - MESA.x)) + 2.2) return true; // 台地頂與斷崖（崖腳的碎石坡可以有石頭）
     if (segD(x, z, RAMP.ax, RAMP.az, RAMP.bx, RAMP.bz) < 3.6) return true;
     if (glac(x, z).w > .02) return true;
+    { const [ca, cb] = caveAB(x, z); if (ca > -2.5 && ca < CAVM.dp + 1 && Math.abs(cb) < CAVM.hw + 1.5) return true; } // 冰洞口的凹槽與洞口前
     if (near(TR.stream, x, z, 3).d < 2.8) return true;
     const cn = near(TR.creek, x, z, 5); if (cn.d < (Math.hypot(x - GORGE.x, z - GORGE.z) < 14 ? 4.4 : 3.3)) return true;
     if (Math.hypot(x - POND.x, z - POND.z) < POND.r + 2.4) return true;
@@ -187,8 +197,19 @@
       bush: mergeParts([...[[0, .35, 0, .6], [.4, .3, .1, .45], [-.35, .28, -.1, .5]].map(([x, y, z, s], i) => blob(x, y, z, s, '#2c5a46', i + 160)), ...[[0, .62, 0, .52], [.4, .5, .1, .38], [-.35, .48, -.1, .42]].map(([x, y, z, s], i) => blob(x, y, z, s, '#f8fafc', i + 170, s * .45, 0))]), // 雪蓋用最粗的二十面體
     };
   }
+  // 雪松的碰撞半徑：玩家貼著樹幹（或卡在兩棵樹之間）時，鏡頭不能鑽進樹冠、也不能貼在樹冠上（整個畫面變成深綠色）。
+  // 大棵的雪松最下面一層樹冠剛好在眼睛的高度、半徑快兩公尺，原本的 0.72×s 讓鏡頭停在樹冠表面上或鑽進去；改成「站著時眼睛高度（坡地的上下方）的樹冠半徑」再留 0.3 公尺
+  const PINE_C = [[1.15, 1.7, 1.45], [1, .7, 1.75], [.9, 1.45, 2.25], [.78, .6, 2.55], [.62, 1.2, 2.95], [.5, .55, 3.25]]; // vegGeo 的樹冠：[底半徑, 高, 中心高]
+  const crownR = y => { let R = 0; for (const [r, h, c] of PINE_C) { const f = (c + h / 2 - y) / h; if (f > 0 && f <= 1) R = Math.max(R, r * f); } return R; };
+  function pineR(s, sy, sl) {
+    let R = 0; for (const d of [-.6, 0, .6]) R = Math.max(R, crownR((1.62 + .12 + sl * .3 + d * sl) / (s * sy))); // 樹埋進地面 0.12＋坡度×0.3；站在坡的上下方眼睛高低差約 ±0.6×坡度
+    return Math.max(.72 * s + .05, R * s * 1.11 + .3 - .35); // 1.11：jit 讓樹冠外擴 11%；0.35：玩家半徑（潛行時眼睛低、會在樹冠底下，看得到樹幹，沒關係）
+  }
   function vegetation() {
     const rd = seeded(5150), L = { pine: [], bush: [], rock: [], ice: [] }, tries = LOW ? 5600 : 9400;
+    // 雪松、石頭彼此的最小間距：seeded 是線性同餘亂數，連續取的 (x, z) 落在格子上，會出現一批批間距剛好 0.63、1.07 公尺的「雙頭樹」（兩個樹頂長在一起）。
+    // 間距用樹冠（石頭）大小算：兩棵雪松至少隔「兩個樹冠底半徑的一半」，林子的密度幾乎不變，只拿掉擠成一團的
+    const SP = new Map(), crowded = (X, Z, q0) => { const gx = Math.floor(X / 4), gz = Math.floor(Z / 4); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const l = SP.get((gx + a) + ',' + (gz + b)); if (l) for (const q of l) if (Math.hypot(X - q[0], Z - q[1]) < q0 + q[2]) return true; } return false; };
     for (let i = 0; i < tries; i++) {
       const x = -66 - rd() * 98, z = (rd() - .5) * 300, k = rd(), r1 = rd(), r2 = rd(), r3 = rd(); if (veto(x, z)) continue;
       const g = dens(x, z); if (r1 > g) continue;
@@ -202,8 +223,11 @@
       if (type === 'pine' && sl > .9) type = 'rock';
       const s = (.72 + r3 * .8) * (type === 'pine' ? .85 + .35 * g : 1), o = { x: X, y: h - .12 - sl * .3, z: Z, s, ry: r2 * 6.28 };
       { const v = .84 + rd() * .26, w = (rd() - .5) * .1; o.c = new THREE.Color(v * (1 + w), v, v * (1 - w * 1.6)); }
-      if (type === 'pine') { o.sy = .92 + r1 * .5; addCol({ x: X, z: Z, r: .72 * s + .05, k: 'prop', tree: 1 }); }
-      else if (type === 'rock') { o.sy = .8 + r1 * .5; addCol({ x: X, z: Z, r: .7 * s + .05, k: 'prop' }); }
+      if (type === 'pine' || type === 'rock') { // 間距檢查放在顏色的亂數之後：被擋掉的那棵不影響後面每一棵的亂數（其餘的位置、大小、顏色都和原本一樣）
+        o.sy = (type === 'pine' ? .92 : .8) + r1 * .5; const r = type === 'pine' ? pineR(s, o.sy, sl) : .7 * s + .05, q0 = (type === 'pine' ? .575 : .5) * s; if (crowded(X, Z, q0)) continue;
+        const kk = Math.floor(X / 4) + ',' + Math.floor(Z / 4); if (!SP.has(kk)) SP.set(kk, []); SP.get(kk).push([X, Z, q0]);
+        addCol(type === 'pine' ? { x: X, z: Z, r, k: 'prop', tree: 1 } : { x: X, z: Z, r, k: 'prop' });
+      }
       L[type].push(o);
     }
     // LOW（手機、不投影）：近處也用低面數版本、不分遠近兩組（近處的區塊每種植被少一次繪製，三角形也少很多）
@@ -305,7 +329,8 @@
     [[-.62, .8], [-.3, 1], [.36, .9], [.66, .7]].forEach(([vn, du]) => crack(Array.from({ length: 6 }, (_, k) => [.5 + k * du, vn + Math.sin(k * 1.3) * .03]), .2, true)); // 冰崖前面縱向的裂口
     // 冰崖前緣：一排傾斜、大小不一的冰塊（中間留給冰洞口）；中段的冰瀑：冰面碎成一塊塊的冰塔
     for (let i = 0; i < (LOW ? 9 : 15); i++) {
-      const vn = -.95 + 1.9 * (i + rdm() * .5) / (LOW ? 9 : 15); if (Math.abs(vn) < .24) continue;
+      const vn0 = -.95 + 1.9 * (i + rdm() * .5) / (LOW ? 9 : 15); if (Math.abs(vn0) < .24) continue;
+      const vn = Math.sign(vn0) * (.44 + (Math.abs(vn0) - .24) * .72); // 往兩邊擠：中間讓出冰洞的凹槽（亂數的取法不變，後面的零件位置都不動）
       const [x, z] = gPt(-.6 + rdm() * 1.6, vn), X = x * K, Z = z * K, s = 1.1 + rdm() * 1.4;
       kt.add(IC, jit(new THREE.BoxGeometry(1.4, 2.2, 1.3, 2, 2, 2), .25, 900 + i), ['#d9f0fd', '#b4e0f8', '#9dd3f4'][i % 3], M4(X, H(X, Z) + .5 * s, Z, (rdm() - .5) * .5, rdm() * 3, (rdm() - .5) * .5, s, s * (.8 + rdm() * .6), s));
     }
@@ -313,14 +338,18 @@
       const [x, z] = gPt(13 + rdm() * 8, (rdm() * 2 - 1) * .8), X = x * K, Z = z * K, s = .8 + rdm() * 1;
       kt.add(IC, jit(new THREE.BoxGeometry(1.5, 1.8, 1.4, 2, 2, 2), .3, 940 + i), ['#e6f5fe', '#c2e6f9'][i % 2], M4(X, H(X, Z) + .35 * s, Z, (rdm() - .5) * .6, rdm() * 3, (rdm() - .5) * .6, s * 1.2, s, s));
     }
-    // 冰洞口：融水從冰崖腳的冰拱下流出來（拱裡是深藍色的洞，拱頂積著雪、垂著冰柱）
-    { const [sx, sz] = STREAM[0], [qx, qz] = STREAM[1], dl = Math.hypot(qx - sx, qz - sz), fx = (qx - sx) / dl, fz = (qz - sz) / dl, X = (sx - fx * .9) * K, Z = (sz - fz * .9) * K, a = kt.at(X, Z, 0, Math.atan2(fx, fz), H(X, Z) - .25);
+    // 冰洞口：融水從冰崖腳的冰洞裡流出來。拱正對冰崖面、立在凹槽口（地形見 caveNotch），拱頂積著雪、垂著冰柱；
+    // 拱裡是往冰崖裡凹進去的洞壁（鏡像的四分之一球，只畫內壁）：洞口淺藍、越裡面越深，最裡面一個更暗的洞口往裡延伸；外面蓋一個冰的圓頂，把凹槽的頂蓋住
+    { const X = CAVM.x * K, Z = CAVM.z * K, ry = Math.atan2(CAVM.nx, CAVM.nz), a = kt.at(X, Z, 0, ry, CAVM.fl * K - .25);
       a(IC, new THREE.TorusGeometry(3, .8, 6, 16, Math.PI), '#b4e0f8', 0, 0, 0, 0, 0, 0, 1, 1.05, 1.3);
       a(M.flat, new THREE.TorusGeometry(3, .55, 5, 16, Math.PI * .6), '#f8fafc', 0, .45, 0, 0, 0, Math.PI * .2, 1, 1.05, 1.1);
-      a(M.flat, new THREE.CircleGeometry(2.7, 16, 0, Math.PI), '#0c2a44', 0, .02, -.8);
-      a(IC, new THREE.SphereGeometry(2.7, 10, 5, 0, Math.PI), '#8fcdf0', 0, 0, -.85, 0, Math.PI, 0, 1.1, 1.05, 1.3); // 拱後面的冰牆（擋住洞裡看得到的地形）
+      const wall = new THREE.SphereGeometry(1, 14, 7, 0, Math.PI, 0, Math.PI / 2), wp = wall.attributes.position, wc = new Float32Array(wp.count * 3), c0 = new THREE.Color('#7fc3ec'), c1 = new THREE.Color('#2a6ca3'), c2 = new THREE.Color('#0d2c47'), cc = new THREE.Color();
+      for (let i = 0; i < wp.count; i++) { cc.copy(c0).lerp(c1, sm(.05, .55, wp.getZ(i))).lerp(c2, sm(.5, .95, wp.getZ(i)) * (1 - .3 * wp.getY(i))); wc[i * 3] = cc.r; wc[i * 3 + 1] = cc.g; wc[i * 3 + 2] = cc.b; }
+      wall.setAttribute('color', new THREE.Float32BufferAttribute(wc, 3)); a(M.flat, wall, null, 0, .2, .3, 0, 0, 0, 2.05, 2.25, -2.7); // z 縮放取負號：往冰崖裡、而且鏡像後只看得到內壁
+      a(M.flat, new THREE.CircleGeometry(1, 14, 0, Math.PI), '#071a2b', .15, .2, -2.25, 0, 0, 0, .95, 1.25, 1); // 最裡面往裡延伸的暗洞
+      a(IC, new THREE.SphereGeometry(1, 12, 6, 0, Math.PI, 0, Math.PI / 2), '#a3d8f5', 0, -.15, .2, 0, Math.PI, 0, 3.7, 3.05, 4.1); // 外面的冰圓頂（從冰河上面看是一個冰包，洞壁從外面看不見）
       for (let k = 0; k < 8; k++) { const th = (k + .5) / 8 * Math.PI, l = .4 + (k % 3) * .25; a(IC, new THREE.ConeGeometry(.1, l, 5), '#e6f7ff', Math.cos(th) * 2.25, Math.sin(th) * 2.25 * 1.05 - l / 2, .1, Math.PI, 0, 0); }
-      addCol({ x: X - fx * .6, z: Z - fz * .6, r: 1.8 }); }
+      const tx = CAVM.nz, tz = -CAVM.nx; addCol({ x: X - CAVM.nx * .5, z: Z - CAVM.nz * .5, r: 2.05 }); [-1, 1].forEach(sd => addCol({ x: X + tx * 3 * sd, z: Z + tz * 3 * sd, r: .85 })); } // 站在拱前面看得到洞裡，走不進去
     // 兩側與前緣的冰磧：一叢一叢、大小不一的積雪石頭（不是排成一列）
     for (let g = 0; g < (LOW ? 8 : 14); g++) {
       const side = g % 2 ? 1 : -1, u0 = -1 + rdm() * 24, n = 2 + Math.floor(rdm() * 3);
@@ -394,6 +423,29 @@
     }
     flowers(kt, GLOW, (MUSH.x + 2.6) * K, (MUSH.z - 3) * K, LOW ? 4 : 7, rdm, 1.1);
   }
+  // 雪丘的地面顏色：谷底與背風面是一道藍紫的影子，迎風面往稜線慢慢變白。照亮的白雪明暗差很小，而從台地、從迎風面看過去背風面都藏在稜線後面，
+  // 只靠光影的話整片就是平滑的白坡（只有往東南東看才分得出來）；先把影子染進地面，任何方向看過去都是一道白、一道藍交錯。只改地形網格的頂點色：不多繪製、不多三角形
+  function duneTint() {
+    const g = W.terrain && W.terrain[0] && W.terrain[0].geometry; if (!g || !g.attributes.color) return;
+    // 頂點色是線性空間，照亮的雪又被色調映射壓在最亮的那一段：要減這麼多才看得出來（最深處 sRGB 約 #a9bde4，偏藍紫、不灰不髒）
+    const p = g.attributes.position, col = g.attributes.color, SH = [.62, .5, .19], TRO = .88, LEE = .62;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i) / K, z = p.getZ(i) / K; if (z > -50 || x > -87 || x < -158) continue;
+      let w = duneW(x, z); if (w <= .01) continue;
+      const gl = glac(x, z); w *= (1 - gl.w) * (1 - sm(.15, .6, gl.m)) * sm(0, 9, -x - 12 - Math.abs(z)); // 冰河、冰磧、區域邊界：沒有雪丘
+      const md = Math.hypot(x - MESA.x, z - MESA.z); if (md < 20) w *= sm(mesaR(Math.atan2(z - MESA.z, x - MESA.x)) + 1.2, mesaR(Math.atan2(z - MESA.z, x - MESA.x)) + 3.5, md); // 台地的斷崖與碎石坡
+      w *= sm(4, 7, segD(x, z, RAMP.ax, RAMP.az, RAMP.bx, RAMP.bz)) * sm(1.6, 4, near(TR.stream, x, z, 5).d); // 雪坡、融水小河
+      for (const [kx, kz, r0, r1] of KEEP) { const d = Math.hypot(x - kx, z - kz); if (d < r1) w *= sm(r0, r1, d); }
+      if (w < .02) continue;
+      const { t, a } = duneT(x, z);
+      // 影子：谷底最深，沿著整個迎風面一路淡到稜線（從台地、從迎風面看過去，稜線後面露出來的是下一道迎風面的中上段，只染谷底的話根本看不到）；
+      // 背風的陡坡本來就背光，染淡一點（從背風面看過去才不會整片深藍）
+      const s = (t < CREST ? TRO * Math.pow(1 - t / CREST, .6) : sm(CREST, CREST + .035, t) * (LEE + (TRO - LEE) * (t - CREST) / (1 - CREST))) * w * (.55 + .45 * a / 2.6);
+      if (s < .005) continue;
+      col.setXYZ(i, col.getX(i) * (1 - SH[0] * s), col.getY(i) * (1 - SH[1] * s), col.getZ(i) * (1 - SH[2] * s));
+    }
+    col.needsUpdate = true;
+  }
 
   /* ---------- 中：觀景台地、路口的導覽圖、小徑的雪地標竿、冰晶塔旁的冰晶花 ---------- */
   function mesaScene(kt, M, GLOW, rdm) {
@@ -409,7 +461,8 @@
     // 望遠鏡：對著冰河
     { const [X, Z] = P(-104.6, -47), y = H(X, Z), aim = Math.atan2(-150 * K - X, -77 * K - Z), a = kt.at(X, Z, 0, aim, y), top = new THREE.Vector3(X, y + 1.12, Z);
       [0, 2.1, 4.2].forEach(t => kt.seg(M.flat, new THREE.Vector3(X + Math.sin(t) * .42, y - .05, Z + Math.cos(t) * .42), top, .028, '#5b4030', 5, .02));
-      a(M.flat, new THREE.CylinderGeometry(.07, .09, .75, 10), '#b45309', 0, 1.22, .05, Math.PI / 2 - .12, 0, 0); a(M.flat, new THREE.CylinderGeometry(.1, .1, .06, 10), '#facc15', 0, 1.25, .42, Math.PI / 2 - .12, 0, 0); addCol({ x: X, z: Z, r: .35 }); }
+      a(M.flat, new THREE.CylinderGeometry(.07, .09, .75, 10), '#b45309', 0, 1.22, .05, Math.PI / 2 - .12, 0, 0); a(M.flat, new THREE.CylinderGeometry(.1, .1, .06, 10), '#facc15', 0, 1.25, .42, Math.PI / 2 - .12, 0, 0);
+      addCol({ x: X, z: Z, r: .75 }); } // 鏡筒往前伸出 0.45 公尺、只比眼睛低 0.4：碰撞半徑 0.35 的話走過去鏡頭會貼上鏡筒（整個畫面一塊橘色）
     // 彩旗：兩根竿子之間一條垂下來的繩子，掛著一排三角旗
     { const A = new THREE.Vector3(-99.2 * K, 0, -47.6 * K), B = new THREE.Vector3(-96.6 * K, 0, -40.2 * K);
       A.y = H(A.x, A.z) + 2.4; B.y = H(B.x, B.z) + 2.4; [A, B].forEach(p => { kt.seg(M.flat, new THREE.Vector3(p.x, p.y - 2.45, p.z), new THREE.Vector3(p.x, p.y + .1, p.z), .05, '#6b4d33', 6); addCol({ x: p.x, z: p.z, r: .15 }); });
@@ -690,7 +743,7 @@
     const cab = [CABIN.x * K - 3.4, CABIN.z * K - 3.4, CABIN.x * K + 3.4, CABIN.z * K + 2.8];
     const bad = (X, Z) => { const x = X / K, z = Z / K; if (x > -66 || Math.abs(z) > -x - 8) return false;
       if (X > cab[0] && X < cab[2] && Z > cab[1] && Z < cab[3]) return true;
-      return near(TR.creek, x, z, 2).d < 1.5 || near(TR.stream, x, z, 2).d < 1.4 || Math.hypot(x - POND.x, z - POND.z) < POND.r + .4 || glac(x, z).w > .25 || Math.hypot(x - SPIRE.x, z - SPIRE.z) < 3.5 || Math.hypot(x - MUSH.x, z - MUSH.z) < 2 || Math.hypot(x - SIGN.x, z - SIGN.z) < 1.8; };
+      return near(TR.creek, x, z, 2).d < 1.5 || near(TR.stream, x, z, 2).d < 1.4 || Math.hypot(x - POND.x, z - POND.z) < POND.r + .4 || glac(x, z).w > .25 || (([ca, cb]) => ca > -1.5 && ca < CAVM.dp + 1 && Math.abs(cb) < CAVM.hw + 1)(caveAB(x, z)) || Math.hypot(x - SPIRE.x, z - SPIRE.z) < 3.5 || Math.hypot(x - MUSH.x, z - MUSH.z) < 2 || Math.hypot(x - SIGN.x, z - SIGN.z) < 1.8; };
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (const c of W.chunks) {
       if (!c.isInstancedMesh || c.userData.pair || c.userData.terrain || c.userData.snowVeg) continue; const u = c.userData;
@@ -716,7 +769,7 @@
     // 零件分北南兩組、每組只有三種材質（平面、冰、夜光）：提燈、窗戶改用夜光材質（白天不亮、夜裡亮），冰晶併進冰材質（原本最差視角多 8 次以上繪製）
     const M = Object.assign({}, nookMats()), IC = IC_REF.m = iceMat(), GLOW = M.night, rdm = seeded(6060); M.lamp = M.night;
     const n0 = W.chunks.length, L = vegetation(); for (let i = n0; i < W.chunks.length; i++) W.chunks[i].userData.snowVeg = true;
-    clearSmall();
+    clearSmall(); duneTint();
     regEgg('snow_aurora', '台地上的極光', '晴朗的夜裡，爬上雪原的觀景台地，抬頭看看天空。');
     regEgg('snow_owl', '歪樹上的貓頭鷹', '風吹雪丘那裡有一棵被風吹歪的樹，樹枝上好像有誰在打瞌睡。');
     regEgg('snow_hare', '雪兔的窩', '雪地上有一串小小的腳印。雪兔很怕生，要躡手躡腳地靠近。');
@@ -735,7 +788,8 @@
     if (!P || !W.cam) return;
     const cam = W.cam.position, cbx = cam.x / K, out = inCity(cam.x) || (typeof CV !== 'undefined' && CV.c);
     if (AU.m) {
-      const k = out ? 0 : DN.night * sm(-52, -68, cbx); AU.m.visible = k > .01;
+      // 強度還要乘上鏡頭所在的雪原權重（天色混合用的同一個 biomeW）：只看 x 的話，火山西半部（例如 (−72, −108)）的夜空也會掛滿極光；翻過分隔山脈才慢慢出現
+      const k = out || cbx > -52 ? 0 : DN.night * sm(-52, -68, cbx) * sm(.45, .85, biomeW(cam.x, cam.z)[3]); AU.m.visible = k > .01;
       if (AU.m.visible) { AU.U.uK.value = k; AU.m.position.set(cam.x, 0, cam.z); }
       if (AU.r) AU.r.visible = AU.m.visible && Math.hypot(cam.x - AU.rx, cam.z - AU.rz) < 140;
     }

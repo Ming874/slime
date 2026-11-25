@@ -1181,7 +1181,7 @@ function terrainMat() {
           float tStk = smoothstep(0.6, 0.8, tN(vec2(ru * 1.3, lyi * 7.13))) * smoothstep(0.1, 0.9, lyf);
           tR *= mix(vec3(1.0), tB.x * vec3(0.78, 0.88, 0.72) + tB.y * vec3(0.8, 0.72, 0.64) + tB.z * vec3(1.15, 0.82, 0.7) + tB.w * vec3(1.12, 1.14, 1.18), tStk * 0.6);
           float cg = tN(vec2(ru * 0.3, lyi * 3.7)) * 0.7 + rn * 0.3, tCov = smoothstep(0.78 - 0.08 * tB.x, 0.9, lyf) * smoothstep(0.44 - 0.05 * tB.x, 0.6, cg); // 森林的岩壁苔長得多一點（山谷看起來比較綠意）
-          tCov = mix(tCov, max(smoothstep(0.3, 0.5, cg * 0.72 + lyf * 0.28), smoothstep(50.0, 140.0, tDist) * 0.7), tB.w); // 雪原：大多被雪蓋住，只露出不規則的岩塊；遠處幾乎全白（遠看不再是一條條白灰相間的橫紋）
+          tCov = mix(tCov, max(smoothstep(0.2, 0.42, cg * 0.72 + lyf * 0.28), smoothstep(30.0, 110.0, tDist) * 0.85), tB.w); // 雪原：大多被雪蓋住，只露出零星的岩塊；中遠處幾乎全白（原本露出的岩塊連成一層層深藍灰的橫紋，佔掉大半個畫面、搶走岩柱與雪丘的戲）
           vec3 covC = tB.x * vec3(0.09, 0.23, 0.055) + tB.y * vec3(0.62, 0.45, 0.22) + tB.z * vec3(0.11, 0.09, 0.08) + tB.w * vec3(0.9, 0.93, 0.98);
           #ifdef T_HQ
             float rf = tFbm(vec2(wp.x + wp.y, vWP.y * 1.2) * 1.7);
@@ -9170,7 +9170,10 @@ function warmStep(dt) {
   if (inS && !S.frozen) {
     S.warm = Math.max(0, S.warm - dt);
     if (S.warm <= 60 && !W.warm1) { W.warm1 = true; toast('體溫只剩 1 分鐘！快離開雪原'); }
-    if (S.warm <= 0) { S.frozen = true; objSig = ''; sfx.squish && sfx.squish(1, .7); saveCloud(); modal('<h2>你凍僵了！</h2><p>身體不停發抖，走路也變慢了。</p><p>到<b>大城市的醫院</b>看醫生就會立刻痊癒，診療費 <b>¥20</b>（搭出生點左邊的計程車）。</p>'); }
+    if (S.warm <= 0) { // 不在畫面中央跳卡片（遊戲不停、滑鼠不解鎖）：自己的想法雲說出來，訊息欄留一行怎麼治；體溫條變成「凍僵了」、畫面發抖
+      S.frozen = true; objSig = ''; sfx.squish && sfx.squish(1, .7); saveCloud();
+      bark(SELF, '好冷……全身凍僵了，一直發抖，走路也變慢了。'); toast('凍僵了：到大城市的醫院看醫生就會好（診療費 ' + fmt(HOSPITAL_FEE) + '，搭出生點左邊的計程車）');
+    }
   }
   let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
   const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen;
