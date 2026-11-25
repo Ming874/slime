@@ -1563,7 +1563,7 @@ function rockMat() {
 }
 /* 植被與岩石：每種道具合併成單一幾何後以 InstancedMesh 分區擺放（含風擺、地面碎石、花草） */
 function buildProps() {
-  const rd = seeded(77), rc = seeded(991), lists = {}, push = (k, o) => (lists[k] = lists[k] || []).push(o);
+  let drop = false; const rd = seeded(77), rc = seeded(991), lists = {}, push = (k, o) => { if (!drop) (lists[k] = lists[k] || []).push(o); };
   const avoid = (x, z) => {
     if (Math.hypot(x, z) < 26) return true;
     if (regionAvoided(x, z)) return true; // 各區的新場景自己會放東西
@@ -1579,6 +1579,7 @@ function buildProps() {
   for (let i = 0; i < tries; i++) {
     const x = (rd() - .5) * 350 * K, z = (rd() - .5) * 350 * K, h = H(x, z); if (h < -.3 || h > 26 * K || avoid(x, z)) continue;
     const sl = Math.abs(H(x + 1, z) - H(x - 1, z)) + Math.abs(H(x, z + 1) - H(x, z - 1)); if (sl > 1.5) continue;
+    drop = regionCleared(x, z); // regionClear 的空地：這一點照樣抽完亂數才丟掉，後面每一點的擺法和沒有這條規則時一樣
     const b = domBiome(x, z), s = .75 + rd() * .8, ry = rd() * 6.28, k = rd(), o = { x, y: h - .12 - sl * .3, z, s, ry };
     { const v = .84 + rc() * .26, w = (rc() - .5) * .1; o.c = new THREE.Color(v * (1 + w), v, v * (1 - w * 1.6)); } // 每株明暗與色相略有不同
     let col = 0, tree = 0;
@@ -1586,8 +1587,9 @@ function buildProps() {
     else if (b === 'coast') { if (k < .4) { push('palm', o); col = .22; tree = 1; } else if (k < .6) { push('rockF', o); col = .7; } else if (k < .78) push('bushC', o); else if (h < 1.6 * K && h > -.1) push('drift', Object.assign(o, { s: .7 + rd() * .5 })); else push('bushC', o); }
     else if (b === 'volcano') { if (k < .34) { push('rockV', o); col = .7; } else if (k < .52) { push('dead', o); col = .15; } else if (k < .72) push('obsid', o); else if (k < .88) { push('basalt', Object.assign(o, { s: .6 + rd() * .6 })); col = .7; } else push('crack', Object.assign(o, { y: h + .03, s: .8 + rd() * 1.2 })); }
     else { if (k < .45) { push('pineS', o); col = .72; tree = 1; } else if (k < .62) { push('rockS', o); col = .7; } else if (k < .78) push('ice', o); else push('snowBush', o); }
-    if (col && Math.max(Math.abs(x), Math.abs(z)) < 176 * K) addCol({ x, z, r: col * o.s + .05, k: 'prop', tree });
+    if (col && !drop && Math.max(Math.abs(x), Math.abs(z)) < 176 * K) addCol({ x, z, r: col * o.s + .05, k: 'prop', tree });
   }
+  drop = false;
   const flatM = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 }), stoneM = rockMat();
   const treeM = windMat(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 }), .0045);
   const bushM = windMat(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85, metalness: 0 }), .05);
@@ -7682,6 +7684,7 @@ function npcTopics() {
   if (S.liveBest > 0) add('live', '我看過你的直播！最高有 ' + S.liveBest + ' 個人在看，好厲害。'); else add('nolive', '你還沒開過直播嗎？咖啡館的電視每天都在播直播排行喔。');
   if (S.fans >= 10) add('fans', '聽說你已經有 ' + Math.floor(S.fans) + ' 個粉絲了？說不定我也是其中一個。');
   if (zs.length > 1) add('zones', '你去過' + zs.join('、') + '了？我只在電視上看過。'); else add('zone1', '月光谷外面還有海岸、火山和雪原，聽說都要解開謎題才能去。');
+  if (S.zones.includes('volcano') && !(S.eggs || []).includes('volcano_river')) add('river', '聽說火山東北邊的山腰有一條會發光的河，晚上最好看。火山的小徑走到底，跟著石堆往東繞過去就是了。'); // 熔岩湖在火山背面，從小徑上看不到（region-volcano.js 的引導）
   if (!S.own.coat) add('coat', '雪原冷到骨頭裡，沒有保暖衣根本進不去。' + (armsOpen() ? '武器店就有賣。' : '聽說等你更有名，武器店才會開。'));
   if (S.frozen) add('frozen', '你在發抖耶！快去醫院給醫生看看，只要 ' + HOSPITAL_FEE + ' 塊。');
   const n = Object.keys(S.codex).length; if (n) add('codex', '你的史萊姆圖鑑收集了 ' + n + ' 種？全部有 ' + SPECIES.length + ' 種喔。');

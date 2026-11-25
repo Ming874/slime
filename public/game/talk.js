@@ -26,7 +26,7 @@ const tkNow = () => TK.fz != null ? TK.fz : performance.now(); // 測試時設 T
 const SELF = { id: 'self', k: 'self', name: '' }; // 自己的心裡話：畫面下方的想法雲
 const GEST = { wave: 1000, nod: 520, tilt: 900, hop: 640 }; // 居民的小動作長度
 // 居民話題 → 動作、貼紙、彩蛋（npcLine 回傳的 k）
-const NPC_FX = { hi: { g: 'wave' }, 'c:night': { emo: 'zz' }, 'c:late': { emo: 'zz' }, 'c:live': { emo: 'heart' }, 'c:fans': { emo: 'heart' }, 'f:x': { emo: 'heart' }, 'c:frozen': { emo: 'sweat' }, 'c:pg': { emo: 'sweat' }, 'c:rich': { emo: 'star' }, 'c:mkt': { emo: 'note' }, 'f:hi': { emo: 'bang', g: 'hop', egg: 'city_fan' } };
+const NPC_FX = { hi: { g: 'wave' }, 'c:night': { emo: 'zz' }, 'c:late': { emo: 'zz' }, 'c:live': { emo: 'heart' }, 'c:fans': { emo: 'heart' }, 'f:x': { emo: 'heart' }, 'c:frozen': { emo: 'sweat' }, 'c:pg': { emo: 'sweat' }, 'c:rich': { emo: 'star' }, 'c:river': { emo: 'star', g: 'tilt' }, 'c:mkt': { emo: 'note' }, 'f:hi': { emo: 'bang', g: 'hop', egg: 'city_fan' } };
 const EMO_URL = {}; // 貼紙：emoTex 的畫布轉成 dataURL，每種只轉一次
 const TK_MUTE = /[\s，、。！？；：…～「」『』（）—·・,.!?;:~()'"\-]/; // 打字時不出聲的字
 const TK_C = [['ar', 0, 0], ['al', 0, 0], ['r', 0, 0], ['l', 0, 0]], TK_CK = [['c', 0, 0], ...TK_C]; // 泡泡的四個候選位置（右上、左上、頭的右邊、頭的左邊）；告示牌的便條先試正上方

@@ -6,6 +6,8 @@
    - 南坡「冷卻的熔岩流」：從火山南坡流下來，在平地上停成兩個舌狀前緣（繩狀紋路、前緣的裂縫還在發紅），停在熔岩管旁邊（熔岩管就是它留下的）
    - 東南「噴氣孔區」：硫磺結晶池、原有噴口周圍長出黃色結晶、兩座小火山錐（大的有缺口可以走進去，火山口裡睡著熔岩史萊姆）；夜裡噴口燒出藍色火焰（彩蛋）
    - 東北「熔岩河」：山腰的小噴口 → 有天然堤岸的熔岩河 → 山腳的熔岩湖（只當光源：用碰撞擋住，不能踩）
+     它在火山背面、從小徑上看不到，所以有三種不靠箭頭的引導：湖上一根被湖光映紅、往東南飄的煙柱（從小徑、隧道出口、火山口都看得到，夜裡底部發亮）；
+     小徑盡頭往東一條若隱若現的碎石小路（穿過熔岩管、沿著東邊山腳，石堆頂上擺著會發光的熔岩石，木樁綁著褪色的布條）；小徑盡頭的木牌與城裡居民的一句話
    - 西北「火山灰平原」：灰白的沙丘，一串史萊姆跳過的小圓印通到一朵倔強的小花（彩蛋）
    - 火山本體加放射狀的稜與溝、上半部紅褐色的火山渣；東西兩側幾座和緩的丘陵（東邊丘頂立著頂著蓋石的岩柱）；原有的岩漿池加一圈結殼的岩石（原本像貼在地上的貼紙）
    - 隨機的石頭、枯樹、黑曜石不再均勻撒滿：用低頻雜訊挖出幾塊空地，剩下的聚成一叢一叢，走起來有疏有密
@@ -98,6 +100,10 @@
     }
     return h;
   }
+  // 通往熔岩湖的小路（基礎單位）：從小徑盡頭往東、穿過熔岩管（東西向，可以走過去）、沿著火山東邊的山腳往北，停在湖的東南岸
+  // 噴口離路 3 單位以上、三個岩漿池的池邊離路 2 單位以上，冷卻的熔岩流前緣、噴氣孔區、黑曜石林都不經過；沿路坡度最多約 0.12
+  const PV = crv([[-1.6, -86.6], [3, -87.5], [8, -88.2], [12, -88.1], [14.6, -88], [21.4, -88], [24.8, -88.9], [28.2, -91.4], [33, -97], [39.5, -105.5], [43, -114], [44.5, -122], [44, -131], [41.6, -139.6], [38.9, -146.3]], .5);
+  const inTube = (x, z) => Math.abs(x - 18) < 4.4 && Math.abs(z + 88) < 2.4; // 熔岩管（game.js 的 nookTube）：管子裡不放東西
   // 火山灰平原：橢圓範圍裡的沙丘（AS.a 是風吹的方向），整片略為墊高（原本這裡比 0 低，史萊姆生不出來）
   const AS = { x: -48, z: -146, a: .6, ru: 17, rv: 12 }, AS_C = Math.cos(AS.a), AS_S = Math.sin(AS.a);
   function ashW(x, z) { const dx = x - AS.x, dz = z - AS.z; if (dx * dx + dz * dz > 420) return 0; const u = dx * AS_C + dz * AS_S, v = dz * AS_C - dx * AS_S; return (1 - sm(.68, 1, Math.hypot(u / AS.ru, v / AS.rv))) * sm(37, 41, Math.hypot(x, z + 130)); }
@@ -174,6 +180,8 @@
     if (POOLS.some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r + 1.3)) return true;
     return z < -68 && Math.abs(x) < -z - 14 && sparse(x, z);
   });
+  // 通往湖的小路上不長枯樹、不擋石頭：用 regionClear（亂數照抽），加在上面的 regionAvoid 會讓四區所有隨機道具都換位置
+  regionClear((wx, wz) => { const x = wx / K, z = wz / K; return inBox(PV, x, z, 2) && near(PV, x, z).l < 1.7; });
 
   /* ---------- 地表顏色：直接改地形網格的頂點色（不加繪製呼叫）；只動這一區的頂點，權重和地形一樣在邊界淡到 0 ---------- */
   function paint() {
@@ -285,6 +293,64 @@
       }
       g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true;
     } };
+  }
+  // 熔岩湖上方的煙柱：湖在火山背面，靠這根被湖光映紅的煙遠遠指路。煙順著風往東南飄（和火山口的煙同一個方向）：
+  // 湖正上方要 30 公尺以上才越過火山東邊的肩膀，往東飄開以後，從隧道出口約 20 公尺、小徑盡頭約 35 公尺以上就看得到（從火山口整根都看得到）
+  // 一個 InstancedMesh（1 次繪製）：一顆顆圓圓的低面數煙團往上升、變大、淡掉；底部被岩漿照得發橘紅（自己發光，夜裡更亮），往上變成灰色。
+  // 霧只套一半：LOW 的霧 170 公尺就全滿，隧道出口離湖約 150 公尺，整根會被霧吃掉（站在隧道口時跟著山洞的霧全套，見 regionStep）。
+  // 走到湖邊時煙就在頭頂：離鏡頭 26 公尺內越近越透明、自己發的光也收一點，近看是一層薄薄的煙，不是一顆顆奶油色的大泡泡（也少畫一些半透明的面）
+  const PL = { h: 50, dx: 26, dz: 10, T: 30 }; // 高度、飄到頂時往東、往南偏多少（公尺）、一顆煙團升到頂要幾秒
+  function plume(x0, y0, z0, r0) {
+    const n = LOW ? 18 : 28, g = new THREE.IcosahedronGeometry(1, 1), A = new Float32Array(n), G = new Float32Array(n), U = { value: 0 }, UF = { value: 1 }, UK = { value: .55 };
+    g.setAttribute('ia', new THREE.InstancedBufferAttribute(A, 1)); g.setAttribute('ig', new THREE.InstancedBufferAttribute(G, 1));
+    const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, metalness: 0, flatShading: true, transparent: true, depthWrite: false });
+    m.onBeforeCompile = sh => {
+      sh.uniforms.uGl = U; sh.uniforms.uFd = UF; sh.uniforms.uFk = UK;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float ia;\nattribute float ig;\nvarying float vA;\nvarying float vG;\nvarying float vCd;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvA = ia; vG = ig;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvCd = length(mvPosition.xyz);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uGl;\nuniform float uFd;\nuniform float uFk;\nvarying float vA;\nvarying float vG;\nvarying float vCd;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= mix(vec3(0.66, 0.64, 0.68), vec3(0.62, 0.44, 0.4), vG); diffuseColor.a *= vA * uFd * smoothstep(6.0, 26.0, vCd); if (diffuseColor.a < 0.004) discard;') // 上面是偏冷的灰（在火山橘色的光下才是灰），下面帶一點紅
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.3, 0.08) * vG * uGl * mix(0.35, 1.0, smoothstep(12.0, 45.0, vCd));')
+        .replace('#include <fog_fragment>', '#ifdef USE_FOG\n\tgl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, smoothstep(fogNear, fogFar, vFogDepth) * uFk);\n#endif');
+    };
+    m.customProgramCacheKey = () => 'lavaPlume';
+    const im = new THREE.InstancedMesh(g, m, n); im.visible = false; im.castShadow = im.receiveShadow = false; W.scene.add(im);
+    im.boundingSphere = new THREE.Sphere(new THREE.Vector3(x0 + PL.dx / 2, y0 + PL.h / 2, z0 + PL.dz / 2), PL.h * .5 + 26); // 整根煙柱（每格都在動，不讓 three 用某一格的位置算）
+    const L = [...Array(n)].map((_, i) => ({ k: i / n, a: Math.random() * PI2, r: Math.random(), s: .85 + Math.random() * .3, ry: Math.random() * 6 })), q = new THREE.Quaternion(), e = new THREE.Euler(), pv = new THREE.Vector3(), sv = new THREE.Vector3();
+    return { im, step(dt, t, night, fade, caveK) {
+      for (let i = 0; i < n; i++) {
+        const p = L[i]; p.k += dt / PL.T; if (p.k > 1) { p.k -= 1; p.a = Math.random() * PI2; p.r = Math.random(); }
+        const k = p.k, f = Math.pow(k, .85), w = Math.pow(f, 1.4), rad = (1.6 + 9.5 * f) * p.s, sp = p.r * (r0 * .45 + rad * .3); // 越高越大、越往下風處飄
+        pv.set(x0 + PL.dx * w + Math.cos(p.a) * sp + Math.sin(t * .23 + i) * f * 2.2, y0 + .4 + f * PL.h, z0 + PL.dz * w + Math.sin(p.a) * sp + Math.cos(t * .19 + i * 1.7) * f * 2.2);
+        tmpM.compose(pv, q.setFromEuler(e.set(0, p.ry + t * .05, 0)), sv.set(rad, rad * .78, rad)); im.setMatrixAt(i, tmpM);
+        A[i] = sm(0, .07, k) * (1 - sm(.55, 1, k)) * .7; G[i] = 1 - .8 * sm(0, .8, k); // 從湖面冒出來時淡入、升到頂淡掉；越低越被湖光照紅
+      }
+      im.instanceMatrix.needsUpdate = true; g.attributes.ia.needsUpdate = true; g.attributes.ig.needsUpdate = true;
+      U.value = (.3 + night * 1.2) * (.93 + .07 * Math.sin(t * 1.3)); UF.value = fade; UK.value = .55 + .45 * caveK;
+    } };
+  }
+  // 踩出來的碎石小路：寫進小徑遮罩（地表的小徑著色、碎石與腳步聲共用，見 game.js 的 bakePaths／onPath；遮罩在建地形時就烤好了，這裡補寫再重新上傳）。
+  // 比正式的小徑窄、淡，濃淡沿路慢慢起伏（若隱若現，但不會整段斷掉）；接小徑與到湖邊的兩端清楚一點。
+  // 路面是灰色的碎石：火山小徑原本的土色（DIRT）和小徑盡頭往東那片暖褐色的地面幾乎一樣，白天、空拍整段看不出來；
+  // 路附近頂點的 dirt（只有小徑遮罩 > 0 的地方用得到，旁邊的地面不受影響）換成偏冷的灰，在火山橘色的天光下才是灰，暗色的岩殼上也是淡淡一條
+  function stampPath() {
+    const tex = typeof PATH_TEX !== 'undefined' && PATH_TEX, u8 = tex && tex.image && tex.image.data; if (!u8) return;
+    const cell = MAP_SIZE / PMR, half = MAP_SIZE / 2;
+    for (let i = 0; i < PV.P.length - 1; i++) {
+      const ax = PV.P[i][0] * K, az = PV.P[i][1] * K, bx = PV.P[i + 1][0] * K, bz = PV.P[i + 1][1] * K, s = PV.S[i] / PV.L, dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+      const pk0 = Math.min(.7, .42 + .28 * vnoise(PV.S[i] * .21, 3.7, 89) + .16 * (1 - sm(.03, .1, s)) + .14 * sm(.88, .97, s)), w = 1.1;
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - w - 1 + half) / cell)), i1 = Math.min(PMR - 1, Math.ceil((Math.max(ax, bx) + w + 1 + half) / cell));
+      const j0 = Math.max(0, Math.floor((Math.min(az, bz) - w - 1 + half) / cell)), j1 = Math.min(PMR - 1, Math.ceil((Math.max(az, bz) + w + 1 + half) / cell));
+      for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+        const px = (ii + .5) * cell - half, pz = (j + .5) * cell - half, t = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / L2)), d = Math.hypot(px - ax - dx * t, pz - az - dz * t);
+        const ww = w * (.8 + .4 * vnoise(px * .3, pz * .3, 91)), v = pk0 * (1 - sm(ww * .4, ww, d)), k = j * PMR + ii; if (v > PMASK[k]) { PMASK[k] = v; u8[k] = Math.round(v * 255); }
+      }
+    }
+    tex.needsUpdate = true;
+    const tg = W.terrain && W.terrain[0] && W.terrain[0].geometry, DA = tg && tg.attributes.dirt, P3 = tg && tg.attributes.position; if (!DA) return;
+    const gc = new THREE.Color('#8f8c98'), c = new THREE.Color();
+    for (let i = 0; i < P3.count; i++) { const x = P3.getX(i) / K, z = P3.getZ(i) / K; if (!inBox(PV, x, z, 3)) continue; const g = 1 - sm(1.6, 2.8, near(PV, x, z).l); if (g > 0) { c.setRGB(DA.getX(i), DA.getY(i), DA.getZ(i)).lerp(gc, g); DA.setXYZ(i, c.r, c.g, c.b); } }
+    DA.needsUpdate = true;
   }
 
   const V = {}; // 每格更新要用到的東西（regionStep）
@@ -466,6 +532,37 @@
       addCol({ x: lx, z: lz, r: (LK.r + .22) * K });
       V.embers = puffs([[lx, ly, lz, LK.r * K * .8], [lx, ly, lz, LK.r * K * .8], [...V.head, .3]], LOW ? 16 : 32, { size: .55, col: '#ffb056', v: .1, rise: 7, sway: 1.2, add: true });
       V.lakeAt = [lx, lz];
+      // 遠遠指路的煙柱＋湖上一團被岩漿照亮的熱氣（夜裡才明顯）
+      V.plume = plume(lx, ly, lz, LK.r * K);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: dotTex(), color: '#ff6a1f', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      glow.position.set(lx + 1, ly + 5, lz + .5); glow.scale.set(20, 13, 1); glow.visible = false; W.scene.add(glow); V.glow = glow;
+    }
+
+    /* ---- 通往熔岩湖的小路：小徑盡頭的木牌、碎石、石堆（頂上一顆會發光的熔岩石）、綁著褪色布條的木樁 ---- */
+    {
+      stampPath(); const rr = seeded(4603); // 自己的亂數：不動到後面各場景原本的擺法
+      const ks = (x, z) => kit(x < 24 * K ? 's' : z > -131 * K ? 'se' : 'ne'); // 世界座標 → 那一段所在的合併網格
+      const grey = ['#5d5a62', '#6b6870', '#4e4b53'], cloth = ['#f2b8a2', '#e9a48c', '#f6cdb0'], stone = ['#6d6a75', '#57545e'];
+      const at = (d, l) => { const p = along(PV, Math.max(0, Math.min(1, d / PV.L))); return [(p.x - p.tz * l) * K, (p.z + p.tx * l) * K]; }; // 沿路 d 單位、往左偏 l 單位（世界座標）
+      // 碎石：路兩邊零零星星的灰色小石頭，一兩顆一組、隔一段才有
+      for (let d = 1.5; d < PV.L - 1; d += 2.6 / Q) { if (rr() < .38) continue; const [x, z] = at(d, (rr() < .5 ? -1 : 1) * (.85 + rr() * .5)); if (inTube(x / K, z / K)) continue; for (let j = 0, n = rr() < .4 ? 2 : 1; j < n; j++) rock(ks(x, z), M, x + (rr() - .5) * .7, z + (rr() - .5) * .7, .1 + rr() * .12, pk(grey, rr), 1040 + (j * 7 + Math.floor(d)) % 30, rr, .3, .6); }
+      // 石堆：四塊扁石疊起來，頂上擺一顆還帶著餘溫的熔岩石（夜裡遠遠看是一顆顆橘色的小光點，一路連到湖邊）
+      const cairn = (x, z, sc) => { const kt = ks(x, z); let y = H(x, z) - .04; [[.36, .15], [.3, .14], [.24, .13], [.18, .11]].forEach(([r, h], i) => { kt.add(M.flat, new THREE.CylinderGeometry(r * .88 * sc, r * sc, h * sc, 6), stone[i % 2], M4(x + (i % 2 - .5) * .05 * sc, y + h * sc / 2, z, 0, i * .7 + x, 0)); y += h * sc; }); gk.add(M.lamp, new THREE.OctahedronGeometry(.15 * sc, 0), '#fb923c', M4(x, y + .1 * sc, z, .3, x, .2, 1, 1.3, 1)); addCol({ x, z, r: .36 * sc }); };
+      for (let d = 4, sd = 1; d < PV.L - 4; d += 9.5) { const [x, z] = at(d, sd * 1.3); if (inTube(x / K, z / K)) continue; cairn(x, z, .9 + rr() * .2); sd = -sd; }
+      { const [x, z] = at(PV.L, -1.4); cairn(x, z, 1.3); } // 終點：湖邊大一點的石堆
+      // 木樁與褪色的布條：一圈綁在樁頂、兩條布尾順著風往東飄（和煙柱同一個方向）
+      const stake = (x, z) => { const kt = ks(x, z), y = H(x, z) - .05; kt.add(M.flat, new THREE.CylinderGeometry(.045, .06, 1.3, 5), '#6b4d33', M4(x, y + .62, z, .03, 0, -.04)); const c = pk(cloth, rr); kt.add(M.flat, new THREE.CylinderGeometry(.062, .066, .08, 6), c, M4(x, y + 1.14, z));
+        [[.42, 1.05, 0], [.32, .75, .05]].forEach(([L, a, oz]) => kt.add(M.flat, new THREE.BoxGeometry(.065, L, .012), c, M4(x + Math.sin(a) * L / 2 + .05, y + 1.13 - Math.cos(a) * L / 2, z + oz, 0, 0, a))); addCol({ x, z, r: .12 }); };
+      [[1.6, -1.25], [27.5, 1.35], [55, -1.3], [PV.L - 2.5, 1.3]].forEach(([d, l]) => stake(...at(d, l)));
+      // 小徑盡頭的木牌：面向沿著小徑走過來的人；字在貼圖上（不被任何東西擋住），夜裡樁頂一顆熔岩石小燈照著，字也微微亮起來
+      { const sx = 1.5 * K, sz = -89 * K, y = H(sx, sz) - .04, ry = Math.atan2(-1.6 * K - sx, -81.5 * K - sz), kt = kit('s'), B = M4(sx, y, sz, 0, ry, 0), put = (mat, geo, col, m) => kt.add(mat, geo, col, B.clone().multiply(m));
+        [-.56, .56].forEach(o => put(M.flat, new THREE.CylinderGeometry(.05, .065, 1.62, 6), '#6b4d33', M4(o, .78, -.06)));
+        put(M.flat, new THREE.BoxGeometry(1.34, .72, .06), '#7d5c3a', M4(0, 1.12, -.045)); put(M.flat, new THREE.BoxGeometry(.05, .05, .32), '#3f3a38', M4(.56, 1.62, .1));
+        gk.add(M.lamp, new THREE.OctahedronGeometry(.085, 0), '#fdba74', B.clone().multiply(M4(.56, 1.53, .25, .3, .5, 0, 1, 1.3, 1)));
+        const tx = artTex(512, 276, (c, w, h) => { woodBoard(c, w, h); artText(c, '會發光的河', w / 2, 84, 60, '#fdba74', w - 64); artText(c, '東北邊的山腰，晚上最好看', w / 2, 160, 38, '#fef3c7', w - 64); artText(c, '跟著石堆往前走 →', w / 2, 228, 38, '#fef3c7', w - 64); });
+        const fm = new THREE.MeshStandardMaterial({ map: tx, roughness: .85, emissive: '#ffd9b0', emissiveMap: tx, emissiveIntensity: .08 }), face = new THREE.Mesh(new THREE.PlaneGeometry(1.3, .7), fm);
+        face.position.set(sx + Math.sin(ry) * .002, y + 1.12, sz + Math.cos(ry) * .002); face.rotation.y = ry; chunkObj(face, 70, false, [sx, sz, 1]);
+        addCol({ x: sx, z: sz, r: .62 }); V.sign = { m: fm, x: sx, z: sz }; }
     }
 
     /* ---- 火山灰平原：小圓印通到一朵倔強的小花 ---- */
@@ -500,6 +597,7 @@
     /* ---- 彩蛋 ---- */
     regEgg('volcano_bluefire', '夜裡的藍色火焰', '火山東南邊冒著硫磺煙的地方，天黑以後去看看。');
     regEgg('volcano_flower', '灰裡的小花', '火山北邊的灰色平原上，有一串小小的圓印……跟著走到盡頭，低頭看看。');
+    regEgg('volcano_river', '會發光的河', '火山東北邊的山腰有一條會發光的河，晚上最好看。');
   }
   regionBuild(build);
 
@@ -530,11 +628,19 @@
     // 在中央平地（山脊圍住的那塊）時，這一區的東西都被山脊擋住、一個像素也看不到，但 cullChunks 只看距離，照樣每格送去畫：直接當成超出距離
     const cam = W.cam.position, hid = Math.max(Math.abs(cam.x), Math.abs(cam.z)) < 44 * K && cam.y < 20 && !CV.c;
     if (hid !== V.hid) { V.hid = hid; V.chunks.forEach(o => { o.userData.far = hid ? -1 : o.userData.far0; }); }
-    const away = inCity() || CV.c || P.z > -48 * K;
+    // 熔岩隧道往火山這頭的洞口看得到外面：人在這條隧道裡照常算（洞深處的圖層不畫外面，不多花繪製），出洞那一步煙柱、蒸氣、藍火才不會突然冒出來
+    const away = inCity() || (CV.c && CV.c.id !== 'lava') || P.z > -48 * K;
     if (!away) V.lava.tex.offset.y = (V.lava.tex.offset.y - dt * .07) % 1;
     const sd = away ? 1e9 : Math.hypot(V.steamAt[0] - P.x, V.steamAt[1] - P.z), ld = away ? 1e9 : Math.hypot(V.lakeAt[0] - P.x, V.lakeAt[1] - P.z);
     V.steam.pts.visible = sd < (LOW ? 70 : 110); if (V.steam.pts.visible) V.steam.step(dt, .3 + DN.night * .08);
     V.embers.pts.visible = ld < (LOW ? 60 : 100); if (V.embers.pts.visible) V.embers.step(dt, .75 + DN.night * .25);
+    // 指路的煙柱與湖上的熱氣：在火山裡就畫（隧道出口離湖約 150 公尺），夜裡更亮；最遠那 40 公尺慢慢淡入（不會一步跳出來）；
+    // 站在隧道口時跟著山洞的霧淡掉（CV.k：洞口外的山也一起變成洞裡的霧色），小徑盡頭木牌的字被小燈照亮
+    const pR = LOW ? 200 : 240, pf = 1 - sm(pR - 40, pR, ld), pon = pf > 0; V.plume.im.visible = V.glow.visible = pon;
+    if (pon) { V.plume.step(dt, t, DN.night, pf, CV.k); V.glow.material.opacity = (.1 + DN.night * .42 + Math.sin(t * 1.3) * .03) * pf * (1 - CV.k); }
+    if (!away) V.sign.m.emissiveIntensity = .08 + DN.night * .42;
+    // 會發光的河：走到湖邊、看著湖
+    if (ld < 13 && (-Math.sin(P.yaw) * (V.lakeAt[0] - P.x) - Math.cos(P.yaw) * (V.lakeAt[1] - P.z)) / (ld || 1) > .75) eggHit('volcano_river', DN.night > .5 ? '山腰流下來的熔岩河，在夜裡亮成一條橘色的緞帶，一路流進湖裡……難怪遠遠就看得到那道紅紅的煙。' : '一條橘紅色的河從山腰慢慢流進湖裡，湖上的熱氣把煙都染紅了。晚上再來看看吧。');
     // 藍色火焰：只在夜裡、離噴氣孔區 90 公尺（LOW 55）內才畫，每簇各自閃動
     const B = V.blue, bd = away ? 1e9 : Math.hypot(B.x - P.x, B.z - P.z), on = DN.night > .04 && bd < (LOW ? 55 : 90); B.im.visible = on;
     if (on) {
