@@ -407,6 +407,7 @@ body.titleon #hud{display:none}
 @keyframes wpp{50%{transform:scale(1.12) rotate(10deg)}}
 
 #objective.arrived{border-left-color:var(--good);animation:objIn .35s ease}
+#objective.debut{animation:objIn .45s ease} /* 教學結束後第一次出現（renderObjective） */
 #objective.arrived b{color:var(--good)}
 @keyframes objIn{from{transform:translateX(-6px);opacity:.4}}
 
@@ -436,8 +437,6 @@ body.titleon #hud{display:none}
 #coach small{display:block;font-size:12px;font-weight:400;color:#cbd5e1;margin-left:30px}
 #coach kbd{display:inline-block;background:#fff;color:#000;border-radius:4px;padding:0 6px;font:700 12px/18px Inter,sans-serif;margin:0 3px}
 #coach .st{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#6ee7a8;color:#052e1b;font-size:13px;font-weight:800;margin-right:8px;vertical-align:1px}
-#coach.flash{border-color:#fbbf24aa;color:#fde68a;box-shadow:0 0 0 4px #fbbf2422,0 6px 20px #0006}
-#coach.flash .st{background:#fbbf24;color:#3b2500}
 @keyframes coachIn{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translateX(-50%)}}
 body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(50% + 56px)}
 /* 矮的橫向畫面（橫拿的手機、很扁的視窗）：準心下方那一條同時擠著教學小卡、左下的訊息列與右下的手——卡片蓋住手（採集第 3 下用力按的拳頭整個躲到卡片後面），訊息列折成兩行時又蓋住卡片的字。

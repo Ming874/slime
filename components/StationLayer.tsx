@@ -135,14 +135,6 @@ function Decor({ prop, tab, flip, kind }: State) {
           <div className="st-compass" aria-hidden="true">N</div>
         </>
       );
-    case 'tablet': // 古老的石碑：石板升起、刻紋發光
-      return (
-        <>
-          <div className="st-runes" aria-hidden="true" />
-          <div className="st-glyphs" aria-hidden="true">ᚠ ᚢ ᚦ ᚨ ᚱ ᚲ ᚷ ᚹ</div>
-          <div className="st-dust" aria-hidden="true" />
-        </>
-      );
     case 'vitrine': // 展示場：展示櫃的玻璃門往兩旁滑開、聚光燈亮起
       return (
         <>

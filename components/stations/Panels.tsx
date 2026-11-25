@@ -9,7 +9,7 @@ import Shop from './Shop';
 import { WebStore, Weekly } from './WebStore';
 import { Museum, Visit } from './Museum';
 import Bench from './Bench';
-import { Riddle, MapGame } from './Ancient';
+import { MapGame } from './Ancient';
 import Title from './Title';
 import Pause from './Pause';
 import NoteMap from './NoteMap';
@@ -20,7 +20,7 @@ import { DecorStock, DecoTools } from './Decor';
 import Branch from './Branch';
 
 const PANELS: Record<string, ComponentType> = {
-  title: Title, pause: Pause, map: NoteMap, paper: Paper, liveRcpt: LiveRcpt, make: Make, liveOthers: LiveOthers, liveStock: LiveStock, livePrice: LivePrice, decorStock: DecorStock, decoTools: DecoTools, branch: Branch, inv: Inventory, codex: Codex, shop: Shop, web: WebStore, weekly: Weekly, museum: Museum, visit: Visit, bench: Bench, riddle: Riddle, mapg: MapGame,
+  title: Title, pause: Pause, map: NoteMap, paper: Paper, liveRcpt: LiveRcpt, make: Make, liveOthers: LiveOthers, liveStock: LiveStock, livePrice: LivePrice, decorStock: DecorStock, decoTools: DecoTools, branch: Branch, inv: Inventory, codex: Codex, shop: Shop, web: WebStore, weekly: Weekly, museum: Museum, visit: Visit, bench: Bench, mapg: MapGame,
 };
 
 // 一個分頁分成好幾塊畫的（中間夾著 game.js 自己更新的畫布）：game.js 通知一次，整組一起重繪

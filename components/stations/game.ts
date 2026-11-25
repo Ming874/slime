@@ -26,18 +26,18 @@ export type Game = {
   UPS: Record<string, Up>; OWN: Record<string, Own>; PACKS: Record<string, { name: string; cost: number }>;
   DECO: Record<string, { n: string; c: string; pack: string; v: number }>; CUTS: Record<string, { n: string; col: string; desc: string; pm: number }>;
   TOUCH: boolean; GRADES: Grade[]; GOAL: { species: number; fans: number; earned: number }; SHOP_UPS: Record<string, string[]>;
-  QUEST: Record<string, { title: string; hint: string; from: string; need: number }>; PILLAR: string[]; TABLET_TXT: string; WEEK_MS: number;
+  QUEST: Record<string, { title: string; hint: string; from: string; need: number }>; WEEK_MS: number;
   fmt: (n: number) => string; cap: () => number; slots: () => number; upCost: (k: string) => number; effCrisp: (p: Product) => number;
   fair: (p: Partial<Product> & { sp: string }, ch: string) => number; rating: () => number; priceOf: (p: Product, ch: string) => number;
   weeklyOrders: () => Order[]; wkItems: (o: Order) => Product[]; weekNo: () => number; invItems: () => InvItem[]; short: (id: string) => string;
   farmLeft: () => number; fmtSec: (s: number) => string; unlockedSpecies: () => Species[];
   gradeOf: (p: Partial<Product> & { sp: string }) => Grade; priceWhy: (p: Product, ch: string) => string; packPct: (k: string) => string;
-  qState: () => { pil: number[]; map: number[]; frags: number[]; notes: number[]; tide: number[]; read: Record<string, boolean> };
+  qState: () => { map: number[]; frags: number[]; notes: number[]; tide: number[]; read: Record<string, boolean> };
   nextQuest: () => string | null; questReady: (k: string) => boolean; madeIn: (zone: string) => number;
-  pillarClues: (pil: number[]) => { ok: boolean }[]; pSp: (v: number) => Species; pillarExtra: () => string; hintBlock: (k: string) => string;
+  hintBlock: (k: string) => string;
   DN?: { phase: string; night: number; p: number }; DN_PHASE?: Record<string, string>; creditsHTML?: () => string;
   AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string;
-  tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
+  tideStepsHTML: () => string; mapImage: () => string; enter: () => string;
   eggs?: () => Egg[];
   mapView?: () => MapView; mapDraw?: (c: HTMLCanvasElement) => void; // 筆記本的手繪地圖（public/game/map.js）
   ship?: Ship[]; wareState?: (t: string, k: string) => WareState | null;

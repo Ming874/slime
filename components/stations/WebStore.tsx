@@ -16,7 +16,7 @@ export function WebStore() {
         <div className="rx-kpi"><small>貨架</small><b>{S.web.length}/{slots}</b><span className="rx-bar"><i style={{ width: `${(S.web.length / Math.max(1, slots)) * 100}%` }} /></span></div>
         <div className="rx-kpi"><small>評價</small><b>{S.reviews.length}</b></div>
       </div>
-      <p className="rx-note-line">被動收入：即使不直播也會有顧客上門（離線最多結算 30 分鐘）。單價較低，但顧客會留下評價。</p>
+      <p className="rx-note-line">不直播也會有客人上門（離線最多 30 分鐘）；單價低一點，但會留下評價。</p>
 
       <h3>架上商品 <small>點一下下架</small></h3>
       <div className="rx-tiles">

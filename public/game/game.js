@@ -62,10 +62,10 @@ const HOSPITAL_FEE = 20; // 醫院診療費
 const WARM_MAX = 600; // 雪原體溫：每次進入雪原有 10 分鐘（秒）
 // 切法：marks 切幾刀、tol 判定寬度倍率、pm 售價倍率、wear 直播時的耐久消耗倍率、th 切片厚度
 const CUTS = {
-  thick: { n: '厚塊', marks: 3, tol: 1.45, pm: .9, wear: .7, th: .26, col: '#22d3ee', desc: '容易切準・耐久高' },
-  thin: { n: '薄片', marks: 6, tol: .72, pm: 1.35, wear: 1.3, th: .1, col: '#a5f3fc', desc: '很難切準・價格高' },
-  star: { n: '星形', marks: 4, tol: 1, pm: 1.2, wear: 1, th: .16, col: '#fde047', shape: 'star', desc: '造型切・觀眾最愛' },
-  heart: { n: '愛心', marks: 4, tol: 1, pm: 1.2, wear: 1, th: .16, col: '#f9a8d4', shape: 'heart', desc: '造型切・觀眾最愛' },
+  thick: { n: '厚塊', marks: 3, tol: 1.45, pm: .9, wear: .7, th: .26, col: '#22d3ee', desc: '好切・耐用' }, // desc：產線介面切法按鈕上的一行小字（前 10 分鐘的文字預算 11.1：四個字以內）
+  thin: { n: '薄片', marks: 6, tol: .72, pm: 1.35, wear: 1.3, th: .1, col: '#a5f3fc', desc: '難切・高價' },
+  star: { n: '星形', marks: 4, tol: 1, pm: 1.2, wear: 1, th: .16, col: '#fde047', shape: 'star', desc: '造型・觀眾愛' },
+  heart: { n: '愛心', marks: 4, tol: 1, pm: 1.2, wear: 1, th: .16, col: '#f9a8d4', shape: 'heart', desc: '造型・觀眾愛' },
 };
 const cutMul = p => (p.cut && CUTS[p.cut] ? CUTS[p.cut].pm * (.92 + .16 * (p.cq || 0)) : 1) * (p.wonky ? .6 : 1);
 const wearOf = p => p.cut && CUTS[p.cut] ? CUTS[p.cut].wear : 1;
@@ -717,7 +717,7 @@ function textSprite(txt, color = '#e6edf5', sub = '', o = {}) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 160; const g = c.getContext('2d');
   g.fillStyle = 'rgba(10,14,20,.78)'; const r = 30; g.beginPath(); g.roundRect ? g.roundRect(8, 8, 496, 144, r) : g.rect(8, 8, 496, 144); g.fill();
   g.strokeStyle = color; g.lineWidth = 4; g.stroke();
-  const fit = (t, px, wt) => { const f = n => (wt ? 'bold ' : '') + n + 'px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.font = f(px); const w = g.measureText(t).width; if (w > 452) g.font = f(Math.floor(px * 452 / w)); }; // 太長（「直播台（機器還沒送來）」）就把字縮小到放得下：牌子上的字不裁切、不擠扁
+  const fit = (t, px, wt) => { const f = n => (wt ? 'bold ' : '') + n + 'px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.font = f(px); const w = g.measureText(t).width; if (w > 452) g.font = f(Math.floor(px * 452 / w)); }; // 太長（「夢想捏捏博物館」）就把字縮小到放得下：牌子上的字不裁切、不擠扁
   g.fillStyle = color; fit(txt, 60, 1); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 256, sub ? 64 : 80);
   if (sub) { g.fillStyle = '#8b9bb0'; fit(sub, 34); g.fillText(sub, 256, 118); }
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
@@ -971,7 +971,7 @@ function dnUpdate() {
   DN.night = t < 300 ? 0 : t < 360 ? sm((t - 300) / 60) : t < 540 ? 1 : 1 - sm((t - 540) / 60);
   DN.dusk = t >= 300 && t < 360 ? Math.sin(Math.PI * (t - 300) / 60) : 0; DN.dawn = t >= 540 ? Math.sin(Math.PI * (t - 540) / 60) : 0;
   const ph = t < 300 ? 'day' : t < 360 ? 'dusk' : t < 540 ? 'night' : 'dawn';
-  if (ph !== DN.phase) DN.phase = ph; // 換時段不跳字：天色、史萊姆的微光與配樂就是提示，時間條上也寫著「m:ss 後夜晚」（5.4）
+  if (ph !== DN.phase) { const prev = DN.phase; DN.phase = ph; if (W.ready && !TITLE.on && prev) hudBlink('dnClock'); } // 換時段不跳字（5.4、11.1）：天色、史萊姆的微光與配樂就是提示，右上的時鐘寫著「m:ss 後夜晚」，換的那一刻亮一下
   NIGHT_U.value = DN.night;
 }
 const NIGHT_U = { value: 0 }; // 所有史萊姆共用：夜裡身上發光（自發光材質，不加光源）
@@ -1893,7 +1893,7 @@ function buildLandmarks() {
     const cm = mesh(mergeParts(can), windMat(new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .85 }), .0007), x, y, z, sc); cm.castShadow = !LOW;
     const fruits = mesh(mergeParts([...Array(14)].map((_, i) => { const a = i * 2.39, r = 2.3 + (i % 4) * .55; return [new THREE.SphereGeometry(.17, 10, 8), i % 2 ? '#a5f3fc' : '#e0f2fe', M4(Math.cos(a) * r, 7.1 + (i % 3) * .4, Math.sin(a) * r)]; }), true), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), x, y, z, sc);
     W.anim.push((dt, t) => { fruits.position.y = y + Math.sin(t * 1.2) * .06; });
-    addCol({ x, z, r: 1.6 }); const lb = textSprite('月光巨木', '#a5f3fc', '傳說月光從這裡灑落'); lb.position.set(x, y + 13.6, z); sc.add(lb);
+    addCol({ x, z, r: 1.6 }); const lb = textSprite('月光巨木', '#a5f3fc'); lb.position.set(x, y + 13.6, z); sc.add(lb); // 牌子只寫名字（前 10 分鐘的文字預算 11.1）：傳說交給居民與奶奶的筆記
   }
   // 古代遺跡：石柱、斷裂的拱門、散落石塊與苔蘚
   {
@@ -1903,7 +1903,7 @@ function buildLandmarks() {
     const rm = mesh(jit(mergeParts(parts), .03, 55), flatM, x, y, z, sc); rm.castShadow = rm.receiveShadow = !LOW;
     const rune = mesh(new THREE.PlaneGeometry(4.6, .22), new THREE.MeshBasicMaterial({ color: '#67e8f9', transparent: true, opacity: .7, toneMapped: false }), x, y + 4.25, z - 1.14, sc);
     W.anim.push((dt, t) => { rune.material.opacity = .45 + Math.sin(t * 1.5) * .25; });
-    const lb = textSprite('古代遺跡', '#cbd5e1', '刻著看不懂的月光文字'); lb.position.set(x, y + 5.6, z); sc.add(lb);
+    const lb = textSprite('古代遺跡', '#cbd5e1'); lb.position.set(x, y + 5.6, z); sc.add(lb); // 看不懂的月光文字就刻在拱門上（發光的那一條）
   }
   // 雪原的雪人
   { const g = mergeParts([[new THREE.SphereGeometry(.55, 14, 10), '#f8fafc', M4(0, .5, 0)], [new THREE.SphereGeometry(.4, 14, 10), '#f1f5f9', M4(0, 1.2, 0)], [new THREE.SphereGeometry(.28, 12, 9), '#f8fafc', M4(0, 1.75, 0)], [new THREE.ConeGeometry(.05, .25, 8), '#f97316', M4(0, 1.75, .35, Math.PI / 2, 0, 0)], ...[-1, 1].map(s => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(s * .1, 1.84, .24)]), ...[0, 1, 2].map(i => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(0, 1.05 + i * .14, .385 - i * .02)]), [new THREE.TorusGeometry(.28, .07, 8, 18), '#ef4444', M4(0, 1.5, 0, Math.PI / 2, 0, 0)], [new THREE.BoxGeometry(.12, .4, .06), '#ef4444', M4(.15, 1.35, .26, 0, 0, .2)], ...[-1, 1].map(s => [new THREE.CylinderGeometry(.025, .03, .9, 5), '#5b4030', M4(s * .62, 1.38, 0, 0, 0, s * 1.1)]), [new THREE.CylinderGeometry(.2, .22, .3, 12), '#1f2937', M4(0, 2.05, 0)], [new THREE.CylinderGeometry(.3, .3, .03, 14), '#1f2937', M4(0, 1.91, 0)]], true);
@@ -3058,7 +3058,7 @@ function buildWorkshop() {
   const chair = new THREE.Group(); chair.position.set(0, 0, .9); pc.add(chair); cyl(.3, .3, .08, 20, dark, 0, .55, 0, chair); box(.55, .6, .06, dark, 0, .9, .28, chair); cyl(.04, .04, .5, 8, steel, 0, .28, 0, chair);
   cyl(.04, .04, 2.6, 8, steel, 1.4, 1.3, .1, pc); mesh(new THREE.ConeGeometry(1.7, .6, 12, 1, true), std('#22d3ee', { side: THREE.DoubleSide, roughness: .6 }), 1.4, 2.7, .1, pc);
   addCol({ box: [BASE.pc[0] - 1.3, BASE.pc[1] - .7, BASE.pc[0] + 1.3, BASE.pc[1] + .5] });
-  addInter(hitBox(2.6, 2.2, 1.6, 0, 1.1, 0, pc), 'station', 'pc', '工作電腦'); label('工作電腦', '#818cf8', '把捏捏上架到網站販售', BASE.pc[0], G(0, 7) + 2.74, 9.64); // 小屋裡的兩塊招牌掛在正面的橫樑前（5.5）：從前面任何距離看都不會被橫樑、屋簷、遮陽傘擋到
+  addInter(hitBox(2.6, 2.2, 1.6, 0, 1.1, 0, pc), 'station', 'pc', '工作電腦'); label('工作電腦', '#818cf8', '', BASE.pc[0], G(0, 7) + 2.74, 9.64); // 小屋裡的兩塊招牌掛在正面的橫樑前（5.5）：從前面任何距離看都不會被橫樑、屋簷、遮陽傘擋到
   // 手作台
   const bn = at(new THREE.Group(), BASE.bench);
   box(2.2, .12, 1.2, wood, 0, .9, 0, bn); [[-1, -.5], [1, -.5], [-1, .5], [1, .5]].forEach(([x, z]) => box(.1, .9, .1, woodD, x, .45, z, bn));
@@ -3066,12 +3066,12 @@ function buildWorkshop() {
   mesh(new THREE.SphereGeometry(.22, 16, 8, 0, PI2, Math.PI / 2, Math.PI / 2), std('#cbd5e1', { side: THREE.DoubleSide }), .6, 1.18, -.1, bn);
   mesh(new THREE.SphereGeometry(.16, 14, 10), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1 }), .6, 1.02, -.1, bn).scale.y = .5;
   const pin = cyl(.05, .05, .7, 12, woodD, -.3, 1.06, 0, bn); pin.rotation.z = Math.PI / 2;
-  addCol({ x: BASE.bench[0], z: BASE.bench[1], r: 1.2 }); addInter(hitBox(2.4, 2, 1.6, 0, 1, 0, bn), 'station', 'bench', '手作台'); label('手作台', '#fbbf24', '手工做出粗製捏捏', BASE.bench[0], G(0, 7) + 2.74, 9.64);
+  addCol({ x: BASE.bench[0], z: BASE.bench[1], r: 1.2 }); addInter(hitBox(2.4, 2, 1.6, 0, 1, 0, bn), 'station', 'bench', '手作台'); label('手作台', '#fbbf24', '', BASE.bench[0], G(0, 7) + 2.74, 9.64);
   // 加工產線（買了哪台才出現哪台）
   const line = at(new THREE.Group(), BASE.line); W.lineG = line; buildLine(line);
   W.slotCol.line = { box: [BASE.line[0] - 7.8, BASE.line[1] - 1.2, BASE.line[0] + 9.3, BASE.line[1] + 1.2] };
   W.slotInter.line = addInter(hitBox(17.5, 3.2, 3.2, .7, 1.6, 0, line), 'station', 'line', '加工產線');
-  W.slotMark.line = slotMark(g, BASE.line, '加工產線空地', '工作電腦網購或大城市機械行', 7);
+  W.slotMark.line = slotMark(g, BASE.line, '加工產線', '工作電腦網購或大城市機械行', 7);
   // 裝飾桌
   const dt = at(new THREE.Group(), BASE.decor, .5); W.decorG = dt;
   box(2.6, .12, 1.5, white, 0, .95, 0, dt); [[-1.2, -.65], [1.2, -.65], [-1.2, .65], [1.2, .65]].forEach(([x, z]) => box(.08, .95, .08, dark, x, .47, z, dt));
@@ -3080,7 +3080,7 @@ function buildWorkshop() {
   [['#e879f9', -.8], ['#22d3ee', -.55], ['#fbbf24', .75]].forEach(([c, x]) => mesh(new THREE.OctahedronGeometry(.08), glow(c), x, 1.1, .4, dt));
   W.slotCol.decor = { x: BASE.decor[0], z: BASE.decor[1], r: 1.5 };
   W.slotInter.decor = addInter(hitBox(3, 2, 2, 0, 1, 0, dt), 'station', 'decor', '裝飾桌');
-  W.slotMark.decor = slotMark(g, BASE.decor, '裝飾桌空地', '工作電腦網購或大城市器材行', 2);
+  W.slotMark.decor = slotMark(g, BASE.decor, '裝飾桌', '工作電腦網購或大城市器材行', 2);
   // 直播台
   const lv = at(new THREE.Group(), BASE.live, -.5); W.liveG = lv;
   cyl(1.6, 1.7, .18, 40, dark, 0, .09, 0, lv); const lr = mesh(new THREE.TorusGeometry(1.62, .03, 6, 60), glow('#e879f9'), 0, .19, 0, lv); lr.rotation.x = Math.PI / 2;
@@ -3095,7 +3095,7 @@ function buildWorkshop() {
   W.recLed = mesh(new THREE.SphereGeometry(.035, 8, 6), new THREE.MeshBasicMaterial({ color: '#fb7185' }), .16, .1, -.18, camG);
   W.slotCol.live = { x: BASE.live[0], z: BASE.live[1], r: .55 }; // 只擋住中央的展示柱，舞台本身可以站上去
   W.slotInter.live = addInter(hitBox(3.6, 2.6, 3.6, 0, 1.3, 0, lv), 'station', 'live', '直播台');
-  W.slotMark.live = slotMark(g, BASE.live, '直播台空地', '工作電腦網購或大城市器材行', 2.2);
+  W.slotMark.live = slotMark(g, BASE.live, '直播台', '工作電腦網購或大城市器材行', 2.2);
   // 計程車招呼站（出生點左邊的花島）：車子加在場景、不加在工坊群組——它會載你開走、空車再自己開回來（計程車與月光隧道）
   W.taxiV = makeCab(false); W.scene.add(W.taxiV); cabPark(W.taxiV); buildCabInner(); W.taxiV.add(INNER.g); taxiIsland();
   g.traverse(o => { if (o.isMesh && o.material.visible !== false) { o.castShadow = !LOW; o.receiveShadow = true; } });
@@ -3158,7 +3158,7 @@ function buildCottage(g) {
   // 照片牆（後牆內側，手作台上方）：最多 12 張，用同一張圖集
   { const c = document.createElement('canvas'); c.width = 512; c.height = 384; W.photoCv = c; const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; W.photoTx = tx;
     const board = mesh(new THREE.PlaneGeometry(3.6, 2.7 * .75), new THREE.MeshStandardMaterial({ map: tx, roughness: .9 }), -3.65, y0 + 2.05, zb + .12, cg); board.scale.set(1, 1, 1); W.photoBoard = board; // 喀嚓的白光貼在它前面（photoFlash）
-    const lb = textSprite('照片牆', '#fde68a', '工坊的回憶'); lb.position.set(-3.65, y0 + 3.16, zb + .4); lb.scale.set(1.4, .44, 1); lb.userData.far = 20; cg.add(lb); drawPhotos(); } // 在屋頂下（上緣離斜屋頂的底面還有 10 cm）：只在 20 m 內出現（再遠會被正面的橫樑切掉一截，signDeclutter 也會把被切到的淡掉）
+    const lb = textSprite('照片牆', '#fde68a'); lb.position.set(-3.65, y0 + 3.16, zb + .4); lb.scale.set(1.4, .44, 1); lb.userData.far = 20; cg.add(lb); drawPhotos(); } // 在屋頂下（上緣離斜屋頂的底面還有 10 cm）：只在 20 m 內出現（再遠會被正面的橫樑切掉一截，signDeclutter 也會把被切到的淡掉）
   // 工棚：產線上方的屋頂（夠高，加工時的鏡頭不會被擋住）
   { const sp = [], lx = BASE.line[0], lz = BASE.line[1];
     [[-8.4, -1.9], [9.9, -1.9], [-8.4, 1.9], [9.9, 1.9], [.75, -1.9], [.75, 1.9]].forEach(([x, z]) => sp.push([new THREE.BoxGeometry(.28, 5.6, .28), beam, M4(x, 2.8, z)]));
@@ -3251,15 +3251,15 @@ function buildRacks(g) {
     addCol({ box: [pos[0] - 1.25, pos[1] - .45, pos[0] + 1.25, pos[1] + .45] }); addInter(hitBox(2.5, 2.6, 1.1, 0, 1.3, 0, o), 'station', id, name);
     const lb = textSprite(name, col, sub); lb.position.set(pos[0] + Math.sign(pos[0]) * .3, o.position.y + 2.75, pos[1]); g.add(lb); dyn.userData.lb = lb; dyn.userData.y0 = o.position.y; return dyn; // 招牌壓低、往外移一點：從小屋前面看不會被屋簷擋住（貨架加高時跟著抬，見 rackFrame）
   };
-  W.shelfDyn = mk(BASE.shelf, 'shelf', '網站貨架', '#818cf8', '拿著捏捏按 E 直接上架');
-  W.rackDyn = mk(BASE.rack, 'rack', '倉儲貨架', '#94a3b8', '背包裡的捏捏都收在這');
+  W.shelfDyn = mk(BASE.shelf, 'shelf', '網站貨架', '#818cf8', ''); // 工作站的牌子只寫名字（前 10 分鐘的文字預算 11.1）：怎麼用交給準心旁的提示（拿著捏捏對準＝「E 把手上的…捏捏上架」）
+  W.rackDyn = mk(BASE.rack, 'rack', '倉儲貨架', '#94a3b8', '');
   W.upG = new THREE.Group(); W.scene.add(W.upG);
   // 展示場：擺出得意作品，會慢慢吸引粉絲；多人時朋友可以來參觀按讚
   const MX0 = 13.4, ped = std('#e2e8f0', { roughness: .35 }), trim = std('#fbbf24', { metalness: .6, roughness: .3 }); W.musJ = [];
   [-3.5, -5, -6.5, -8].forEach(z => { const y = G(MX0, z); cyl(.42, .5, 1, 18, ped, MX0, y + .5, z, g); cyl(.46, .46, .05, 18, trim, MX0, y + 1.02, z, g);
     const J = makeJelly(6, true); J.ov.visible = false; J.group.scale.setScalar(.3); J.group.position.set(MX0, y + 1.36, z); J.group.visible = false; g.add(J.group); W.musJ.push(J); addCol({ x: MX0, z, r: .5 }); });
   addInter(hitBox(1.6, 2.2, 6.4, MX0, G(MX0, -5.75) + 1.1, -5.75, g), 'station', 'museum', '展示場');
-  W.musLabel = textSprite(S.done ? '夢想捏捏博物館' : '展示場', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.set(MX0, G(MX0, -5.75) + 3.2, -5.75); g.add(W.musLabel);
+  W.musLabel = textSprite(S.done ? '夢想捏捏博物館' : '展示場', '#fbbf24'); W.musLabel.position.set(MX0, G(MX0, -5.75) + 3.2, -5.75); g.add(W.musLabel);
 }
 function rackFrame(dyn, tiers, gap, mat, matD) {
   dyn.children.slice().forEach(c => { dyn.remove(c); if (c.geometry && !c.userData.shared) c.geometry.dispose(); });
@@ -3294,7 +3294,7 @@ function shelfAct() {
   const p = it.p; if (p.played || p.dur < 100) return toast('捏過的捏捏不能上架到網站，可以拿去直播賣');
   if (S.web.length >= slots()) return toast('貨架滿了，升級「網站伺服器」可以多一層');
   S.stock = S.stock.filter(q => q !== p); S.web.push(p); sfx.pop(); objSig = ''; renderHotbar(true); save();
-  toast(`已上架${short(p.sp)}捏捏（售價 ${fmt(priceOf(p, 'web'))}），等顧客下單`);
+  if (S.sales) toast(`上架了：${short(p.sp)}捏捏 ${fmt(priceOf(p, 'web'))}`); // 第一次上架不跳字：捏捏擺上貨架、幾秒後成交的「網站成交 +¥10」就是回應
 }
 /* ---------- 看得到的世界變化（5.4）：玩家沒在做事時發生的事，不跳字 ----------
    網站成交：貨架那一格空出來、旁邊的出貨箱多一個包裹（S.out，存檔）；人在工坊附近、沒開介面時，包裹一個一個綁上氣球寄出去
@@ -3470,33 +3470,15 @@ const QUEST = {
   volcano: { from: 'coast', title: '潮汐石陣', need: 4, hint: '海灘上散落著 3 張被撕碎的紙條。拼湊出完整的謎語後，依序點亮六顆潮汐石中的四顆，順序錯了會重來。' },
 };
 const FRAG_SPOTS = [[-34, 30], [38, -34], [-14, -42], [22, 38], [-41, -16]].map(kk), ALTAR = kk([44, 5]), NOTES = [[66, 22], [81, -4], [71, -32]].map(kk);
-const TIDE_SPOTS = [[63, -15], [66.5, -18], [70, -15], [73.5, -18], [77, -15], [80.5, -18]].map(kk), TABLET = kk([-16, -63]), PILLARS = [[-10, -67], [-3.5, -69], [3.5, -69], [10, -67]].map(kk);
-const PUZ_SPOTS = [...FRAG_SPOTS, ALTAR, ...NOTES, ...TIDE_SPOTS, TABLET, ...PILLARS];
+const TIDE_SPOTS = [[63, -15], [66.5, -18], [70, -15], [73.5, -18], [77, -15], [80.5, -18]].map(kk);
+const PUZ_SPOTS = [...FRAG_SPOTS, ALTAR, ...NOTES, ...TIDE_SPOTS]; // 雪原只要保暖衣、不用解謎：石碑與熔岩柱從來沒建出來、走不到，已經拿掉
 const TIDE = [{ c: '#ef4444', n: '紅' }, { c: '#f97316', n: '橘' }, { c: '#facc15', n: '黃' }, { c: '#22c55e', n: '綠' }, { c: '#3b82f6', n: '藍' }, { c: '#a855f7', n: '紫' }];
 const TIDE_ORDER = [1, 4, 0, 3], TIDE_LAYOUT = [3, 0, 5, 1, 4, 2];
-const PILLAR = ['ice', 'grass', 'salt', 'coral', 'lava', 'honey'], PILLAR_ANS = [0, 1, 2, 3];
 const NOTE_TXT = ['……第 1 個醒來的，是熔岩史萊姆身上燃燒的顏色……', '……第 2 個，是海鹽史萊姆的顏色；第 3 個，是彩虹最外圈的那一道……', '……第 4 個，也是最後一個，是青草史萊姆的顏色。其餘的石頭，千萬不要碰。'];
 // 潮汐石陣的 4 個步驟：n 是這一步的線索寫在第幾張紙條上
 const TIDE_STEP = [{ n: 0, t: '熔岩史萊姆身上燃燒的顏色' }, { n: 1, t: '海鹽史萊姆的顏色' }, { n: 1, t: '彩虹最外圈的那一道' }, { n: 2, t: '青草史萊姆的顏色' }];
-const PILLAR_HINT_ORDER = [0, 3, 2, 1];
-const TABLET_TXT = '寒冰之心立於最左，<br>海底之花守在最右。<br>海鹽從不與寒冰比鄰，<br>剩下的那一根，長出初春的嫩草。';
-/* ---------- 火山相關謎題的輔助：線索判定、標籤、提示 ---------- */
-const pSp = v => SP[PILLAR[v]];
+/* ---------- 潮汐石陣的輔助：步驟清單、提示 ---------- */
 const ENTER = () => (TOUCH ? '點擊' : '按 E');
-function pillarClues(pil) {
-  const sp = pil.map(v => PILLAR[v]), at = id => sp.indexOf(id);
-  return [
-    { t: '四根柱子分別是冰晶、海鹽、珊瑚，以及長出初春嫩草的青草史萊姆，各一根', ok: ['ice', 'salt', 'coral', 'grass'].every(id => sp.filter(x => x === id).length === 1) },
-    { t: '寒冰之心（冰晶史萊姆）立在最左邊（第 1 根）', ok: sp[0] === 'ice' },
-    { t: '海底之花（珊瑚史萊姆）守在最右邊（第 4 根）', ok: sp[3] === 'coral' },
-    { t: '海鹽史萊姆從不與冰晶史萊姆相鄰', ok: at('salt') >= 0 && at('ice') >= 0 && Math.abs(at('salt') - at('ice')) > 1 },
-  ];
-}
-const cluesDone = () => pillarClues(qState().pil).filter(c => c.ok).length;
-function pillarExtra() {
-  const q = qState(), cl = pillarClues(q.pil);
-  return `<div class="clues">${cl.map(c => `<div class="${c.ok ? 'ok' : ''}"><b>${c.ok ? '✓' : '○'}</b><span>${c.t}</span></div>`).join('')}<div class="slots">${q.pil.map((v, i) => `<span>${i + 1}.${dot(pSp(v).color)}${short(PILLAR[v])}</span>`).join('')}</div></div>`;
-}
 function tideStepsHTML() {
   const q = qState();
   return `<div class="clues">${TIDE_STEP.map((s, i) => { const done = i < q.tide.length, have = q.notes.includes(s.n); return `<div class="${done ? 'ok' : ''}"><b>${done ? '✓' : i + 1}</b><span>${have ? '第 ' + (i + 1) + ' 個醒來：' + esc(s.t) : '第 ' + (i + 1) + ' 個醒來：？？？（還有紙條沒找到）'}${done ? '　→ ' + TIDE[TIDE_ORDER[i]].n + '色' : ''}</span></div>`; }).join('')}</div>`;
@@ -3504,24 +3486,22 @@ function tideStepsHTML() {
 function questExtra(k) {
   const q = qState();
   if (k === 'volcano' && (q.notes.length || q.tide.length)) return tideStepsHTML();
-  if (k === 'snow' && q.read.tablet) return pillarExtra();
   return '';
 }
 function hintLines(k) {
   const q = qState(), n = q.hints[k], out = [];
   for (let i = 0; i < n; i++) {
-    if (k === 'tide') out.push(i === 0 ? '一共要依序點亮 4 顆石頭，另外 2 顆不是答案，千萬不要碰。' : `第 ${i} 步要點亮的是：${TIDE[TIDE_ORDER[i - 1]].n}色的石頭。`);
-    else { const p = PILLAR_HINT_ORDER[i]; out.push(`第 ${p + 1} 根應該是：${SP[PILLAR[PILLAR_ANS[p]]].name}。`); }
+    out.push(i === 0 ? '一共要依序點亮 4 顆石頭，另外 2 顆不是答案，千萬不要碰。' : `第 ${i} 步要點亮的是：${TIDE[TIDE_ORDER[i - 1]].n}色的石頭。`);
   }
   return out;
 }
 function hintBlock(k) {
-  const q = qState(), max = k === 'tide' ? 5 : 4, n = q.hints[k], lines = hintLines(k);
+  const q = qState(), max = 5, n = q.hints[k], lines = hintLines(k);
   return `<div class="hintbox">${lines.map(l => `<div>提示：${l}</div>`).join('')}<button class="btn sm ghost" data-act="hint" data-k="${k}" ${n >= max ? 'disabled' : ''}>${n >= max ? '提示已全部揭露' : n ? '再給一點提示' : '卡住了？需要提示'}（${n}/${max}）</button></div>`;
 }
 function giveHint(k) {
-  const q = qState(), max = k === 'tide' ? 5 : 4; if (q.hints[k] >= max) return; q.hints[k]++; sfx.pop(); save();
-  toast('已揭露一則提示（可在探索日誌重新查看）'); renderQuest(); if (tab === 'riddle') renderRiddle(); objSig = ''; renderObjective();
+  const q = qState(), max = 5; if (q.hints[k] >= max) return; q.hints[k]++; sfx.pop(); save();
+  toast('已揭露一則提示（可在探索日誌重新查看）'); renderQuest(); objSig = ''; renderObjective();
 }
 function beam(parent, color, h = 7, r = .2, y = 0) {
   const m = mesh(new THREE.CylinderGeometry(r, r, h, 12, 1, true), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }), 0, y + h / 2, 0, parent);
@@ -3536,15 +3516,10 @@ function stoneLabel(g, ci) {
   if (step >= 0) putLabel(g, 'lab', `第 ${step + 1} 步`, TIDE[ci].c, TIDE[ci].n + '色', 2.55, 1.5, .47); else putLabel(g, 'lab', TIDE[ci].n + '色', TIDE[ci].c, '', 2.45, 1.45, .45);
 }
 function refreshStones() { W.puz.forEach(p => { if (p.pz.type === 'tide') stoneLabel(p.obj, p.pz.c); }); }
-function pillarLabel(g, v, i) { putLabel(g, 'lab', short(PILLAR[v]), pSp(v).color, `第 ${i + 1} 根`, 4.1, 1.7, .53); }
-function showPillarBeams() { W.puz.forEach(p => { if (p.pz.type === 'pillar' && !p.obj.userData.beam) p.obj.userData.beam = beam(p.obj, '#fde68a', 6, .28, 3.1); }); }
-function volcanoHint(zid) {
-  if (false) { W.volHint = true; setTimeout(() => toast('火山腳下有一座發光的石碑，往光柱的方向走，看看上面刻了什麼。'), 700); }
-}
 function qState() {
   if (!S.q) S.q = {}; const q = S.q; q.frags = q.frags || []; q.notes = q.notes || []; q.tide = q.tide || []; q.read = q.read || {};
-  q.hints = q.hints || {}; q.hints.tide = Math.max(0, Math.min(5, +q.hints.tide || 0)); q.hints.pillar = Math.max(0, Math.min(4, +q.hints.pillar || 0));
-  if (!q.pil || q.pil.length !== 4) q.pil = [4, 4, 4, 4]; if (!q.map || q.map.length !== 9) q.map = [1, 3, 2, 0, 1, 2, 3, 1, 2]; return q;
+  q.hints = q.hints || {}; q.hints.tide = Math.max(0, Math.min(5, +q.hints.tide || 0));
+  if (!q.map || q.map.length !== 9) q.map = [1, 3, 2, 0, 1, 2, 3, 1, 2]; return q;
 }
 const madeIn = zid => SPECIES.filter(s => s.zone === zid).reduce((a, s) => a + (S.codex[s.id] ? S.codex[s.id].made : 0), 0);
 const questReady = k => madeIn(QUEST[k].from) >= QUEST[k].need;
@@ -3564,7 +3539,7 @@ function buildGates() {
     [-1, 1].forEach(o => { const r = mesh(jit(new THREE.CylinderGeometry(.32, .48, h * .95, 7, 3), .25, o + 3), rockM, o * w * .9, h * .47, 0, g); r.castShadow = !LOW; });
     const mat = new THREE.MeshBasicMaterial({ color: '#a78bfa', map: gateTex, transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
     mesh(new THREE.PlaneGeometry(w * 1.85, h * .94), mat, 0, h * .47, 0, g);
-    const run = textSprite('能量門', '#c4b5fd', '需解開：' + GATES[k].title); run.position.set(0, h + 1.8, -2.6); g.add(run);
+    const run = textSprite('能量門', '#c4b5fd'); run.position.set(0, h + 1.8, -2.6); g.add(run); // 要解開哪個謎題：對準時準心旁會寫（gate 的 targetLabel），目標面板也寫著
     const it = addInter(hitBox(w * 1.85, h, .6, 0, h / 2, 0, g), 'gate', k, '能量門');
     caveSetLayers(g, 1); W.gates[k] = { g, mat, col: null, it, fade: 0 };
   });
@@ -3581,11 +3556,7 @@ function discoverZone(k, o = {}) { // o.quiet：自己買保暖衣觸發的解�
   // 不跳彈窗：奶奶的明信片從解開謎題的地方浮起來、飄到手上；買保暖衣解開的雪原那張插在冰洞口外的雪堆上；山洞口立一道該區顏色的光柱
   if (k === 'coast') postcardRise('coast', new THREE.Vector3(ALTAR[0], H(...ALTAR) + 1.1, ALTAR[1]));
   else if (k === 'volcano') postcardRise('volcano', W.lastTide && W.lastTide.userData.gem ? W.lastTide.userData.gem.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, .25, 0)) : new THREE.Vector3(P.x, P.y + 1.4, P.z));
-  else if (k === 'snow') {
-    // 熔岩柱謎題解開（人就站在柱子旁）：明信片從四根柱子中間浮起來，上面寫著要穿保暖衣、雪原大約十分鐘就會冷透（還沒買保暖衣也馬上知道下一步）
-    if (!o.quiet && !inCity()) postcardRise('snow', pillarMid());
-    refreshCold(); if (o.quiet || inCity()) toast('發現新區域：雪原' + (o.quiet && up ? `　升級！達到 Lv ${up}` : '')); // 買保暖衣：升級併進同一則
-  }
+  else if (k === 'snow') { refreshCold(); toast('發現新區域：雪原' + (o.quiet && up ? `　升級！Lv ${up}` : '')); } // 只有買保暖衣會解開（人多半在大城市）：升級併進同一則；明信片插在冰洞口的雪堆上（snowCard）
   buildRoads(); renderQuest();
 }
 function buildPuzzles() {
@@ -3602,7 +3573,7 @@ function buildPuzzles() {
     const stoneM = std('#78716c', { flatShading: true, roughness: .95 });
     cyl(.9, 1.1, .9, 8, stoneM, 0, .45, 0, al); box(1.6, .12, 1.6, stoneM, 0, .96, 0, al);
     al.userData.plate = box(1.3, .03, 1.3, new THREE.MeshStandardMaterial({ color: '#e9d8a6', emissive: '#fbbf24', emissiveIntensity: .2 }), 0, 1.03, 0, al);
-    const lb = textSprite('古地圖石台', '#fde68a', '集齊 5 片碎片後拼回地圖'); lb.position.set(0, 2.6, 0); al.add(lb);
+    const lb = textSprite('古地圖石台', '#fde68a'); lb.position.set(0, 2.6, 0); al.add(lb);
     addCol({ x: ALTAR[0], z: ALTAR[1], r: 1.2 }); add(al, { type: 'altar' }, '古地圖石台', 1.3);
   }
   if (!S.zones.includes('volcano')) {
@@ -3621,7 +3592,6 @@ function buildPuzzles() {
   W.anim.push((dt, t) => W.puz.forEach((it, i) => {
     const o = it.obj, d = Math.hypot(o.position.x - P.x, o.position.z - P.z);
     if (it.pz.type === 'frag') o.userData.frag.material.emissiveIntensity = d < 14 ? .3 + (Math.sin(t * 3 + i) + 1) * .35 * (1 - d / 14) : .03;
-    if (it.pz.type === 'pillar') o.userData.cr.rotation.y = t;
     if (it.pz.type === 'tide') {
       const gm = o.userData.gem.material;
       if (o.userData.flash > 0) { o.userData.flash -= dt; gm.emissive.set('#ef4444'); gm.emissiveIntensity = 3 * Math.max(0, o.userData.flash / .6); if (o.userData.flash <= 0) gm.emissive.set(TIDE[it.pz.c].c); }
@@ -3630,14 +3600,13 @@ function buildPuzzles() {
     if (it.pz.type === 'altar') o.userData.plate.material.emissiveIntensity = qState().frags.length >= 5 ? .5 + Math.sin(t * 3) * .3 : .1;
   }));
 }
-function setPillar(g, v, i) { const c = pSp(v).color; g.userData.cr.material.color.set(c); g.userData.cr.material.emissive.set(c); pillarLabel(g, v, i); }
 function removePuz(it) { W.scene.remove(it.obj); W.puz = W.puz.filter(x => x !== it); W.inter = W.inter.filter(x => x !== it); }
 function puzzleTap(it) {
   const q = qState(), pz = it.pz; sfx.tick();
-  const zoneOf = { frag: 'coast', altar: 'coast', note: 'volcano', tide: 'volcano', tablet: 'snow', pillar: 'snow' }[pz.type];
+  const zoneOf = { frag: 'coast', altar: 'coast', note: 'volcano', tide: 'volcano' }[pz.type];
   // 解開後（或正在開門的 0.5 秒內）再點不會打亂狀態
   if (S.zones.includes(zoneOf) || W.solving === zoneOf) return toast('這道謎題已經解開了。');
-  if (!questReady(zoneOf) && pz.type !== 'tablet') { const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`); }
+  if (!questReady(zoneOf)) { const Q = QUEST[zoneOf]; return toast(`${it.name}被一股力量封印著……先用${ZONES.find(z => z.id === Q.from).name}的史萊姆做出 ${Q.need} 個捏捏（目前 ${madeIn(Q.from)}）。`); }
   const above = (h = 1) => it.obj.position.clone().setY(it.obj.position.y + h);
   if (pz.type === 'frag') {
     if (!q.frags.includes(pz.i)) { q.frags.push(pz.i); gainXP(5); } fx3(above(1), `古地圖碎片 ${q.frags.length}/5`, '#fde68a');
@@ -3659,27 +3628,15 @@ function puzzleTap(it) {
     q.tide.push(pz.c); pz.g.userData.gem.material.emissiveIntensity = 1.8; fx3(above(2.4), `第 ${q.tide.length} 步 ✓`, TIDE[pz.c].c); refreshStones();
     if (q.tide.length === TIDE_ORDER.length) { W.solving = 'volcano'; W.lastTide = pz.g; setTimeout(() => discoverZone('volcano'), 500); } else sfx.machine(0);
     save(); renderQuest(); renderObjective();
-  } else if (pz.type === 'tablet') {
-    q.read.tablet = true; showPillarBeams(); save(); renderQuest(); objSig = ''; renderObjective(); openGui('riddle');
-  } else if (pz.type === 'pillar') {
-    if (!q.read.tablet) return toast('熔岩柱燙得無法靠近……先去讀一讀附近石碑上的古文。');
-    const before = cluesDone(); q.pil[pz.i] = (q.pil[pz.i] + 1) % PILLAR.length; setPillar(pz.g, q.pil[pz.i], pz.i); sfx.machine(2); save();
-    const after = cluesDone(); toast(`第 ${pz.i + 1} 根：${pSp(q.pil[pz.i]).name}（已滿足 ${after}/4 條線索）`);
-    if (after > before) { fx3(above(3.4), `線索 ${after}/4 ✓`, '#34d399'); sfx.tick(); }
-    renderQuest(); objSig = ''; renderObjective();
-    if (q.pil.every((v, i) => v === PILLAR_ANS[i])) { W.solving = 'snow'; setTimeout(() => discoverZone('snow'), 500); }
   }
 }
 function questTarget() {
   const k = nextQuest(); if (!k || !S.zones.includes(QUEST[k].from)) return null; const q = qState(), E = ENTER();
   const nearest = (list, have, n, h, d) => { let b = null, bd = 1e9; list.forEach(([x, z], i) => { if (have.includes(i)) return; const dd = Math.hypot(x - P.x, z - P.z); if (dd < bd) { bd = dd; b = { x, z, n, h, d }; } }); return b; };
-  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台', h: `對準石台${E}，把古地圖拼回原狀。` } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片', `碎片就落在附近的地上，靠近時會微微發光，對準後${E}撿起。`);
+  if (k === 'coast') return q.frags.length >= 5 ? { x: ALTAR[0], z: ALTAR[1], n: '古地圖石台', h: `對準石台${E}，把古地圖拼回原狀。`, d: '到能量門前的石台拼回地圖。' } : nearest(FRAG_SPOTS, q.frags, '古地圖碎片', `就在附近的地上，對準後${E}撿起。`, `森林裡藏著 5 片，靠近會發光（${q.frags.length}/5）。`); // d：目標面板的一句說明（沒有的話面板只剩標題，星標指著 60 m 外不知道要找什麼）
   if (k === 'volcano') return q.notes.length >= 3
     ? { x: TIDE_SPOTS[2][0], z: TIDE_SPOTS[2][1], n: '潮汐石陣', h: `對準石頭${E}，依紙條的順序點亮四顆（已點亮 ${q.tide.length}/4）。`, d: `前往潮汐石陣，依序點亮四顆石頭（已點亮 ${q.tide.length}/4）。` }
     : nearest(NOTES, q.notes, '撕碎的紙條', `紙條壓在地上的小石頭下，會發出一道微光。對準後${E}撿起（已找到 ${q.notes.length}/3）。`, `沿著光柱找出海灘上的 3 張紙條（已找到 ${q.notes.length}/3）。`);
-  if (k === 'snow') return q.read.tablet
-    ? { x: 0, z: PILLARS[1][1], n: '熔岩柱', h: `對準熔岩柱${E}切換晶石的史萊姆種類，上方會顯示名稱；左上角的清單會告訴你哪些線索已滿足。`, d: `依照石碑線索設定四根熔岩柱（已滿足 ${cluesDone()}/4 條線索）。` }
-    : { x: TABLET[0], z: TABLET[1], n: '古老的石碑', h: `對準石碑${E}，閱讀上面的古文。`, d: '火山腳下有一座發光的石碑，朝光柱的方向走，去讀一讀。' };
   return null;
 }
 function renderQuest() { ui('inv'); } // 探索日誌在背包分頁裡（components/stations/Inventory.tsx）
@@ -4170,7 +4127,7 @@ function spawnStarter() {
   const sl = newSlime(sp, m, { id: ++W.sid, sc: .82, zid: 'forest', hx: x, hz: z, x, z, tut: true, pers: 'calm', yaw: 0 });
   m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; W.scene.add(m); W.slimes.push(sl); W.starter = sl;
   if (W.starterLabel) dropObj(W.starterLabel);
-  const lb = textSprite('新手史萊姆', '#6ee7a8', '對準牠，捏 3 下', { tag: 1 }); lb.position.set(x, G(x, z) + 2.2, z); if (!S.tutDone) { W.scene.add(lb); W.starterLabel = lb; }
+  const lb = textSprite('新手史萊姆', '#6ee7a8', '', { tag: 1 }); lb.position.set(x, G(x, z) + 2.2, z); if (!S.tutDone) { W.scene.add(lb); W.starterLabel = lb; } // 怎麼捏寫在畫面中央的教學，牌子只標是哪一隻
 }
 /* ---------- 行為與動畫 ---------- */
 // 玩家走得到的地面：坡度不超過玩家能爬的、不在山脊上、在同一區（不會跑到能量門另一邊）
@@ -4350,7 +4307,8 @@ function applyHit(sl, r, local, pt, remote) {
     fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big');
     if (bonus) { setTimeout(() => fx3(top.clone().setY(top.y + .5), '完美節奏！額外 +1', '#f0abfc', 'big'), 220); if (!emoteOn(sl) || sl.emo.k !== 'star') emote(sl, 'star'); }
     if (W.goo) W.goo.emit(sl.m.position.clone().setY(sl.m.position.y + .7 * sl.sc), 3 + n * 3, sl.sp.color, { collect: true, size: .07, up: 3.5, speed: 1.2 });
-    toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠${bonus ? '（完美節奏加成）' : ''}`); if (!S.tutDone) coachFlash(`凝膠飛進你的手裡了！（+${n}）`, 2600); renderHotbar(true); sl.perf = 0;
+    renderHotbar(true); sl.perf = 0; // 不另外跳「採集到…」、教學也不閃字：凝膠飛進手裡、頭上冒「+2 青草凝膠」、教學直接換到下一步就夠了
+    if (!S.tipRhythm && S.tutDone && (W.hvN = (W.hvN || 0) + 1) >= 5) { S.tipRhythm = true; if (!bonus) setTimeout(() => toast('小技巧：三下抓穩節奏，可以多採 1 份'), 1500); } // 教學結束後採到第 5 次才說（先讓手熟悉）；已經捏出完美節奏（頭上冒過「額外 +1」）就不用說
   } else { fx3(top, `${short(sl.sp.id)} ${r.hits}/3${perfect ? ' 完美！' : ''}`, perfect ? '#f0abfc' : RAR[sl.sp.rar].c); }
   ringPulse(perfect ? 'perf' : 'hit');
 }
@@ -4493,7 +4451,7 @@ function buildColdWall() {
   const c = CAVES.find(o => o.id === 'ice'); if (!c) return; const wd = c.Wd[0], ht = c.Hh[0], w = new THREE.Group();
   w.position.set(c.X[0] + c.TX[0] * 1.2, c.y0, c.Z[0] + c.TZ[0] * 1.2); w.rotation.y = Math.atan2(c.TX[0], c.TZ[0]); W.scene.add(w); W.coldWall = w;
   mesh(new THREE.PlaneGeometry(wd * 1.9, ht * .95), new THREE.MeshBasicMaterial({ color: '#bae6fd', map: gateTex, transparent: true, opacity: .3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }), 0, ht * .48, 0, w);
-  const lb = textSprite('刺骨寒氣', '#bae6fd', '需要保暖衣才能進入'); lb.position.set(0, ht + 1.6, -2.4); lb.scale.set(3.6, 1.12, 1); w.add(lb); caveSetLayers(w, 1); refreshCold();
+  const lb = textSprite('刺骨寒氣', '#bae6fd'); lb.position.set(0, ht + 1.6, -2.4); lb.scale.set(3.6, 1.12, 1); w.add(lb); caveSetLayers(w, 1); refreshCold(); // 要保暖衣：撞上去時的提示與目標面板（coatObjective）會說，開場飛過時不讀字
 }
 function barrierMsg(msg) { const now = performance.now(); W.barT = W.barT || {}; if (now - (W.barT[msg] || 0) < 4000) return; W.barT[msg] = now; toast(msg); }
 function barrierWhy(x, z) {
@@ -4652,7 +4610,7 @@ function pickAt(ndcX, ndcY) {
   if (W.npcs && inCity()) W.npcs.forEach(n => { if (Math.hypot(CITY.x + n.x - P.x, CITY.z + n.z - P.z) < 8) objs.push(n.m.hb); });
   const h = RAY.intersectObjects(objs, false); RAY.far = Infinity; if (!h.length) return null;
   const o = h[0].object; if (o.userData.npc) return { type: 'npc', n: o.userData.npc, d: h[0].distance }; if (o.userData.av) return { type: 'avatar', id: o.userData.av, d: h[0].distance }; if (o.userData.sl) return { type: 'slime', sl: o.userData.sl, d: h[0].distance, pt: h[0].point.clone() };
-  const it = o.userData.it; if (!it) return null; if (it.kind === 'station' && h[0].distance > 5.5) return null; if ((it.kind === 'ware' || it.kind === 'counter') && h[0].distance > 3.4) return null; return { type: it.kind, it, d: h[0].distance }; // 店裡的商品、櫃台：3.4 m 內才算
+  const it = o.userData.it; if (!it) return null; if ((it.kind === 'station' || it.kind === 'slot') && h[0].distance > 5.5) return null; if ((it.kind === 'ware' || it.kind === 'counter') && h[0].distance > 3.4) return null; return { type: it.kind, it, d: h[0].distance }; // 店裡的商品、櫃台：3.4 m 內才算
 }
 function targetLabel(t) {
   if (!t) return ''; // 拿著捏捏、準心沒對到東西時的「在手上捏」提示貼在袖子上（knTipStep），不放在準心下面擋到招牌
@@ -4673,26 +4631,28 @@ function targetLabel(t) {
   if (t.type === 'ware') { const st = wareState(t.it.t, t.it.k); return `${key}拿起來看　${esc(st.name)} ${st.why === 'has' ? '（已購買）' : st.why === 'max' ? '（滿級）' : fmt(st.cost)}`; }
   if (t.type === 'counter') { const n = kpNpc(t.it.shop); return n ? `${key}跟${esc(n.d.name)}聊聊` : ''; }
   if (t.type === 'gate') return `能量門 · 需解開「${GATES[t.it.id].title}」`;
+  if (t.type === 'slot') return `${t.it.name}還沒送來　<span style="color:var(--sub)">${t.it.sub}</span>`; // 帆布棧板：沒有按鍵（按 E 不做事），只說去哪裡買
   if (t.type === 'cave') return caveLabel(t, key);
   if (t.type === 'puzzle' || t.type === 'nook') return `${key}${t.it.name}`; // nook：小場景裡可以互動的東西（樹洞、瓶子、冰柱…）
   return '';
 }
-/* ---------- 新手教學：畫面中央一步一步的提示（對準 → 捏 → 凝膠飛進手裡 → 手作台） ---------- */
-const COACH = { flash: '', flashT: 0, sig: '' };
-function coachFlash(t, ms = 2500) { COACH.flash = t; COACH.flashT = performance.now() + ms; }
+/* ---------- 新手教學：畫面中央一步一步的提示（對準 → 捏 → 手作台）；每一步一句，按鍵交給準心旁的提示（前 10 分鐘的文字預算） ---------- */
+const COACH = { sig: '' };
 function coachText() {
   if (S.tutDone || TITLE.on || GUI.kind || !W.ready || !P || S.stock.length) return '';
-  if (COACH.flashT > performance.now()) return '<span class="st ok">✓</span>' + COACH.flash;
-  const E = TOUCH ? '點擊右下的<b>手掌</b>' : '按 <kbd>E</kbd> 或左鍵', hasGel = SPECIES.some(sp => (S.gel[sp.id] || 0) >= 2);
-  if (hasGel) return W.letterObj ? `<span class="st">3</span>手作台上有奶奶留給你的信<small>走到左前方的手作台，對準它${E}</small>` : `<span class="st">3</span>走到左前方的「手作台」，對準它${E}<small>用 2 份凝膠捏出你的第一個捏捏</small>`;
+  const E = TOUCH ? '點<b>手掌</b>' : '按 <kbd>E</kbd> ', hasGel = SPECIES.some(sp => (S.gel[sp.id] || 0) >= 2);
+  if (hasGel) return W.letterObj ? '<span class="st">3</span>手作台上有奶奶的信' : '<span class="st">3</span>到手作台捏一個捏捏'; // 對準時準心旁會寫「E 拿起奶奶的信／E 使用手作台」，不重複按鍵
   const t = TARGET && TARGET.type === 'slime' ? TARGET.sl : null;
-  if (t && t.cool > 0) return '<span class="st">2</span>牠在休息，等幾秒再捏<small>準心外圈會倒數</small>';
-  if (t) return `<span class="st">2</span>${E}捏牠（${t.hits}/3）<small>連捏 3 下就能採到凝膠</small>`;
-  return `<span class="st">1</span>把準心對準前面的史萊姆<small>${TOUCH ? '在畫面右側滑動轉動視角，左下搖桿移動' : '移動滑鼠轉動視角，WASD 移動'}</small>`;
+  if (t && t.cool > 0) return '<span class="st">2</span>牠在休息，等一下';
+  if (t) return `<span class="st">2</span>${E}捏牠 3 下`; // 捏了幾下：準心旁的「採集 n/3」和頭上的浮字都在數，這裡不再數一次
+  return `<span class="st">1</span>對準前面的史萊姆<small>${TOUCH ? '右邊滑動看、左下搖桿走' : '滑鼠看、<kbd>WASD</kbd> 走'}</small>`;
 }
 function renderCoach() {
+  // 第一個捏捏做好了、教學卻沒結束（手作台做好後 450 ms 內關掉分頁，finishTutorial 還沒跑）：教學提示因為有庫存不再顯示、目標面板又還藏著，
+  // 畫面上什麼指引都沒有。能動的時候補跑一次：奶奶的便條拿在手上、帆布底下的切片機照常等你看見
+  if (!S.tutDone && S.stock.length && !GUI.kind && !BN.busy && W.ready && !TITLE.on && !INTRO.on && !RIDE.on && P) finishTutorial();
   const h = coachText(); if (h === COACH.sig) return; COACH.sig = h; const el = $('#coach'); if (!el) return;
-  el.hidden = !h; if (h) el.innerHTML = h; el.classList.toggle('flash', h.includes('class="st ok"'));
+  el.hidden = !h; if (h) el.innerHTML = h;
   // 矮的橫向畫面卡片放左下（app/game.css），訊息列要往上讓出卡片的高度：換字、轉向、折行時都重量一次
   document.body.classList.toggle('coach', !!h); if (!COACH.ro && window.ResizeObserver) { COACH.ro = new ResizeObserver(() => document.body.style.setProperty('--coachH', el.offsetHeight + 'px')); COACH.ro.observe(el); }
 }
@@ -4716,12 +4676,12 @@ function doActAt(t) {
   if (t.type === 'station' && t.it.id === 'bench' && W.letterObj) return openPaper(PAPERS.granny, W.letterObj); // 第一次對手作台按 E：先拿起奶奶的信
   if (t.it && t.it.act) return t.it.act(t.it); // 自訂互動（例如大城市的販賣機、橘貓）
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
-  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (XP_LV[ARMS_LV] - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id.startsWith('info:')) infoAct(t.it, id.slice(5)); else if (id === 'cafe') cafeAct(); else if (id === 'market') marketAct(); else if (id === 'board') openGui('board', 'weekly'); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
+  else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id.startsWith('shop:')) { const sh = id.slice(5); if (sh === 'arms' && !armsOpen()) toast('武器店要 Lv ' + ARMS_LV + ' 才會營業（目前 Lv ' + xpLevel(S.xp) + '，還差 ' + (xpNeed(ARMS_LV) - S.xp) + ' 經驗）。'); else openGui('shop', sh); } else if (id === 'hospital') hospitalAct(); else if (id.startsWith('info:')) infoAct(t.it, id.slice(5)); else if (id === 'cafe') cafeAct(); else if (id === 'market') marketAct(); else if (id === 'board') openGui('board', 'weekly'); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
   else if (t.type === 'avatar') giftGel(t.id);
   else if (t.type === 'npc') npcTalk(t.n);
   else if (t.type === 'puzzle') puzzleTap(t.it);
   else if (t.type === 'nook') t.it.act(t.it);
-  else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路。解開「${GATES[k].title}」才能通過。按 I 開啟背包查看探索日誌。`); }
+  else if (t.type === 'gate') { const k = t.it.id; toast(`能量門封住了去路：先解開「${GATES[k].title}」（探索日誌在背包裡）。`); }
   else if (t.type === 'cave') caveAct(t.it);
 }
 
@@ -4753,7 +4713,7 @@ function fx3(pos, txt, color = '#fff', cls = '') {
 /* 開啟雪原後缺少保暖衣的指引；沒有這個需求時回傳 null */
 function coatObjective() {
   if (!S.zones.includes('volcano') || S.own.coat) return null;
-  const E = TOUCH ? '點擊' : '按 E', lv = xpLevel(S.xp), need = XP_LV[ARMS_LV] - S.xp;
+  const E = TOUCH ? '點擊' : '按 E', lv = xpLevel(S.xp), need = xpNeed(ARMS_LV) - S.xp;
   if (!armsOpen()) return { t: '升級解鎖武器店', d: '雪原極度寒冷，需要保暖衣才能進入。大城市的武器店要 Lv ' + ARMS_LV + ' 才營業（目前 Lv ' + lv + '，還差 ' + need + ' 經驗）。多採集、加工、販售可以累積經驗。' };
   const lack = S.money < OWN.coat.cost ? '（要 ' + fmt(OWN.coat.cost) + '，目前 ' + fmt(S.money) + '，還需要賺一點錢）' : '';
   if (inCity()) return { t: '購買保暖衣', d: '到路北側最右邊的「武器店」購買保暖衣' + lack + '。', x: CITY.x + 35, z: CITY.z - 15.6, c: '#f87171', n: '武器店', quiet: 1, here: '走進武器店，把保暖衣拿到櫃台結帳（' + fmt(OWN.coat.cost) + '）。' };
@@ -4767,13 +4727,14 @@ function objective() {
     if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 15.6, c: '#22d3ee', n: '機械行', quiet: 1, here: '走進機械行，拿起切片機，到櫃台結帳。' };
     return { t: '逛逛大城市', d: '商店在路的北側，走進去就能拿起來看；廣場旁有咖啡館（老闆每天有小訂單）、週末市集與公告欄。買完後到醫院門口的招呼站搭計程車回月光谷。', x: CITY.x + TAXI.cStand[0], z: CITY.z - 7.6, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
   }
-  if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。', track: 'slime', c: '#6ee7a8' };
-  if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24', n: '手作台', here: '對準手作台' + (TOUCH ? '點擊' : '按 E') + '，用 2 份凝膠做出粗製捏捏。' };
-  if (!S.sales) return { t: '上架到網站', d: S.web.length ? '已經上架了，等顧客下單（第一筆訂單很快就會成交）。' : '拿著捏捏，到工作電腦旁的「網站貨架」把它放上去，等顧客下單。', x: BASE.shelf[0], z: BASE.shelf[1], c: '#818cf8', n: '網站貨架', here: '在快捷列選取捏捏，對準網站貨架' + (TOUCH ? '點擊' : '按 E') + '上架。' };
-  if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)} 後，在工作電腦的「網購」買切片機（目前 ${fmt(S.money)}）。`, x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8', n: '工作電腦', here: '對準工作電腦' + (TOUCH ? '點擊' : '按 E') + '，在「網購」分頁購買切片機。' };
-  if (!S.lineMade) return { t: '用切片機加工', d: gel ? '到中央平地北邊的「加工產線」，用切片機做出酥脆捏捏，比手作的值錢很多。' : '先採集 2 份凝膠，再到中央平地北邊的「加工產線」用切片機加工。', x: gel ? BASE.line[0] : null, z: gel ? BASE.line[1] : null, track: gel ? null : 'slime', c: '#22d3ee', n: gel ? '加工產線' : null, here: '對準加工產線' + (TOUCH ? '點擊' : '按 E') + '，選擇凝膠後啟動產線。' };
+  // 新手的第一串（採集 → 手作 → 上架 → 切片）：只寫標題（第 11.1 節的文字預算）。引導星標指著要去的地方，對準時準心旁會寫「E 使用…」，抵達時面板只換成「下一步」
+  if (!S.stock.length && !gel && !S.sales && !S.web.length) return { t: '採集凝膠', d: '', track: 'slime', c: '#6ee7a8' };
+  if (!S.stock.length && !S.sales && !S.web.length) return { t: '捏一個捏捏', d: '', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24', n: '手作台' };
+  if (!S.sales && !S.web.length) return { t: '把捏捏放上網站貨架', d: '', x: BASE.shelf[0], z: BASE.shelf[1], c: '#818cf8', n: '網站貨架' }; // 上架之後第一筆幾秒就成交，直接接下一步
+  if (!ownAny()) return { t: '存錢買機器', d: `存到 ${fmt(OWN.slicer.cost)}，在工作電腦網購切片機（目前 ${fmt(S.money)}）。`, x: BASE.pc[0], z: BASE.pc[1], c: '#818cf8', n: '工作電腦', here: '對準工作電腦' + (TOUCH ? '點擊' : '按 E') + '，到「網購」買切片機。' };
+  if (!S.lineMade) return gel || M.active ? { t: '用切片機切一個', d: '', x: BASE.line[0], z: BASE.line[1], c: '#22d3ee', n: '加工產線' } : { t: '再採 2 份凝膠', d: '', track: 'slime', c: '#22d3ee' };
   const k = nextQuest(), qt = questTarget();
-  if (k) { const ob = { t: QUEST[k].title, d: questReady(k) ? (qt ? (qt.d || `前往${qt.n}。`) : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd', n: qt && qt.n, here: qt && qt.h }; if (questReady(k)) ob.extra = questExtra(k); return ob; }
+  if (k) { const ob = { t: QUEST[k].title, d: questReady(k) ? (qt ? (qt.d || '') : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd', n: qt && qt.n, here: qt && qt.h }; if (questReady(k)) ob.extra = questExtra(k); return ob; }
   return { t: '開設夢想捏捏博物館', d: '累積粉絲與營收，到工作電腦的圖鑑頁完成夢想。' };
 }
 let objSig = '';
@@ -4783,14 +4744,19 @@ function renderObjective() {
   else { const rt = caveRoute(tx, tz); if (rt) { o = Object.assign({}, o, { x: rt.x, z: rt.z, n: rt.n, d: o.d + `（先穿過${rt.cave.def.name}）`, here: `走進${rt.cave.def.name}，沿著地上的發光痕跡走到出口。` }); tx = rt.x; tz = rt.z; } }
   const key = o.t + '|' + (o.n || o.track || ''), same = tx != null && inCity(tx) === inCity(), dist = same ? Math.hypot(tx - P.x, tz - P.z) : 1e9;
   if (W.arrKey !== key) { W.arrKey = key; W.arr = false; }
-  if (!W.arr && dist < 8) { W.arr = true; if (o.n && !o.quiet) sfx.tick(); } // 抵達不跳字（5.4）：星標在 8 m 內消失、目標面板換成「下一步」，加一聲輕響；走進店頭連這聲也不要（店員的招呼就是回饋）
+  if (!W.arr && dist < 8) { W.arr = true; if (o.n && !o.quiet) sfx.tick(); } // 抵達只響一聲：面板自己會改成「下一步」，不另外跳字（走進店頭連聲音都不用，店員的招呼就是回饋）
   else if (W.arr && dist > 12) W.arr = false;
-  if (W.arr) o = Object.assign({}, o, { d: o.track === 'slime' ? `對準史萊姆${ENTER()} 3 次採集凝膠。` : (o.here || `已抵達${o.n || '目標地點'}，對準它${ENTER()}使用。`), t: o.n ? `${o.t}（已抵達${o.n}）` : o.t, arrived: true });
+  if (W.arr) o = Object.assign({}, o, { d: o.here || (o.d && (o.track === 'slime' ? `對準史萊姆${ENTER()} 3 下。` : `對準它${ENTER()}。`)) || '', t: o.t, arrived: true }); // 抵達：標題不再重複「（已抵達…）」，面板的「下一步」就是
   objFold(key, !!o.arrived, dist);
-  const s = o.t + o.d + (o.extra || ''); W.obj = o; if (s === objSig) return; objSig = s;
+  // 教學期間只留畫面中央的教學提示（目標面板寫的是同一件事）；引導星標照樣指路。教學結束的那一刻手作台多半還開著：
+  // 面板等介面收起來才第一次出現、滑進來（不從介面的尺狀裝飾底下冒出半句「把捏捏放上網站貨」）；之後照舊一直掛著
+  if (!S.tutDone) W.objDebut = false; // 回主選單開新檔：重新等教學結束
+  const show = S.tutDone && (W.objDebut || !GUI.kind || GUI.kind === 'paper');
+  const s = o.t + o.d + (o.extra || '') + (show ? 1 : 0); W.obj = o; if (s === objSig) return; objSig = s;
+  $('#objective').hidden = !show; if (show && !W.objDebut) { W.objDebut = true; if (W.ready && !TITLE.on) $('#objective').classList.add('debut'); }
   $('#objective').classList.toggle('arrived', !!o.arrived);
-  // .oxp：收成一行時標題後面淡淡的「Tab」（觸控是「⋯」，點面板就展開 4 秒），告訴玩家說明還在、怎麼打開
-  $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目前目標'}</b>${esc(o.t)}<span class="oxp" aria-hidden="true">${TOUCH ? '⋯' : 'Tab'}</span><div class="od">${esc(o.d)}</div>${o.extra || ''}`;
+  // .oxp：收成一行時標題後面淡淡的「Tab」（觸控是「⋯」，點面板就展開 4 秒），告訴玩家說明還在、怎麼打開；新手第一串只有標題，沒有說明可展開
+  $('#objective').innerHTML = `<b>${o.arrived ? '下一步' : '目標'}</b>${esc(o.t)}${o.d ? `<span class="oxp" aria-hidden="true">${TOUCH ? '⋯' : 'Tab'}</span><div class="od">${esc(o.d)}</div>` : ''}${o.extra || ''}`;
 }
 // 目標面板收成一行（5.5）：玩家照著走才收，只留「目前目標　標題」——有地點的目標，往目標靠近了 12 m（至少 5 秒）；
 // 沒有地點的目標（存錢、在城裡找東西），已經四處走了 60 m、掛滿 30 秒。站著不動、卡住的玩家不會收（原本掛滿 25 秒就收，迷路的人反而看不到說明）。
@@ -4893,19 +4859,20 @@ function renderCompass() {
   const dg = $('#cmpDeg'); if (dg) dg.textContent = `${dn} ${String(deg).padStart(3, '0')}°`;
 }
 /* ---------- 經驗值與等級（與粉絲無關） ---------- */
-const XP_LV = [0, 20, 50, 100, 180, 300, 480, 720, 1050, 1500, 2100];   // 到達各等級所需的累計經驗，最高 10 級
+const XP_LV = [0, 20, 50, 100, 180, 300, 480, 720, 1050, 1500, 2100];   // XP_LV[n-1]：到達 Lv n 所需的累計經驗；Lv 1 起算、最高 Lv 11（存檔只存經驗、等級每次重算，舊存檔門檻不變）
 const XP_HARV = [0, 2, 4, 8, 20];                                         // 採集一次：依史萊姆稀有度
-const xpLevel = xp => { let lv = 0; while (lv < XP_LV.length - 1 && xp >= XP_LV[lv + 1]) lv++; return lv; };
+const MAX_LV = XP_LV.length, xpNeed = lv => XP_LV[clamp(lv, 1, MAX_LV) - 1];   // HUD、主選單存檔卡、存檔清單、武器店門檻都用這一套，不再各自 +1
+const xpLevel = xp => { let lv = 1; while (lv < MAX_LV && xp >= XP_LV[lv]) lv++; return lv; };
 function gainXP(n, why, o = {}) { // o.quiet：升級不另外跳 toast，回傳新等級讓呼叫的人併進自己那一則
   n = Math.round(n); if (!(n > 0) || !S) return 0;
   const before = xpLevel(S.xp); S.xp += n; const after = xpLevel(S.xp);
   const bar = $('#xpbar'); if (bar) { let em = $('#xpgain'); if (!em) { em = document.createElement('em'); em.id = 'xpgain'; bar.appendChild(em); } em.textContent = '+' + n + ' XP'; em.style.animation = 'none'; void em.offsetWidth; em.style.animation = ''; }
   if (before < ARMS_LV && after >= ARMS_LV) setTimeout(unlockArms, 900);
-  if (after > before) { sfx.level && sfx.level(); if (!o.quiet) toast('升級！達到 Lv ' + after + (after >= XP_LV.length - 1 ? '（滿級）' : '')); const sp = bar && bar.querySelector('span'); if (sp) { sp.classList.remove('up'); void sp.offsetWidth; sp.classList.add('up'); } }
+  if (after > before) { sfx.level && sfx.level(); if (!o.quiet) toast('升級！Lv ' + after + (after >= MAX_LV ? '（滿級）' : '')); const sp = bar && bar.querySelector('span'); if (sp) { sp.classList.remove('up'); void sp.offsetWidth; sp.classList.add('up'); } }
   renderXP(); return after > before ? after : 0;
 }
 function renderXP() {
-  const x = S.xp, lv = xpLevel(x), max = lv >= XP_LV.length - 1, a = XP_LV[lv], b = XP_LV[Math.min(lv + 1, XP_LV.length - 1)], pct = max ? 100 : (x - a) / (b - a) * 100;
+  const x = S.xp, lv = xpLevel(x), max = lv >= MAX_LV, a = xpNeed(lv), b = xpNeed(lv + 1), pct = max ? 100 : (x - a) / (b - a) * 100;
   $('#xpbar i').style.width = clamp(pct, 0, 100) + '%'; $('#xpbar span').textContent = lv;
   $('#xpbar').title = max ? `Lv ${lv}（滿級）　經驗 ${x}` : `Lv ${lv}　經驗 ${x - a} / ${b - a}（再 ${b - x} 升級）`;
 }
@@ -4927,8 +4894,10 @@ function trendDaily() {
     const prev = S.trendD && S.trendD.sp; let sp = pick(pool).id; for (let i = 0; i < 4 && sp === prev && pool.length > 1; i++) sp = pick(pool).id; // 盡量不連兩天同色
     S.trendD = { d, sp }; note('trend', `今天的流行色：${SP[sp].name}（售價 ×1.35）`);
   }
-  if (trend.sp !== S.trendD.sp) { trend.sp = S.trendD.sp; renderTop(); trendFlag(); }
+  if (trend.sp !== S.trendD.sp) { const had = trend.sp; trend.sp = S.trendD.sp; renderTop(); trendFlag(); if (had) hudBlink('sTrend'); } // 換色的那一刻左上的流行小牌亮一下
 }
+// HUD 上的狀態換了：那一塊亮一下（不加字、不搶畫面）
+function hudBlink(id) { const el = document.getElementById(id); if (!el || !el.animate || RM()) return; try { el.animate([{ filter: 'brightness(1.9) saturate(1.3)' }, { filter: 'none' }], { duration: 1100, easing: 'ease-out' }); } catch (e) { } }
 
 /* ============================================================
    介面視窗（工作站 / 背包 / 選單）
@@ -4936,9 +4905,9 @@ function trendDaily() {
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '筆記本', tabs: ['pause', 'map'] }, paper: { t: '', tabs: ['paper'] },
+  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '筆記本', tabs: ['pause', 'map'] }, paper: { t: '', tabs: ['paper'] },
 };
-const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單', map: '地圖', paper: '紙' };
+const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單', map: '地圖', paper: '紙' };
 let tab = '';
 /* 沉浸式介面：每個工作站用一種「道具」呈現（components/StationLayer.tsx 加上外觀與動畫，app/stations.css 是樣式）。
    開關的過場由下面的 GX 控制，#gui[data-mode] 決定是哪一種：
@@ -4948,7 +4917,7 @@ let tab = '';
          隨鏡頭推近展開成可以操作的大小；關閉時反過來貼回表面再淡出（faceTrack）。
    card＝其他（沒有對準物件就打開、或系統設定減少動態）：原地淡入。
    介面開著時世界照樣在背後畫、照樣有聲音（loop 降頻），玩家不能移動、準心不互動。 */
-const PROP = { line: 'machine', bench: 'mat', decor: 'mat', inv: 'journal', pause: 'notebook', pc: 'monitor', live: 'phone', shop: 'catalog', mapg: 'parchment', riddle: 'tablet', museum: 'vitrine', board: 'cork', paper: 'paper' };
+const PROP = { line: 'machine', bench: 'mat', decor: 'mat', inv: 'journal', pause: 'notebook', pc: 'monitor', live: 'phone', shop: 'catalog', mapg: 'parchment', museum: 'vitrine', board: 'cork', paper: 'paper' };
 const HELD = { pause: 1, live: 1, inv: 1, paper: 1 }; // paper＝從世界裡拿起的一張紙（信、便條、明信片、收據），見下面的「手上的紙」
 const GUI_OUT_MS = 380;
 const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -5095,14 +5064,14 @@ function refresh() { if (GUI.kind && tab) RENDER[tab](); renderTop(); renderHotb
    ============================================================ */
 const PT0 = { raise: 480, open0: 160, open1: 640, roll1: 900 }, PC0 = { fade: 60, hide: 170, up: 120, close0: 180, close1: 400, down0: 140, end: 620 }, PFLY = 520, PFLY_W = 900; // 從世界裡飛來／被風吹來
 const PAPER = { cur: null, q: [], src: null, obj: null, T: null, revT0: 0, revMs: 0, rev: 0, flip: 0, gapT: 0, seq: 0, o0: 0, caught: 0, egg: '', stamp: '' }, CLIP = { i: -1, flip: 0 }; // egg＝這張紙寫完字才算找到的小秘密、stamp＝蓋在紙上的章
-// 文案：奶奶的口吻，每張 ≤ 40 字（信沿用原文）。b＝內文每一行（墨水一行一行寫出來）
+// 文案：奶奶的口吻，每張 ≤ 40 字（開場的信與便條各兩行，前 10 分鐘的文字預算）。b＝內文每一行（墨水一行一行寫出來）
 const PAPERS = {
-  granny: { v: 'letter', name: '奶奶的信', head: '親愛的孩子：', b: ['月光谷那間舊工坊，現在交給你了。', '窗戶破了、屋頂也缺了幾片瓦，但史萊姆們還在等著被捏。', '每完成一件事，工坊就會慢慢變回從前的樣子。'], sig: '——奶奶', onFile: letterFiled },
-  gift: { v: 'note', gift: 1, name: '奶奶的便條', b: ['聽到那聲「喀滋」了嗎？做得真好。', '倉庫那台舊切片機送給你，已經搬到北邊的產線上了。'], sig: '——奶奶' },
+  granny: { v: 'letter', name: '奶奶的信', head: '親愛的孩子：', b: ['月光谷的舊工坊，現在交給你了。', '史萊姆們都在等你捏呢。'], sig: '——奶奶', onFile: letterFiled }, // 前 10 分鐘的文字預算（第 11.1 節）：兩行就好
+  gift: { v: 'note', gift: 1, name: '奶奶的便條', b: ['聽到「喀滋」了嗎？做得真好。', '那台舊切片機送你了。'], sig: '——奶奶' }, // 在哪裡由便條上的塗鴉說（「北邊的產線 ↑」，Paper.tsx）
   pc_coast: { v: 'postcard', zone: 'coast', name: '海岸的明信片', b: ['石台亮起來了，東邊海蝕洞的門也開了。', '順著洞口那道光走，穿過山洞就是海邊。'], sig: '——奶奶　很久以前的夏天' },
   pc_volcano: { v: 'postcard', zone: 'volcano', name: '火山的明信片', b: ['潮水退了，北邊熔岩隧道的門也散了。', '火山腳下的溫泉可以煮蛋，真的喔。'], sig: '——奶奶' },
   pc_snow: { v: 'postcard', zone: 'snow', name: '雪原的明信片', b: ['穿上保暖衣，西邊冰洞的寒氣就擋不住你了。', '雪原大約十分鐘就會冷透，記得回來暖暖身子。'], sig: '——奶奶' },
-  // 升到 Lv 5：武器店的傳單被風吹到手上（價錢讀 OWN，改價時不用改這裡）；b 的「｜」左邊是吊牌上的大字
+  // 升到 Lv 6（ARMS_LV）：武器店的傳單被風吹到手上（價錢讀 OWN，改價時不用改這裡）；b 的「｜」左邊是吊牌上的大字
   // 世界裡的紙條：拿在手上讀（talk.js 的 noteWho），讀完收進手帳、可以在剪貼區重讀
   hole: { v: 'note', name: '樹洞裡的紙條', b: ['池塘的小青蛙最愛學人跳，跳給牠看看吧。'], sig: '——奶奶' },
   bottle: { v: 'note', name: '瓶中信', b: ['撿到這封信的人：', '月光谷的史萊姆捏起來，是全世界最療癒的聲音。'], sig: '——一個路過的水手' },
@@ -5268,7 +5237,7 @@ function paperView(s, o) {
 const paperNow = () => { const s = PAPER.cur || (GUI.kind === 'paper' && GX.paper); return s ? paperView(s, { rev: PAPER.rev, flip: PAPER.flip, live: 1, hint: (S.ppN || 0) <= 3 ? 1 : .55, seq: PAPER.seq, stamp: PAPER.cur ? PAPER.stamp : '' }) : null; };
 // 彩蛋的章蓋在手上的紙（talk.js 的 tkStamp 先問這裡）：正在讀的就是這個小秘密的紙（奶奶的筆記）才蓋
 function paperStampOn(id, txt) { if (GUI.kind !== 'paper' || !PAPER.cur || PAPER.cur.egg !== id) return false; PAPER.stamp = txt; ui('paper'); tkSnd.stamp(); return true; }
-function letterFiled() { S.letter = 1; if (W.letterObj) { dropObj(W.letterObj.userData.beam); dropObj(W.letterObj); W.letterObj = null; } COACH.sig = ''; coachFlash('信收進手帳了', 1800); objSig = ''; }
+function letterFiled() { S.letter = 1; if (W.letterObj) { dropObj(W.letterObj.userData.beam); dropObj(W.letterObj); W.letterObj = null; } COACH.sig = ''; objSig = ''; } // 不閃「信收進手帳了」：小信封飛進背包鈕、加上墨點就是回應
 // 奶奶的信：新存檔在手作台右前角放一封蓋紅色封蠟的三折信（合併成一個網格）＋一道淡淡的暖黃光柱；讀過就不再擺
 function placeLetter() {
   if (S.letter || W.letterObj || !W.ws) return; const [bx, bz] = BASE.bench, y = G(bx, bz) + .963;
@@ -5402,7 +5371,6 @@ function postcardRise(z, p, still) { // still＝重新整理後放回原地：�
   g.userData = { paper: 1, pw: .42, drop: 1, it };
   const r = { id, g, c, y0: p.y, t: still ? .6 : 0, asked: still ? 1 : 0 }; RISE.list.push(r); if (still || RM()) r.t = .6; else sfx.paper('shimmer');
 }
-const pillarMid = () => { const x = (PILLARS[1][0] + PILLARS[2][0]) / 2, z = (PILLARS[0][1] + PILLARS[1][1]) / 2; return new THREE.Vector3(x, H(x, z) + 1.6, z); }; // 四根熔岩柱中間的半空中
 // 讀檔時：解開了、還沒撿起來的明信片照樣浮在石台／最後一顆潮汐石上（重新整理不會弄丟奶奶的明信片）；雪原那張讀檔時一律插在冰洞口的雪堆上（開了雪原的存檔讀檔時會補發保暖衣，snowCard）
 function restoreCards() {
   if (S.zones.includes('coast')) postcardRise('coast', new THREE.Vector3(ALTAR[0], H(...ALTAR) + 1.1, ALTAR[1]), true);
@@ -5438,7 +5406,7 @@ function roadStep(dt) {
   }
 }
 // 雪原的明信片：保暖衣是在大城市買的（看不到世界的回應），回到月光谷時冰洞平地那側洞口外的小雪堆上插著一張
-function snowCard() { // 熔岩柱中間已經浮著一張（RISE）就不再插第二張
+function snowCard() { // 已經有一張浮在半空中（RISE）就不再插第二張
   if (W.snowCard || !W.scene || !S.own.coat || hasPaper('pc_snow') || (PAPER.cur && PAPER.cur.id === 'pc_snow') || RISE.list.some(c => c.id === 'pc_snow') || typeof CAVES === 'undefined') return; const c = CAVES.find(o => o.id === 'ice'); if (!c) return;
   const TX = c.TX[0], TZ = c.TZ[0], x = c.X[0] - TX * 2.6 - TZ * 1.6, z = c.Z[0] - TZ * 2.6 + TX * 1.6, y = H(x, z), g = new THREE.Group(); g.position.set(x, y, z);
   const pile = mesh(jit(new THREE.SphereGeometry(.5, 9, 5, 0, PI2, 0, Math.PI / 2), .14, 7), std('#f3f7fb', { flatShading: true, roughness: .95 }), 0, -.06, 0, g); pile.scale.set(1.1, .5, .9); pile.receiveShadow = true;
@@ -5564,7 +5532,7 @@ function gnBuild() {
 /* ---------- 加工：三台機器各有不同的操作流程 ---------- */
 const M = { sp: null, step: -1, active: false, phase: '', pt: 0, g: null, scores: [], last: null, hold: false, kdir: 0 };
 const MG = [
-  { name: '切片', how: '看著輸送帶上的史萊姆：發光的切割線碰到紅色雷射時下刀。', key: '空白鍵／點擊畫面' },
+  { name: '切片', how: '切割線碰到紅色雷射時下刀', key: '空白鍵／點擊畫面' }, // how：切片與乾燥的說明寫在小遊戲旁邊（Make.tsx），面板上方只寫裹糖晶的
   { name: '裹糖晶', how: '按住讓滾筒加速、放開會減速，讓指針停在綠色區間越久越好。', key: '按住空白鍵' },
   { name: '乾燥', how: '拖曳火力旋鈕，讓它跟上不斷移動的黃色目標溫度。', key: '← → 或 A D' },
 ];
@@ -5624,7 +5592,7 @@ function finishStep() {
   if (M.step === 0) S.cutN = (S.cutN || 0) + g.hit.filter(h => h > .3).length;
   if (M.step === 1 && M.coop) { netEmit({ t: 'coop', to: M.coop.id, on: false, sc }); M.coopDone = M.coop.name; M.coop = null; M.hold = false; }
   M.scores[M.step] = sc; sfx.machine(M.step); MK.pulse[M.step] = .7; M.hold = false; M.kdir = 0;
-  toast(`${MG[M.step].name}：${sc > .9 ? '完美' : sc > .7 ? '很好' : sc > .45 ? '普通' : '失手了'}（${Math.round(sc * 100)}%）`);
+  // 不跳「切片：完美（100%）」：介面上的步驟清單已經寫著這一步的分數，切的當下也冒過「完美切面！」
   M.si++;
   if (M.si >= M.steps.length) {
     M.active = false; const avg = M.scores.reduce((a, b) => a + (b || 0), 0) / 3, p = makeProduct(M.sp, 0.15 + 0.85 * avg);
@@ -6020,10 +5988,10 @@ function chooseBranch(k) {
 /* ---------- 圖鑑 / 背包 ---------- */
 const GOAL = { species: SPECIES.length, fans: 800, earned: 40000 };
 function renderCodex() { ui('codex'); } // 畫面改由 React 負責（components/stations/）
-function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
+function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
 let invSel = null;
 function renderInv() { ui('inv'); } // 畫面改由 React 負責（components/stations/）
-const RENDER = { paper: () => ui('paper'), bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), arms: () => renderShop('arms'), eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause, map: () => ui('map') }; // map：筆記本的手繪地圖（map.js、NoteMap.tsx）
+const RENDER = { paper: () => ui('paper'), bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), arms: () => renderShop('arms'), eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause, map: () => ui('map') }; // map：筆記本的手繪地圖（map.js、NoteMap.tsx）
 
 /* ---------- 開發者工具（管理員與管理後台設定的開發測試帳號）：一鍵解鎖全部地圖，方便測試各區 ---------- */
 const isDev = () => !!(window.SlimeCloud && SlimeCloud.user && (SlimeCloud.user.dev || SlimeCloud.user.admin));
@@ -6139,6 +6107,7 @@ function startPlay() {
   playReady();
 }
 function playReady() {
+  if (!S.tutDone) $('#startHint').innerHTML = '<b>點擊畫面開始</b>'; // 鍵位寫在教學提示裡，不重複
   $('#startHint').hidden = TOUCH || locked(); W.camAway = false; zoneArrive(true); // 不再跳「歡迎回到月光谷」：穿越機開場就是歡迎、老玩家有地名字卡，新手有畫面中央的教學小卡
   if (!S.seen) { S.seen = true; save(); } // 奶奶的信不再跳出來：它就躺在手作台上（placeLetter），拿起來讀。S.seen 是「有存檔」的依據（hasSave／savesInfo）
 }
@@ -6167,7 +6136,7 @@ function savesInfo() {
   for (let i = 1; i < MAX_SAVES; i++) { const o = parse(lsGet(slotKey(i))); if (o) out.push({ slot: i, o }); }
   return out;
 }
-const saveLabel = e => { const o = e.o; return 'Lv ' + (xpLevel(Math.max(0, +o.xp || 0)) + 1) + ' · ' + fmt(+o.money || 0) + ' · 粉絲 ' + Math.floor(+o.fans || 0) + ' · ' + fmtTime(o.last); };
+const saveLabel = e => { const o = e.o; return 'Lv ' + xpLevel(Math.max(0, +o.xp || 0)) + ' · ' + fmt(+o.money || 0) + ' · 粉絲 ' + Math.floor(+o.fans || 0) + ' · ' + fmtTime(o.last); };
 const freeSlot = () => { for (let i = 1; i < MAX_SAVES; i++) if (!lsGet(slotKey(i))) return i; return 0; };
 // 把存檔 slot 換成目前的進度（0＝目前這份）：目前的進度另存到被換掉的位置，再重新載入遊戲
 function switchSave(slot) {
@@ -6181,7 +6150,7 @@ function closeModal() { mOpen = false; $('#modal').hidden = true; nextModal(); }
 function agoTxt(t) { if (!t) return '—'; const m = Math.floor((Date.now() - t) / 6e4); return m < 1 ? '剛剛' : m < 60 ? m + ' 分鐘前' : m < 1440 ? Math.floor(m / 60) + ' 小時前' : Math.floor(m / 1440) + ' 天前'; }
 function saveCardHTML(e) {
   const o = e.o, zs = (Array.isArray(o.zones) ? o.zones : ['forest']).filter(z => ZONES.some(x => x.id === z)), cx = o.codex && typeof o.codex === 'object' ? Object.keys(o.codex).filter(k => SP[k]).length : 0;
-  const nm = esc(String(o.name || (window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.name) || '工坊主人').slice(0, 12)), lv = xpLevel(Math.max(0, +o.xp || 0)) + 1;
+  const nm = esc(String(o.name || (window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.name) || '工坊主人').slice(0, 12)), lv = xpLevel(Math.max(0, +o.xp || 0));
   return '<div class="sv-card' + (e.slot ? '' : ' cur') + '"><button type="button" class="sv-main" data-act="pickSave" data-k="' + e.slot + '">'
     + '<span class="sv-av">' + avatarSVG(o.avatar) + '</span><span class="sv-body"><span class="sv-hd"><b>' + nm + '</b><span class="sv-lv">Lv ' + lv + '</span>' + (e.slot ? '<span class="sv-tag">這台電腦</span>' : '<span class="sv-tag cur">目前・雲端同步</span>') + '</span>'
     + '<span class="sv-stats"><span><em>資金</em><b class="gold">' + fmt(+o.money || 0) + '</b></span><span><em>粉絲</em><b>' + Math.floor(+o.fans || 0) + '</b></span><span><em>圖鑑</em><b>' + cx + '/' + SPECIES.length + '</b></span><span><em>區域</em><b>' + zs.length + '/' + ZONES.length + '</b></span></span>'
@@ -6629,7 +6598,7 @@ const OWN = {
   coat: { name: '保暖衣', cost: 900, shop: 'arms', desc: '厚實的防寒外套。**有了它就能前往雪原**（不需要解謎），沒有保暖衣會被刺骨的寒氣擋住。雪原每次只能待 10 分鐘，凍僵了要來城市的醫院看醫生（診療費 ¥20）。' },
   sword: { name: '長劍', cost: 1200, shop: 'arms', desc: '一把保養良好的長劍。目前只供收藏，之後會派上用場。' },
 };
-const ARMS_LV = 5, armsOpen = () => xpLevel(S.xp) >= ARMS_LV;
+const ARMS_LV = 6, armsOpen = () => xpLevel(S.xp) >= ARMS_LV; // 1 起算的 Lv 6＝300 經驗：和等級統一前（HUD 0 起算的 Lv 5）同一個門檻，舊存檔該開的店照樣開
 const SHOP_UPS = { mach: ['slicer', 'coater', 'dryer'], gear: ['gear'], mall: ['cap', 'shelf', 'boots', 'net', 'farm'], arms: [] };
 function ownAny() { return !!(S.own.slicer || S.own.coater || S.own.dryer); }
 /* ---------- 大城市的四間店：走進店頭、拿起來看、拿到櫃台結帳（商品、店員、台詞、規則；建造在 buildShopRoom，演出在 wareStep） ----------
@@ -6693,7 +6662,9 @@ function slotMark(parent, [x, z], t, sub, r) {
   const tp = mesh(jit(new THREE.BoxGeometry(pw * .86, .9, pd * .86, 4, 2, 3), .07, r * 7), tarp, 0, .66, 0, m); tp.scale.y = .9; tp.castShadow = !LOW;
   [-1, 1].forEach(sx => box(.03, .9, .03, std('#c2a36b'), sx * pw * .43, .6, pd * .44, m));
   const ring = mesh(new THREE.RingGeometry(r - .1, r, 56), new THREE.MeshBasicMaterial({ color: '#cbd5e1', transparent: true, opacity: .55, side: THREE.DoubleSide, depthWrite: false }), 0, 0, 0, m); ring.rotation.x = -Math.PI / 2;
-  const s = textSprite(t.replace('空地', '（機器還沒送來）'), '#cbd5e1', sub); s.position.y = 2.4; m.add(s); m.userData.tarp = tp; m.userData.lb = s; return m;
+  // 牌子只寫名字（前 10 分鐘的文字預算 11.1）：「還沒送來」由帆布棧板說，去哪裡買等你對準棧板才寫在準心旁（targetLabel 的 slot）
+  const s = textSprite(t, '#cbd5e1'); s.position.y = 2.4; m.add(s); m.userData.tarp = tp; m.userData.lb = s;
+  m.userData.it = addInter(hitBox(pw, 1.3, pd, 0, .65, 0, m), 'slot', t, t, { sub }); return m;
 }
 const DELIV = [];
 /* 到貨的木箱：從空中落下、四面倒下、東西升起。o.h＝落下高度（預設 7）、o.fall＝落下秒數（預設 .55）、o.bal＝綁著氣球（宅配，搖搖晃晃降落）、
@@ -6788,7 +6759,7 @@ function refreshBase() {
   W.lineParts.belt.visible = anyM; W.lineParts.m.forEach((g, i) => g.visible = vis(MKEY[i]));
   W.decorG.visible = vis('decor'); W.liveG.visible = vis('live');
   const show = { line: anyM, decor: vis('decor'), live: vis('live') };
-  Object.keys(show).forEach(k => { W.slotMark[k].visible = !show[k]; W.slotInter[k].off = !show[k]; if (show[k] && !W.slotCol[k].added) { addCol(W.slotCol[k]); W.slotCol[k].added = true; } });
+  Object.keys(show).forEach(k => { W.slotMark[k].visible = !show[k]; W.slotInter[k].off = !show[k]; W.slotMark[k].userData.it.off = show[k]; if (show[k] && !W.slotCol[k].added) { addCol(W.slotCol[k]); W.slotCol[k].added = true; } });
   if (MKEY.some(k => SHIPS.go.has(k))) W.slotInter.line.off = true;
   if (GIFT.on) giftHold(); // 奶奶的切片機還蓋著帆布
   if (prev && W.ready) {
@@ -6940,7 +6911,7 @@ function drawShopSign(c, name, accent, locked) {
   t.fillStyle = locked ? '#64748b' : accent; t.font = 'bold 64px "Noto Sans TC","Microsoft JhengHei",sans-serif'; t.fillText(name, 256, locked ? 70 : 86, 470);
   if (locked) { t.fillStyle = '#94a3b8'; t.font = 'bold 34px "Noto Sans TC","Microsoft JhengHei",sans-serif'; t.fillText('Lv ' + ARMS_LV + ' 解鎖營業', 256, 114, 470); }
 }
-/* 升到 Lv5：武器店開張（重繪招牌與標籤、一則 toast，不跳彈窗）。人在城市、離武器店 60 m 內：鐵捲門 1.6 秒捲上去、鐵伯出來揮手；不在附近就直接是開的 */
+/* 升到 Lv 6（ARMS_LV）：武器店開張（重繪招牌與標籤、一則 toast，不跳彈窗）。人在城市、離武器店 60 m 內：鐵捲門 1.6 秒捲上去、鐵伯出來揮手；不在附近就直接是開的 */
 function unlockArms() {
   const a = W.armsSign; if (a) { drawShopSign(a.c, a.name, a.accent, false); a.blit(); }
   if (W.armsLabel && W.city) { const p = W.armsLabel.position.clone(); dropObj(W.armsLabel); const lb = textSprite('武器店', '#f87171', '長劍、保暖衣'); lb.position.copy(p); W.city.add(lb); W.armsLabel = lb; }
@@ -7471,7 +7442,7 @@ function buildShopRoom(id, g) {
 }
 // 武器店開張前：吊牌、櫃台的點擊範圍關掉
 function armsInter(on) { (W.wareIt || []).forEach(it => { if (it.shop === 'arms') it.off = !on; }); if (W.counterIt && W.counterIt.arms) W.counterIt.arms.off = !on; }
-/* 武器店（Lv 5 之前）：鐵捲門拉下（灰色浪板，原點在上緣，開張時往上收進門楣），中間貼一張手寫告示（吊牌圖集的一格）；有碰撞、走不進去 */
+/* 武器店（ARMS_LV 之前）：鐵捲門拉下（灰色浪板，原點在上緣，開張時往上收進門楣），中間貼一張手寫告示（吊牌圖集的一格）；有碰撞、走不進去 */
 function armsShutter(g, sh, tag) {
   const tg = tag('arms:shut', 0, 1.7, .06, 0, 0, .9, .58); if (armsOpen()) return;
   const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#a3a9b2'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#7b818a'; for (let i = 0; i < 64; i += 16) x.fillRect(0, i, 64, 4); x.fillStyle = 'rgba(255,255,255,.18)'; for (let i = 6; i < 64; i += 16) x.fillRect(0, i, 64, 2);
@@ -7482,7 +7453,7 @@ function armsShutter(g, sh, tag) {
   const it = addInter(hitBox(sh.w - .6, SHOP_H, .3, sh.x, SHOP_H / 2, -13.85, g), 'station', 'arms:shut', '武器店', { act: armsShutAct }); Object.defineProperty(it, 'label', { get: () => '鐵伯上山打鐵中・Lv ' + ARMS_LV + ' 開張（目前 Lv ' + xpLevel(S.xp) + '）' });
   W.armsShut = { m, col, it, tg, on: true, t0: 0 };
 }
-function armsShutAct() { const S0 = W.armsShut; if (!S0 || !S0.on) return; const need = XP_LV[ARMS_LV] - S.xp; fx3(S0.tg.p.clone().setY(2.5), '還差 ' + Math.max(0, need) + ' 經驗', '#fde68a'); sfx.tick && sfx.tick(); }
+function armsShutAct() { const S0 = W.armsShut; if (!S0 || !S0.on) return; const need = xpNeed(ARMS_LV) - S.xp; fx3(S0.tg.p.clone().setY(2.5), '還差 ' + Math.max(0, need) + ' 經驗', '#fde68a'); sfx.tick && sfx.tick(); }
 
 /* ---------- 吊牌圖集：牛皮紙、左上穿孔、手寫字（一張 1024×640 畫布，每格 200×128；LOW 也不降解析度） ----------
    只在狀態變了才重畫那一格（shopStep 每 .25 秒最多 2 格）；被拿走的那格畫成透明（alphaTest），字型載入後全部重畫 */
@@ -7637,7 +7608,7 @@ function buildCity() {
   shop('mall', SHOPS.mall.x, SHOPS.mall.w, SHOPS.mall.col, '生活百貨', '倉儲、網路、跑鞋', '#34d399');
   shop('gear', SHOPS.gear.x, SHOPS.gear.w, SHOPS.gear.col, '器材行', '直播設備、裝飾桌', '#e879f9');
   shop('hospital', -34, 11, '#f8fafc', '醫院', '凍僵了來這裡看醫生', '#f87171');
-  shop('arms', SHOPS.arms.x, SHOPS.arms.w, SHOPS.arms.col, '武器店', armsOpen() ? '長劍、保暖衣' : 'Lv 5 解鎖營業', '#f87171');
+  shop('arms', SHOPS.arms.x, SHOPS.arms.w, SHOPS.arms.col, '武器店', armsOpen() ? '長劍、保暖衣' : 'Lv ' + ARMS_LV + ' 解鎖營業', '#f87171');
   // 計程車招呼站在醫院門口（路北側、車頭朝西）；大街西端盡頭是月光隧道的洞口與小山（從廣場往西看一直都看得到回家的路）
   W.taxiC = makeCab(true); g.add(W.taxiC); cabPark(W.taxiC); cityTunnel(g);
   buildStreet(g, rd);
@@ -7649,7 +7620,7 @@ function buildCity() {
    街角兩座小公園、巷子裡的雜物……全部進合併清單。位置避開居民散步的路線（NPC 不做碰撞，只照固定路線走）。手機少放一點 */
 function buildStreet(g, rd) {
   [-52, -39, -26, 26, 39, 52].forEach((x, i) => [-8.6, 8.6].forEach((z, j) => cityLamp(x, z, (i + j) % 2 ? 'flag' : 'flower', (i * 2 + j) % 4)));
-  [-45.5, -32.5, -19.5, 19.5, 32.5, 45.5].forEach((x, i) => [-10.5, 10.5].forEach((z, j) => { if (x === -45.5 && z > 0) return; const nx = z < 0 ? { '-19.5': -26.2, '19.5': 26.8, '32.5': null }[x] : undefined; if (nx === null) return; cityTree(Math.abs(x) > 45 && z < 0 ? Math.sign(x) * 41.2 : nx != null ? nx : x, z, 1, i + j * 3); })); // 北側兩端那兩棵讓開，不擋店招；擋在店門口的三棵移到店與店之間（32.5 那棵跟 26.8 太近，不種）
+  [-45.5, -32.5, -19.5, 19.5, 32.5, 45.5].forEach((x, i) => [-10.5, 10.5].forEach((z, j) => { if (x === -45.5 && z > 0) return; const nx = z < 0 ? { '-19.5': -26.2, '19.5': 26.8, '32.5': null, '-32.5': null }[x] : undefined; if (nx === null) return; cityTree(Math.abs(x) > 45 && z < 0 ? Math.sign(x) * 41.2 : nx != null ? nx : x, z, 1, i + j * 3); })); // 北側兩端那兩棵讓開，不擋店招；擋在店門口的三棵移到店與店之間（32.5 那棵跟 26.8 太近，不種；醫院門口那棵的樹冠會穿過入口雨遮，兩側 −41.2、−26.2 已經各有一棵，也不種）
   [[-12.6, 22.4], [12.6, 22.4], [-12.5, 29.8], [12.5, 29.8]].forEach(([x, z], i) => cityTree(x, z, 1.15, i + 7, true)); // 廣場四棵樹（晚上有串燈）
   [[-6.4, 25.2, Math.PI / 2], [6.4, 25.2, -Math.PI / 2], [-3.6, 20.6, 0], [3.6, 20.6, 0]].forEach(([x, z, r]) => cityBench(x, z, r));
   cityPlanter(-5.8, 13.4, 2.2, 1, 1); // 廣場入口的花台
@@ -8236,7 +8207,7 @@ function npcTopics() {
   if (mktOpenNow()) { const o = marketOffers()[0]; add('mkt', '今天週末市集有擺攤，這週的限定商品是「' + o.t + '」。'); } else add('mktOff', '週末市集只在星期六、日擺攤，平日攤位都蓋著布。');
   if (S.liveBest > 0) add('live', '我看過你的直播！最高有 ' + S.liveBest + ' 個人在看，好厲害。'); else add('nolive', '你還沒開過直播嗎？咖啡館的電視每天都在播直播排行喔。');
   if (S.fans >= 10) add('fans', '聽說你已經有 ' + Math.floor(S.fans) + ' 個粉絲了？說不定我也是其中一個。');
-  if (zs.length > 1) add('zones', '你去過' + zs.join('、') + '了？我只在電視上看過。'); else add('zone1', '月光谷外面還有海岸、火山和雪原，聽說都要解開謎題才能去。');
+  if (zs.length > 1) add('zones', '你去過' + zs.join('、') + '了？我只在電視上看過。'); else add('zone1', '月光谷外面還有海岸、火山和雪原。海岸和火山要解開謎題，雪原要穿得很暖才去得了。');
   if (S.zones.includes('volcano') && !(S.eggs || []).includes('volcano_river')) add('river', '聽說火山東北邊的山腰有一條會發光的河，晚上最好看。火山的小徑走到底，跟著石堆往東繞過去就是了。'); // 熔岩湖在火山背面，從小徑上看不到（region-volcano.js 的引導）
   if (!S.own.coat) add('coat', '雪原冷到骨頭裡，沒有保暖衣根本進不去。' + (armsOpen() ? '武器店就有賣。' : '聽說等你更有名，武器店才會開。'));
   if (S.frozen) add('frozen', '你在發抖耶！快去醫院給醫生看看，只要 ' + HOSPITAL_FEE + ' 塊。');
@@ -9001,7 +8972,7 @@ function renderBench() { if (!M.sp || !unlockedSpecies().some(s => s.id === M.sp
 function benchMake() {
   if (BN.busy) return; const sp = M.sp; if (!sp || (S.gel[sp] || 0) < 2) return toast('凝膠不足（需要 2 份）'); if (S.stock.length >= cap()) return toast('庫存已滿');
   S.gel[sp] -= 2; BN.busy = true; renderBench(); sfx.squish(1); [360, 760, 1150].forEach((ms, i) => setTimeout(() => { sfx.crunch(.75 + i * .2, .95); sfx.squish(.5, 1 + i * .08); }, ms)); const bar = $('#benchBar'); if (bar) { bar.style.transition = 'width 1.4s linear'; requestAnimationFrame(() => requestAnimationFrame(() => bar.style.width = '100%')); }
-  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); toast(`做好了一個粗製${short(sp)}捏捏（售價 ¥10）`); saveCloud(); if (!S.tutDone) setTimeout(finishTutorial, 450); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
+  setTimeout(() => { BN.busy = false; const p = makeProduct(sp, .15, true); S.stock.push(p); gainXP(3); sfx.pop(); if (S.tutDone) toast(`做好了：粗製${short(sp)}捏捏`); saveCloud(); if (!S.tutDone) setTimeout(finishTutorial, 450); renderHotbar(true); renderQuest(); if (tab === 'bench') renderBench(); }, 1450);
 }
 /* ---------- 古地圖拼圖 ---------- */
 function openAltar() {
@@ -9025,8 +8996,6 @@ function mapImage() {
   return MAPIMG = c.toDataURL('image/jpeg', .85);
 }
 function renderMapGame() { ui('mapg'); } // 畫面改由 React 負責（components/stations/）
-/* ---------- 石碑面板（熔岩柱謎題） ---------- */
-function renderRiddle() { ui('riddle'); } // 畫面改由 React 負責（components/stations/）
 function mapRotate(i) {
   const q = qState(); if (q.map.every(r => r === 0)) return; q.map[i] = (q.map[i] + 1) % 4; sfx.tick(); save(); renderMapGame();
   if (q.map.every(r => r === 0)) { sfx.pop(); toast('地圖拼好了！'); setTimeout(() => { closeGui(); discoverZone('coast'); }, 700); }
@@ -9856,7 +9825,7 @@ function envStep(dt) {
   W.sun.target.position.copy(shC); W.sun.position.copy(shC).addScaledVector(SUN_D, 66);
   // 換區：在洞裡、滑翔途中、計程車還沒鑽出目的地的洞口（RIDE.out）都不換——出洞、落地、出隧道那一格才換，音樂、環境音、環境粒子和地名字卡同一格切換
   // （計程車在隧道深處就換到另一根管子了，人已經在另一頭；那時換的話配樂會比字卡早 1 秒換掉）
-  const zid = CV.c || (RIDE.on && (RIDE.ph === 'fly' || (RIDE.ph === 'drive' && !RIDE.out))) ? W.zoneNow : inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev) zoneArrive(); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  const zid = CV.c || (RIDE.on && (RIDE.ph === 'fly' || (RIDE.ph === 'drive' && !RIDE.out))) ? W.zoneNow : inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; if (prev) zoneArrive(); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
   zcStep();
   caveEnv(dt);
 }
@@ -10180,10 +10149,10 @@ window.SlimeGame = {
   MG, STEPS, MKEY, ownAny, TOUCH,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,
-  AVATARS, avatarSVG, SP, SPECIES, ZONES, RAR, DN, DN_PHASE, creditsHTML, PHOTO_EVT, REPAIRS, UPS, OWN, PACKS, DECO, CUTS, GRADES, GOAL, SHOP_UPS, QUEST, PILLAR, TABLET_TXT, WEEK_MS, CH,
+  AVATARS, avatarSVG, SP, SPECIES, ZONES, RAR, DN, DN_PHASE, creditsHTML, PHOTO_EVT, REPAIRS, UPS, OWN, PACKS, DECO, CUTS, GRADES, GOAL, SHOP_UPS, QUEST, WEEK_MS, CH,
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, gradeOf, priceWhy, packPct, xpLevel, decoBonus,
-  qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, pillarClues, pSp, pillarExtra, hintBlock, tideStepsHTML, cluesDone, mapImage, enter: ENTER,
+  qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, hintBlock, tideStepsHTML, mapImage, enter: ENTER,
   wareState, get ship() { return S.ship; }, // 商品狀態（城市與網購共用的規則）、還沒演的到貨（手帳的「宅配中」）
   mapView: nmView, mapDraw: nmDraw, // 筆記本的手繪地圖（map.js、components/stations/NoteMap.tsx）
   eggs: eggList, // 月光谷的小秘密：[{ id, name, hint, found }]（手帳的探索日誌）

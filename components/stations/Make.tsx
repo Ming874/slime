@@ -28,7 +28,7 @@ function Idle() {
   return (
     <>
       <section className="rx-mk-sec">
-        <h4>投入凝膠 <small>每次消耗 2 份</small></h4>
+        <h4>投入凝膠 <small>每次 2 份</small></h4>
         <div className="rx-gelrow">
           {g.unlockedSpecies().map((s) => {
             const n = S.gel[s.id] || 0;
@@ -44,7 +44,7 @@ function Idle() {
 
       {S.own.slicer && (
         <section className="rx-mk-sec">
-          <h4>切法 <small>成品會保留切面，訂單可能指定切法</small></h4>
+          <h4>切法</h4>
           <div className="rx-cutrow">
             {Object.entries(g.CUTS).map(([k, c]) => (
               <button key={k} type="button" className={`rx-cut${(S as unknown as { cut?: string }).cut === k ? ' on' : ''}`} data-act="pickCut" data-k={k} style={{ '--cc': c.col } as React.CSSProperties}>
@@ -59,7 +59,7 @@ function Idle() {
       <div className="rx-mk-go">
         <div className="rx-mk-go-info">
           <b>{sp ? `已選：${sp.name}` : '請先選擇要加工的凝膠'}</b>
-          <small>{owned.length ? `已安裝：${owned.map((k) => g.UPS[k].name.replace('升級', '')).join('、')}。缺少的機器步驟以 0 分計算。` : '尚未購買任何機器，到工作電腦的「網購」購買。'}庫存 {S.stock.length}/{g.cap()}</small>
+          <small>{owned.length ? `已安裝：${owned.map((k) => g.UPS[k].name.replace('升級', '')).join('、')}・` : '還沒有機器，到工作電腦網購。'}庫存 {S.stock.length}/{g.cap()}</small>{/* 缺的機器：下面的工序列寫著「未安裝」、那一步算 0 分 */}
         </div>
         <button type="button" className="rx-start" data-act="startMake" disabled={!!why} title={why || undefined}>
           <i aria-hidden="true" />{why || '啟動產線'}
@@ -87,7 +87,7 @@ function Result({ p }: { p: Product }) {
         <b>{prodName(g, p)}・{cut ? `${cut.n}切` : '酥脆'}捏捏</b>
         <div className="rx-result-bar"><span className="rx-bar"><i style={{ width: `${c}%` }} /></span><em>酥脆 {c}%</em></div>
         <small className="rx-result-pr"><b>{rank} 級・售價 ×{gr.m}</b>　直播 {g.fmt(g.priceOf(p, 'live'))}・網站 {g.fmt(g.priceOf(p, 'web'))}</small>
-        <small>{p.cut ? `切面${(p.cq || 0) > 0.85 ? '平整發亮' : (p.cq || 0) > 0.5 ? '還算平整' : '有點歪'}・` : ''}已放入背包，可拿到裝飾桌加上零件（售價再提高），或直播、上架販售。</small>
+        <small>{p.cut ? `切面${(p.cq || 0) > 0.85 ? '平整發亮' : (p.cq || 0) > 0.5 ? '還算平整' : '有點歪'}・` : ''}收進背包了。</small>
       </div>
       <span className="rx-rank" aria-label={`等級 ${rank}，售價 ×${gr.m}`}>{rank}</span>
     </div>
@@ -112,7 +112,7 @@ function Running() {
 
       <div className="rx-mk-how">
         <b>{g.UPS[x.MKEY[step]].name}</b>
-        <span>{x.MG[step].how}</span>
+        {step === 1 && <span>{x.MG[step].how}</span>}{/* 切片、乾燥的說明就寫在小遊戲旁邊，不在這裡再說一次（前 10 分鐘的文字預算 11.1） */}
         {!x.TOUCH && <kbd>{x.MG[step].key}</kbd>}
         {M.phase === 'ready' && <em className="rx-ready">準備…</em>}
       </div>
@@ -123,7 +123,7 @@ function Running() {
             {mg.marks.map((_, i) => { const h = mg.hit[i]; return <i key={i} className={h == null ? '' : h > 0.85 ? 'pf' : h > 0.3 ? 'ok' : 'bad'} />; })}
           </div>
           <div className="rx-slice-info">
-            <span><b style={{ color: C.col }}>{C.n}切</b>・{mg.marks.length} 刀。發光的切割線碰到<b className="rx-laser">紅色雷射</b>時{x.TOUCH ? '在畫面上由上往下滑一刀' : '按空白鍵或點擊畫面'}</span>
+            <span><b style={{ color: C.col }}>{C.n}切</b>・{mg.marks.length} 刀：切割線碰到<b className="rx-laser">紅色雷射</b>時{x.TOUCH ? '由上往下滑一刀' : '下刀'}</span>
             {(mg.combo || 0) >= 2 && <span className="rx-combo" key={`c${mg.combo}`}>{mg.combo} 連斬</span>}
           </div>
           {mg.cuts ? <div className={`rx-gradepop ${mg.lastQ! < 0 ? 'miss' : grade(mg.lastQ!)}`} key={mg.cuts}>{mg.lastQ! < 0 ? '空刀' : GRADE_TXT[grade(mg.lastQ!)]}{mg.lastQ! > 0.6 && <small>{pct(mg.lastQ!)}</small>}</div> : null}
@@ -144,7 +144,7 @@ function Running() {
         <div className="rx-dry">
           <div className="track dry rx-track" id="mgDry"><div className="tgt" id="mgTgt" /><div className="knob" id="mgKnob" style={{ left: '50%' }} /></div>
           <div className="tbar rx-tbar"><i id="mgTime" /></div>
-          <p className="rx-note-line">左右拖曳火力旋鈕{x.TOUCH ? '' : '，或按 ← →'}，跟上黃色的目標溫度。</p>
+          <p className="rx-note-line">拖曳火力旋鈕，跟上黃色的目標溫度。</p>
         </div>
       )}
     </>

@@ -20,7 +20,7 @@ const ph = (t: string) => t.replace(/([，、；　])/g, '$1\u0000').split('\u00
 export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hint?: number | boolean }) {
   const ink = live && !p.rev && !p.rm ? ' ink' : ' now';
   const cls = `pp pp-${p.v}${p.gift ? ' pp-gift' : ''}${p.torn ? ' pp-torn' : ''}${p.gn ? ' pp-gn' : ''}${ink}`;
-  const tip = hint ? <div className="pp-hint" style={{ opacity: typeof hint === 'number' ? hint : 1 }}>{p.touch ? '點一下收進手帳' : `E 收進手帳・走開就收起來${p.v === 'postcard' ? '・空白鍵翻面' : ''}`}</div> : null;
+  const tip = hint ? <div className="pp-hint" style={{ opacity: typeof hint === 'number' ? hint : 1 }}>{p.touch ? '點一下收進手帳' : `E 收進手帳${p.v === 'postcard' ? '・空白鍵翻面' : ''}`}</div> : null; // 走開也會收起來：一走就看得到，不寫（前 10 分鐘的文字預算 11.1）
   let body: ReactNode = null;
   if (p.v === 'letter') {
     body = (

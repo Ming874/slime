@@ -95,7 +95,7 @@ export default function Title() {
 
 // 存檔卡：暱稱、等級、上次遊玩，以及錢、粉絲、已發現區域、設備
 function SaveCard() {
-  const g = G(), S = g.S, name = S.name || window.SlimeCloud?.user?.name || '工坊主人', lv = g.xpLevel(S.xp) + 1;
+  const g = G(), S = g.S, name = S.name || window.SlimeCloud?.user?.name || '工坊主人', lv = g.xpLevel(S.xp); // xpLevel 本身就從 1 起算（和 HUD 經驗條同一個數字）
   const owned = Object.keys(S.own || {}).filter((k) => S.own[k]).length, ownMax = Object.keys(g.OWN).length;
   return (
     <section className="rx-save" aria-label="目前存檔">

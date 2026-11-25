@@ -45,7 +45,7 @@ const CAVE_DEF = [
     mural: '潮汐', slime: 'saltc' },
   { id: 'lava', name: '熔岩隧道', to: 'volcano', gate: 'volcano', th: 'lava', d: [0, -1], a: [45.2, 0], aw: 2.6, ah: 5.2, b: [63.8, -2.4], bw: 2.7, bh: 5.4, hall: 6,
     pts: [[52, -4.5, 1.9, 4.2, -.5], [50.4, -10.5, 1.8, 4.2, -.8], [52.6, -16.5, 1.8, 4.4, -1], [50.8, -22.5, 1.8, 4.4, -1.1], [52.2, -28.4, 2, 4.6, -1], [53.49, -31.71, 4, 8.5, -.6], [56.6, -33, 6.2, 12.5, -.3], [59.71, -31.71, 4.4, 9.5, -.6], [61, -23, 2, 4.6, -1.2], [58.8, -15, 2, 4.6, -1], [60.2, -9.5, 2.2, 4.8, -.8], [59.7, -6, 2.2, 4.8, -.5]],
-    mural: '熔岩柱', slime: 'charc' },
+    mural: '保暖衣', slime: 'charc' },
   { id: 'ice', name: '冰洞', to: 'snow', coat: true, th: 'ice', d: [-1, 0], a: [45.2, 0], aw: 2.6, ah: 5.2, b: [63.8, 2.4], bw: 2.7, bh: 5.4, hall: 6,
     pts: [[51.8, 5, 1.8, 4, -.6], [50.4, 11, 1.6, 3.8, -1], [52.6, 16.8, 1.6, 3.8, -1.2], [50.8, 22.6, 1.7, 4, -1.4], [52.4, 28, 1.8, 4.2, -1.5], [53.63, 30.97, 4.4, 8.5, -1.6], [56.6, 32.2, 6.4, 10.5, -1.8], [59.57, 30.97, 4.4, 8, -1.5], [60.8, 20, 2.2, 4.6, -1.2], [58.8, 12.5, 2.2, 4.6, -1], [60, 8.4, 2.3, 4.8, -.7], [59.7, 5.6, 2.3, 4.8, -.4]],
     mural: '月光洞窟', slime: 'frostb' },
@@ -56,7 +56,7 @@ const CAVE_DEF = [
 // 壁畫：大廳裡的線索（下一道謎題），拍照後存進手帳（06）
 const CAVE_MURAL = {
   sea: { t: '海蝕洞的壁畫', txt: '四顆石頭在浪裡一顆接一顆亮起：第一顆像火焰，最後一顆像初春的嫩草。', next: '潮汐石陣' },
-  lava: { t: '熔岩隧道的壁畫', txt: '一排四根石柱：最左邊結著冰，最右邊開著海底的花。', next: '四座熔岩柱' },
+  lava: { t: '熔岩隧道的壁畫', txt: '一個裹著厚外套的人走進結冰的洞口，寒氣在他身邊散開；洞口旁畫著大城市的屋頂。', next: '雪原的寒氣' }, // 雪原只要保暖衣（大城市的武器店），不用解謎
   ice: { t: '冰洞的壁畫', txt: '月光谷南方的山壁上有一道裂縫，月亮升起的時候，裂縫裡透出紫色的光。', next: '月光洞窟' },
   moon: { t: '湖邊的石碑', txt: '「月亮最近的地方，有一座漂在雲上的島。帶著月光凝膠的人，會被月光接引。」', next: '空島的傳說（第 5 堂）' },
 };
@@ -467,7 +467,12 @@ function caveMuralTex(id) {
     g.lineWidth = 7; g.lineCap = 'round'; g.lineJoin = 'round'; const ink = '#f3e3c4', ochre = '#e0a458';
     const dot = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 6.3); g.fill(); };
     if (id === 'sea') { g.strokeStyle = ink; for (let k = 0; k < 3; k++) { g.beginPath(); for (let x = 40; x <= 470; x += 10) g.lineTo(x, 230 + k * 22 + Math.sin(x * .05 + k) * 9); g.stroke(); } const C = ['#f97316', null, null, '#22c55e']; [0, 1, 2, 3].forEach(i => { const x = 110 + i * 100; g.strokeStyle = ink; g.beginPath(); g.arc(x, 150, 30, 0, 6.3); g.stroke(); if (C[i]) dot(x, 150, 22, C[i]); else { g.fillStyle = ink; g.font = '700 40px serif'; g.textAlign = 'center'; g.fillText('?', x, 164); } g.fillStyle = ink; g.font = '700 30px serif'; g.textAlign = 'center'; g.fillText(['一', '二', '三', '四'][i], x, 95); }); }
-    else if (id === 'lava') { [0, 1, 2, 3].forEach(i => { const x = 110 + i * 100; g.strokeStyle = ink; g.strokeRect(x - 26, 90, 52, 170); if (i === 0) { g.strokeStyle = '#bae6fd'; for (let k = 0; k < 5; k++) { g.beginPath(); g.moveTo(x - 20 + k * 10, 90); g.lineTo(x - 15 + k * 10, 120); g.stroke(); } } if (i === 3) { g.strokeStyle = '#fb7185'; for (let k = 0; k < 6; k++) { const a = k / 6 * 6.28; g.beginPath(); g.moveTo(x, 70); g.lineTo(x + Math.cos(a) * 22, 70 + Math.sin(a) * 22); g.stroke(); } } }); g.strokeStyle = ochre; g.beginPath(); for (let x = 40; x <= 470; x += 10) g.lineTo(x, 285 + Math.sin(x * .08) * 6); g.stroke(); }
+    else if (id === 'lava') { // 雪原的線索：裹著厚外套的人走向結冰的洞口，寒氣往兩旁散開；左邊是大城市的屋頂（保暖衣在城裡買）
+      g.strokeStyle = ink; g.fillStyle = ink; [[40, 190, 34], [78, 150, 30], [112, 205, 36], [150, 170, 28]].forEach(([x, y, bw]) => { g.strokeRect(x, y, bw, 262 - y); for (let yy = y + 16; yy < 246; yy += 24) g.fillRect(x + bw / 2 - 4, yy, 8, 8); });
+      g.beginPath(); g.arc(400, 262, 78, Math.PI, 0); g.stroke(); g.strokeStyle = '#bae6fd'; for (let k = 0; k < 6; k++) { const a = Math.PI * (1 + (k + .5) / 6), x = 400 + Math.cos(a) * 78, y = 262 + Math.sin(a) * 78; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 16 + (k % 2) * 12); g.stroke(); }
+      dot(262, 150, 16, ink); g.fillStyle = ochre; g.beginPath(); g.moveTo(244, 172); g.lineTo(280, 172); g.lineTo(292, 234); g.lineTo(232, 234); g.closePath(); g.fill(); g.strokeStyle = ink; g.beginPath(); g.moveTo(250, 234); g.lineTo(244, 272); g.moveTo(274, 234); g.lineTo(286, 272); g.stroke();
+      g.strokeStyle = '#bae6fd'; [[322, 152, -1], [322, 226, 1]].forEach(([x, y, sg]) => { g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x - 18, y + sg * 22, x - 40, y + sg * 10); g.stroke(); });
+      g.strokeStyle = ochre; g.beginPath(); for (let x = 40; x <= 470; x += 10) g.lineTo(x, 285 + Math.sin(x * .08) * 6); g.stroke(); }
     else if (id === 'ice') { g.strokeStyle = ink; g.beginPath(); g.moveTo(20, 280); g.lineTo(140, 120); g.lineTo(230, 200); g.lineTo(330, 90); g.lineTo(492, 280); g.stroke(); g.strokeStyle = '#c4b5fd'; g.lineWidth = 9; g.beginPath(); g.moveTo(300, 150); g.lineTo(292, 190); g.lineTo(304, 225); g.lineTo(296, 262); g.stroke(); g.lineWidth = 7; dot(410, 70, 34, ink); dot(426, 60, 30, '#7b6a56'); g.fillStyle = '#c4b5fd'; g.globalAlpha = .35; g.beginPath(); g.arc(298, 205, 46, 0, 6.3); g.fill(); g.globalAlpha = 1; }
     else { g.strokeStyle = ink; dot(256, 80, 40, ink); g.beginPath(); g.ellipse(256, 200, 150, 40, 0, 0, 6.3); g.stroke(); g.beginPath(); g.moveTo(150, 205); g.quadraticCurveTo(256, 300, 362, 205); g.stroke(); g.strokeStyle = '#c4b5fd'; for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(230 + k * 18, 125); g.lineTo(222 + k * 18, 170); g.stroke(); } }
     g.strokeStyle = 'rgba(40,28,18,.5)'; g.lineWidth = 10; g.strokeRect(5, 5, w - 10, h - 10);
@@ -1308,10 +1313,11 @@ function ipBlocked(pts, i0, objs, all) {
   for (let i = Math.max(0, i0); i < pts.length - 1; i += 5) { const a = pts[i], b = pts[Math.min(pts.length - 1, i + 5)], l = V.copy(b).sub(a).length(); if (l < 1e-3) continue; ray.set(a, V.divideScalar(l)); ray.near = 0; ray.far = l + .25; if (ray.intersectObjects(objs, false).length) { n++; if (!all) return n; } }
   return n;
 }
-// 大城市的障礙物高度圖：合併過的大網格一條射線就要好幾毫秒，所以第一次用到時把三角形攤成每 1 公尺一格的「最高點」（屋簷、騎樓也算實心，寧可繞開）
+// 大城市的障礙物高度圖：合併過的大網格一條射線就要好幾毫秒，所以第一次用到時把三角形攤成每 0.5 公尺一格的「最高點」h（1 公尺一格時店面的牆會吃掉門口那一整排，貼著騎樓飛不進來）（屋簷、騎樓也算實心，寧可繞開）
+// 和「最低點」lo（貼地的路面、路緣不算）：雨遮、騎樓底下是空的（lo 以下），眼睛就在雨遮下時要靠它分出「從底下鑽進來」和「穿過雨遮」
 function ipCityHF() {
-  if (ipCityHF.m) return ipCityHF.m; const x0 = CITY.x - 96, z0 = CITY.z - 72, nx = 192, nz = 150, h = new Float32Array(nx * nz), A = IPV[0], B = IPV[1], C = IPV[2], M = new THREE.Matrix4(), lay = INTRO.ray.layers;
-  const tri = () => { const ax = Math.max(0, Math.floor(Math.min(A.x, B.x, C.x) - x0)), bx = Math.min(nx - 1, Math.floor(Math.max(A.x, B.x, C.x) - x0)), az = Math.max(0, Math.floor(Math.min(A.z, B.z, C.z) - z0)), bz = Math.min(nz - 1, Math.floor(Math.max(A.z, B.z, C.z) - z0)), y = Math.max(A.y, B.y, C.y); for (let j = az; j <= bz; j++) for (let i = ax; i <= bx; i++) if (h[j * nx + i] < y) h[j * nx + i] = y; };
+  if (ipCityHF.m) return ipCityHF.m; const r = .5, x0 = CITY.x - 96, z0 = CITY.z - 72, nx = 384, nz = 300, h = new Float32Array(nx * nz), lo = new Float32Array(nx * nz).fill(1e9), A = IPV[0], B = IPV[1], C = IPV[2], M = new THREE.Matrix4(), lay = INTRO.ray.layers;
+  const tri = () => { const ax = Math.max(0, Math.floor((Math.min(A.x, B.x, C.x) - x0) / r)), bx = Math.min(nx - 1, Math.floor((Math.max(A.x, B.x, C.x) - x0) / r)), az = Math.max(0, Math.floor((Math.min(A.z, B.z, C.z) - z0) / r)), bz = Math.min(nz - 1, Math.floor((Math.max(A.z, B.z, C.z) - z0) / r)), y = Math.max(A.y, B.y, C.y), yl = y > .4 ? Math.min(A.y, B.y, C.y) : 1e9; for (let j = az; j <= bz; j++) for (let i = ax; i <= bx; i++) { const k = j * nx + i; if (h[k] < y) h[k] = y; if (lo[k] > yl) lo[k] = yl; } };
   W.city.updateMatrixWorld(true);
   W.city.traverse(o => {
     if (!(o.isMesh || o.isInstancedMesh) || !o.layers.test(lay)) return; const m = o.material; if (!m || Array.isArray(m) || m.visible === false || (m.transparent && m.opacity < .6) || m.isShaderMaterial) return;
@@ -1319,14 +1325,50 @@ function ipCityHF() {
     for (let k = 0; k < cnt; k++) { if (o.isInstancedMesh) { o.getMatrixAt(k, M); M.premultiply(o.matrixWorld); } else M.copy(o.matrixWorld);
       for (let t = 0; t < nt; t++) { const a = ix ? ix.getX(t * 3) : t * 3, b = ix ? ix.getX(t * 3 + 1) : t * 3 + 1, c = ix ? ix.getX(t * 3 + 2) : t * 3 + 2; A.fromBufferAttribute(pa, a).applyMatrix4(M); B.fromBufferAttribute(pa, b).applyMatrix4(M); C.fromBufferAttribute(pa, c).applyMatrix4(M); tri(); } }
   });
-  return (ipCityHF.m = { x0, z0, nx, nz, h });
+  return (ipCityHF.m = { r, x0, z0, nx, nz, h, lo });
 }
-// 大城市的一段路有幾筆會撞到東西（眼睛旁邊 2.5 公尺內不算：玩家本來就站在那裡）
-function ipCityHits(L, E) { const m = ipCityHF(); let n = 0; for (const q of L) { const p = q.p; if (p.x < 1500 || Math.hypot(p.x - E.x, p.z - E.z) < 2.5) continue; const i = Math.floor(p.x - m.x0), j = Math.floor(p.z - m.z0); if (i >= 0 && j >= 0 && i < m.nx && j < m.nz && p.y < m.h[j * m.nx + i] + .7) n++; } return n; }
+// 大城市的一段路有幾筆會撞到東西：離眼睛 near 公尺外，整欄最高點以下都算實心；near 以內只算真的落在東西上下範圍（lo－0.3～h＋0.7）裡的點——
+// 玩家可能站在雨遮底下（那一格的最高點在頭頂上），以前這一圈整個不算，最後幾公尺從頭頂直直降下來穿過雨遮也挑得中。
+// 眼睛自己那一格如果眼睛就在範圍裡（貼著牆、柱子，半公尺一格分不出來），那一格不算
+// npc：居民落地時可能站的位置（ipCityNpc）；離眼睛 8 公尺內、頭頂（2.25 公尺）以下、離他們不到 0.75 公尺的點也算撞到
+function ipCityHits(L, E, near = 2.5, npc) {
+  const m = ipCityHF(), cell = p => { const i = Math.floor((p.x - m.x0) / m.r), j = Math.floor((p.z - m.z0) / m.r); return i >= 0 && j >= 0 && i < m.nx && j < m.nz ? j * m.nx + i : -1; }, ke = cell(E), eIn = ke >= 0 && E.y > m.lo[ke] - .3 && E.y < m.h[ke] + .7; let n = 0;
+  for (const q of L) { const p = q.p; if (p.x < 1500) continue; const k = cell(p); if (k < 0) continue; const r = Math.hypot(p.x - E.x, p.z - E.z); if (r >= near) { if (p.y < m.h[k] + .7) n++; } else if (!(eIn && k === ke) && p.y > m.lo[k] - .3 && p.y < m.h[k] + .7) n++;
+    if (npc && r < 8 && p.y < 2.25 && npc.some(a => Math.hypot(p.x - a[0], p.z - a[1]) < .75)) n++; }
+  return n;
+}
+// 從側面沿騎樓飛進來的路線（sideLeg）專用：離眼睛 near～25 公尺這段，貼著東西（旁邊一格、0.5 公尺內）在它上下範圍裡飛過也記一筆「擦過」。
+// 不算撞到，只用來在幾條側面路線之間挑離牆遠的：隔壁店的立面、凸出的招牌從畫面一側整片蓋過來一瞬間，看起來就像差點撞上
+function ipCityGraze(L, E, near) {
+  const m = ipCityHF(); let n = 0;
+  for (const q of L) {
+    const p = q.p; if (p.x < 1500) continue; const r = Math.hypot(p.x - E.x, p.z - E.z); if (r < near || r > 25) continue;
+    const i0 = Math.floor((p.x - m.x0) / m.r), j0 = Math.floor((p.z - m.z0) / m.r); let g = false;
+    for (let dj = -1; dj <= 1 && !g; dj++) for (let di = -1; di <= 1; di++) { const i = i0 + di, j = j0 + dj; if (i < 0 || j < 0 || i >= m.nx || j >= m.nz) continue; const k = j * m.nx + i; if (p.y < m.h[k] + .3 && p.y > m.lo[k] - .3) { g = true; break; } }
+    if (g) n++;
+  }
+  return n;
+}
+// 大城市的居民不做碰撞、照固定路線走（buildNPCs）：從現在的位置往前推，走到玩家面前 2.4 公尺會停下來等，所以人行道上的落點前後常常站著一個人。
+// 回傳 [t0, t1] 秒之間他們可能站的位置（世界座標，只留眼睛 9 公尺內的）；定點的居民就是原地
+function ipCityNpc(E, t0, t1) {
+  const out = []; if (!W.npcs) return out; const ex = E.x - CITY.x, ez = E.z - CITY.z, dt = .25;
+  for (const n of W.npcs) {
+    if (!n.route) { out.push([n.x, n.z]); continue; }
+    const R = n.route, seg = R.map((a, i) => { const b = R[(i + 1) % R.length]; return [a, b, Math.hypot(b[0] - a[0], b[1] - a[1])]; }), L0 = seg.reduce((a, g) => a + g[2], 0);
+    const at = s => { s = ((s % L0) + L0) % L0; for (const [a, b, d] of seg) { if (s <= d) return [a[0] + (b[0] - a[0]) * s / d, a[1] + (b[1] - a[1]) * s / d, Math.atan2(b[0] - a[0], b[1] - a[1])]; s -= d; } return [R[0][0], R[0][1], 0]; };
+    let s = n.s, wait = n.stop, x = n.x, z = n.z, yaw = n.yaw, halt = false;
+    for (let t = 0; t <= t1; t += dt) {
+      if (!halt) { if (wait > 0) wait -= dt; else { s += n.v * dt; const q = at(s); x = q[0]; z = q[1]; yaw = q[2] + (n.v < 0 ? Math.PI : 0); } const dx = ex - x, dz = ez - z; if (Math.hypot(dx, dz) < 2.4 && Math.cos(Math.atan2(dx, dz) - yaw) > .2) halt = true; }
+      if (t >= t0) out.push([x, z]);
+    }
+  }
+  return out.filter(([x, z]) => Math.hypot(x - ex, z - ez) < 9).map(([x, z]) => [x + CITY.x, z + CITY.z]);
+}
 // 幾個候選的落地段，挑第一個沒撞到東西的（大城市用高度圖、山谷用射線；whole＝整段都檢查，否則只看最後 20 公尺）；都撞到就取撞最少的
 function ipPick(cands, eye, whole) {
   const city = eye.E.x > 1500, objs = city ? null : ipObs(eye.E.x, eye.E.z, 32); let best = null;
-  for (const mk of cands) { const L = mk(), pts = L.map(q => q.p), n = city ? ipCityHits(L, eye.E) : ipBlocked(pts, whole ? 0 : pts.length - 41, objs, true); if (!n) return L; if (!best || n < best.n) best = { L, n }; }
+  for (const mk of cands) { const L = mk(), pts = L.map(q => q.p), n = city ? ipCityHits(L, eye.E, L.near || 2.5, eye.npc) : ipBlocked(pts, whole ? 0 : pts.length - 41, objs, true); if (!n) return L; if (!best || n < best.n) best = { L, n }; }
   return best.L;
 }
 // 落地前最後 20 公尺：被擋住就依序改從 ±25°、±50° 的背後進來，再不行就從正上方降下來
@@ -1408,7 +1450,7 @@ function introResolve() {
 function introPlan() {
   const I = INTRO, kind = introResolve(), rm = !!RM(), st = performance.now() - I.titleAt < 250 ? ipTitle() : null, eye = ipEye(), F = I.force || {}, rnd = I.seed != null ? seeded(I.seed) : Math.random;
   const open = CAVES.filter(c => !c.dead), byId = k => typeof k === 'number' ? CAVES[k] : CAVES.find(c => c.id === k), C = [], hold = LOW ? .2 : .15, from = st ? { title: st } : { cold: 1 };
-  I.ray = I.ray || new THREE.Raycaster(); I.ray.camera = W.cam;
+  I.ray = I.ray || new THREE.Raycaster(); I.ray.camera = W.cam; if (kind === 'city') eye.npc = rm ? ipCityNpc(eye.E, 3, 8) : ipCityNpc(eye.E, 8, 15); // 落地前幾秒居民可能站的地方（城市開場約 11～14 秒）
   const route = o => Object.assign({ pts: [], stops: [], mk: [], endTan: eye.d.clone(), th: 0, via: null, v0: st ? 1.2 : rm ? 8 : 18, title: !!st, rm, pivT: 2.3, goT: 2.6, kind }, o);
   const push = (R, pen = 0) => { if (!R) return; try { ipFinal(R); } catch (e) { console.warn(e); return; } R.cost += pen + (R.Tend > (rm ? 7.5 : LOW ? 13 : 15) + .5 ? 10 : 0); C.push(R); }; // 超過總長上限的路線盡量不選
   const land = (pts, S = 8) => ({ i: pts.length - 1, S, fin: 1, min: rm ? 2.6 : 1.6, max: 5 });
@@ -1483,8 +1525,18 @@ function introPlan() {
   const cityRoute = c => {
     const g = ipGuideIn(c, 0, from), tube = ipTube(c, 0, c.L), M = ipMouth(c, 1), sg = M.o.x >= 0 ? 1 : -1, sd = ipv(sg, 0, 0); tube[tube.length - 1].ev = 'flash';
     // 主街上空 22 公尺 → 被擋住就抬高到 30、改從廣場上空進來、換個角度從背後進來，最後才從玩家正上方降下來（取撞到最少的）
-    const leg2 = (alt, rot) => { const top = alt === 3, S0 = top ? ipv(eye.E.x, 34, eye.E.z).addScaledVector(eye.f, -8) : alt === 2 ? ipv(CITY.x, 26, CITY.z + 26) : ipv(clamp(eye.E.x - 50 * sg, CITY.x - 60, CITY.x + 60), alt ? 30 : 22, CITY.z + 2), L = ipLandPts(S0, eye, rot, top), ctrl = alt ? [S0, ...L.pts] : [S0, S0.clone().addScaledVector(sd, 22).add(ipv(0, -3, 0)), ...L.pts]; return { X: L, B: ipAir(ipCR(ctrl, top ? null : S0.clone().addScaledVector(sd, -4), eye.E.clone().addScaledVector(L.tan, 4)), 4, 6) }; };
-    let best = null; for (const [alt, rot] of [[0, 0], [1, 0], [2, 0], [0, .44], [0, -.44], [1, .87], [1, -.87], [3, 0]]) { const o = leg2(alt, rot); o.n = ipCityHits(o.B, eye.E); if (!best || o.n < best.n) best = o; if (!o.n) break; }
+    const leg2 = (alt, rot) => { if (alt === 4) return sideLeg(rot); const top = alt === 3, S0 = top ? ipv(eye.E.x, 34, eye.E.z).addScaledVector(eye.f, -8) : alt === 2 ? ipv(CITY.x, 26, CITY.z + 26) : ipv(clamp(eye.E.x - 50 * sg, CITY.x - 60, CITY.x + 60), alt ? 30 : 22, CITY.z + 2), L = ipLandPts(S0, eye, rot, top), ctrl = alt ? [S0, ...L.pts] : [S0, S0.clone().addScaledVector(sd, 22).add(ipv(0, -3, 0)), ...L.pts]; return { X: L, B: ipAir(ipCR(ctrl, top ? null : S0.clone().addScaledVector(sd, -4), eye.E.clone().addScaledVector(L.tan, 4)), 4, 6) }; };
+    // 背後是牆、頭上是雨遮（例如醫院門口）：背後與頭頂都進不來，改沿著騎樓（街的方向）從左或右、在雨遮底下平平地飛進來，最後 2 秒轉成玩家的視線。
+    // ipAir 平常會把最後 6 公尺以外墊到 9 公尺高、只能在最後幾公尺陡降，所以這一段把離地壓到 1 公尺（城市是平的，障礙物交給高度圖），雨遮附近 7 公尺內用上下範圍判斷。
+    // 居民沿著人行道中線走、走到玩家面前 2.4 公尺會停下來等：低段先走「貼牆的那一道」（離人行道中線 1 公尺以上、比頭頂高一點），離眼睛 k1 公尺才往眼睛靠，不從他們的臉旁邊擦過去。
+    // v＝[往東或往西, 低段往街心偏多少（負的＝貼牆，從行道樹與牆之間鑽過去）, 低段比眼睛高多少, 從多高的地方開始降時往街心偏多少（避開路燈、行道樹那一排）, k1（0＝離眼睛 3 公尺就開始靠）]
+    const sideLeg = ([sx, fo, hb, fa, k1]) => { const E = eye.E, sv = ipv(sx, 0, 0), fs = ipv(0, 0, Math.sign(CITY.z + 2 - E.z) || 1), at = (k, a, y) => E.clone().addScaledVector(sv, k).addScaledVector(fs, a).add(ipv(0, y, 0));
+      const pts = k1 ? [at(16, fo + fa, 5.5), at(8, fo, hb), at(k1, fo, hb * .5), at(1.3, fo * .4, hb * .12), E.clone()] : [at(16, fo + fa, 5.5), at(8, fo, hb), at(3, fo * .3, hb * .3), E.clone()];
+      const A = pts[0], S0 = ipv(clamp(A.x + sx * 16, CITY.x - 64, CITY.x + 64), 22, CITY.z + 2), X = { pts, th: Math.PI / 2, tan: E.clone().sub(pts[pts.length - 2]).normalize() }, c0 = IPCLR; IPCLR = 1;
+      try { return { X, B: ipAir(ipCR([S0, ...pts], S0.clone().addScaledVector(A.clone().sub(S0).normalize(), -4), E.clone().addScaledVector(X.tan, 4)), 4, 6), near: 7 }; } finally { IPCLR = c0; } };
+    const SIDE = [[-1, .8, 0, 3.2], [-1, .8, 1.5, 3.2], [.6, .8, 0, 3.2], [.5, .75, 2.5, 0], [-.7, .4, 2.5, 0], [.5, .4, 2.5, 0], [.5, .4, 0, 0], [-.7, .4, 0, 0], [.6, .8, 2.5, 3.2], [.6, .8, 3.5, 3.2], [.6, .4, 3.5, 0]].flatMap(v => [[4, [1, ...v]], [4, [-1, ...v]]]);
+    // 撞到一筆算 1000：先比撞到幾筆；從側面進來的路線再加上「擦過」幾筆（ipCityGraze），挑離牆最遠的那條（其他路線照舊，沒撞到就直接用）
+    let best = null; for (const [alt, rot] of [[0, 0], [1, 0], [2, 0], [0, .44], [0, -.44], [1, .87], [1, -.87], [3, 0], ...SIDE]) { const o = leg2(alt, rot); o.n = ipCityHits(o.B, eye.E, o.near, eye.npc) * 1000 + (alt === 4 ? ipCityGraze(o.B, eye.E, o.near) : 0); if (!best || o.n < best.n) best = o; if (!o.n) break; }
     let B = best.B; const X = best.X;
     B[0].cut = { hold, riseFrom: Math.max(0, g.length + tube.length - 2 - Math.round(14 / IPS)), fall: .7, col: 'city:' + c.def.to };
     const pts = ipJoin(g, tube, B), R = finish(route({ pts, via: c, endTan: X.tan, city: 1 })); R.stops.push(land(pts)); return R;
@@ -1493,8 +1545,10 @@ function introPlan() {
   // 離玩家遠就在洞口再淡一次、從玩家背後 20 公尺開始；洞裡背後沒地方（死路的洞底）就沿著視線往回退一點直接滑進眼睛
   const rmRoute = () => {
     const lead = legs => { if (!st) return legs; const a = { p: st.p.clone(), c: null, s: 0, sd: 1, vmax: 1.2 }, b = { p: st.p.clone().addScaledVector(st.fwd, .7), c: null, s: 0, sd: 1, vmax: 1.2 }; legs[0][0].cut = { hold, rise: .45, fall: .5, col: 'fog', reset: 1 }; return [[a, b], ...legs]; };
-    const behind = () => { // 背後 20 公尺（被擋住就近一點、換個角度）
-      const L = ipPick([0, .44, -.44, .87, -.87].flatMap(rot => [20, 12].map(bk => () => { const fb = eye.f.clone().applyAxisAngle(IPUP, rot), P0 = eye.E.clone().addScaledVector(fb, -bk).add(ipv(0, 1, 0)); return ipAir(ipCR([P0, eye.E.clone().addScaledVector(fb, -bk * .45).add(ipv(0, .5, 0)), eye.E.clone().addScaledVector(eye.d, -2.5), eye.E.clone()], P0.clone().addScaledVector(fb, -4), eye.E.clone().addScaledVector(eye.d, 4)), 4, 4); })), eye, true);
+    // 背後 20 公尺（被擋住就近一點、換個角度）；背後是牆（大城市騎樓、醫院雨遮下）就從左右兩側、沿著牆平平地滑進來（最後一段不從視線後方進，雨遮附近 7 公尺內用上下範圍判斷）
+    const behind = () => {
+      const L = ipPick([0, .44, -.44, .87, -.87, 1.57, -1.57].flatMap(rot => [20, 12].map(bk => () => { const fb = eye.f.clone().applyAxisAngle(IPUP, rot), side = Math.abs(rot) > 1, P0 = eye.E.clone().addScaledVector(fb, -bk).add(ipv(0, side ? .3 : 1, 0)), tn = side ? fb : eye.d;
+        const A = ipAir(ipCR([P0, eye.E.clone().addScaledVector(fb, -bk * .45).add(ipv(0, side ? .15 : .5, 0)), eye.E.clone().addScaledVector(tn, side ? -1.4 : -2.5), eye.E.clone()], P0.clone().addScaledVector(fb, -4), eye.E.clone().addScaledVector(tn, 4)), 4, 4); if (side) A.near = 7; return A; })), eye, true);
       L[0].cut = { hold, rise: .45, fall: .45, col: 'fog', reset: 1 }; return L;
     };
     if (kind === 'tube' || kind === 'moon') {
@@ -1505,7 +1559,7 @@ function introPlan() {
       const b = [8, 6, 4.5, 3.2, 2.2].find(ok) || 1.6, P0 = eye.E.clone().addScaledVector(eye.d, -b), L = ipInCave(c, [P0, eye.E.clone().addScaledVector(eye.d, -b / 2), eye.E.clone()], P0.clone().addScaledVector(eye.d, -4), eye.E.clone().addScaledVector(eye.d, 4), face);
       const pts = ipJoin(...lead([L])), R = finish(route({ pts, via: c })); R.stops.push(land(pts, Math.min(6, b * .75))); return R;
     }
-    if (kind === 'city') { const c = open[Math.floor(rnd() * open.length)], pts = ipJoin(...lead([ipTube(c, 14, 0), behind()])), R = finish(route({ pts, via: c, city: 1 })); R.stops.push(land(pts, 6)); return R; }
+    if (kind === 'city') { const c = open[Math.floor(rnd() * open.length)], B = behind(), pts = ipJoin(...lead([ipTube(c, 14, 0), B])), R = finish(route({ pts, via: c, city: 1, turnT: B.near ? 3.2 : 0 })); R.stops.push(land(pts, 6)); return R; } // 從側面滑進來：減少動態的轉速上限 45°/s，提早開始轉向視線
     const e = kind === 'plain' ? 0 : 1, c = e ? open.find(o => o.def.to === kind) : open.map(o => { const m = ipMouth(o, 0).m; return [o, m.distanceTo(eye.E) + (m.clone().sub(eye.E).setY(0).normalize().dot(eye.f) > .3 ? 80 : 0)]; }).sort((a, b) => a[1] - b[1])[0][0];
     const t = e ? ipTube(c, c.L - 14, c.L) : ipTube(c, 14, 0), M = ipMouth(c, e);
     // 玩家就在洞口附近、高度也差不多才直接飛過去（整段檢查障礙物）；不然在洞口淡出、從背後 20 公尺開始（垂直速度有上限，下坡太陡會飛很久）
@@ -1571,7 +1625,7 @@ function ipTarget(I, dt, out) {
     const sh = R.rm || LOW || ff ? 0 : .006 * Math.min(1, v / 25) * (1 - smooth(T - 2.4, T - 1.5, t));
     out.multiply(IPQ[2].setFromEuler(IPE.set(Math.sin(t * 31) * sh, Math.sin(t * 27 + 1) * sh, I.roll + Math.sin(t * 23) * sh * 1.5, 'YXZ')));
   }
-  const w = ismo((t - (T - 2)) / 1.2); if (t >= T - .8) out.copy(I.Qp); else if (w > 0) out.slerp(I.Qp, w);
+  const tw = R.turnT || 2, w = ismo((t - (T - tw)) / (tw - .8)); if (t >= T - .8) out.copy(I.Qp); else if (w > 0) out.slerp(I.Qp, w); // turnT：從側面進來要轉 90° 的那幾種提早開始轉
   return out;
 }
 // 遮罩顏色：雲＝白混一點霧色（夜裡偏霧色）、大城市＝那一區的光色混白、霧＝目前的霧色

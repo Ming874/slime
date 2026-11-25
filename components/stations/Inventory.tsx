@@ -235,13 +235,6 @@ function Quest() {
           <div dangerouslySetInnerHTML={{ __html: g.tideStepsHTML() + g.hintBlock('tide') }} />
         </>
       )}
-      {k === 'snow' && ready && q.read.tablet && (
-        <>
-          <div className="riddle rx-verse-sm" dangerouslySetInnerHTML={{ __html: g.TABLET_TXT }} />
-          <p className="rx-dim">已滿足 {g.cluesDone()}/4 條線索</p>
-          <div dangerouslySetInnerHTML={{ __html: g.pillarExtra() + g.hintBlock('pillar') }} />
-        </>
-      )}
     </div>
   );
 }
