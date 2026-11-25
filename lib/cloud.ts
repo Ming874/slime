@@ -2,19 +2,18 @@
    - 登入後先把這台電腦的進度和雲端進度對齊（reconcile），再載入 game.js（遊戲照舊從 localStorage 讀寫進度）。
      雲端還沒有存檔 → 自動上傳；兩邊不同又分不出新舊 → 讓玩家選，沒選的那份在伺服器保留 30 天。
    - 遊戲每次存檔會呼叫 SlimeCloud.sync()；有變動就每 30 秒上傳一次，買東西、做完加工、關閉頁面時馬上傳。
-   - 存檔帶版本號：別台裝置存過較新的進度時伺服器回 409，問玩家「另一台有較新進度，要載入嗎？」
+   - 存檔帶版本號：別台裝置存過較新的進度時伺服器回 409，問玩家要留哪一份（遊戲裡是 Esc 筆記本的一頁，game.js 的 cloudConflict）
    game.js 透過 window.SlimeCloud 使用這裡的功能（sync、resetLocal、status、rename、logout、deleteMe、user、frozen）。 */
 
 export type User = { id: string; name: string; admin?: boolean; dev?: boolean };
 export type CloudSave = { ver: number; data: string; updatedAt: number; device: string };
 type Meta = { owner?: string; ver?: number; dirty?: boolean; fresh?: boolean };
-type Btn = { t: string; ghost?: boolean; red?: boolean; f?: () => void };
 export type Chooser = (local: string, cloud: string, mine: boolean) => Promise<boolean>;
 
 declare global {
   interface Window {
     SlimeCloud?: typeof cloud;
-    modal?: (html: string, btns: Btn[]) => void; // game.js 的對話框
+    cloudConflict?: (o: { at: number; keep: () => Promise<void>; load: () => Promise<boolean> }) => boolean; // game.js：筆記本翻到「留哪一份？」那一頁
     toast?: (msg: string) => void; // game.js 的訊息
     __slimeBoot?: boolean;
   }
@@ -99,16 +98,17 @@ function pushLeave() {
 }
 
 /* ---------- 另一台裝置有較新的進度 ---------- */
+// 選好之前暫停上傳（SY.paused）。遊戲裡不跳彈窗（設計分析 5.3）：game.js 的 cloudConflict 讓 Esc 筆記本翻到「留哪一份？」那一頁，
+// 換掉這台進度的那邊要打勾＋蓋章；遊戲還沒載入（理論上不會：上傳是 game.js 叫的）才退回瀏覽器的 confirm
 function conflict(b: { updatedAt?: number }) {
   if (SY.paused) return;
   SY.paused = true;
-  const html = `<h2>另一台裝置有較新的進度</h2><p>你在別的電腦或手機上玩過（雲端存檔時間 ${fmtTime(b.updatedAt)}）。要載入較新的進度嗎？</p><p class="small" style="color:var(--sub)">沒選的那份會在伺服器保留 30 天。</p>`;
   const keepHere = async () => { SY.paused = false; const m = getMeta(); setMeta({ ...m, dirty: true }); await push('conflict_local'); };
-  const btns: Btn[] = [{ t: '保留這台的進度', ghost: true, f: () => void keepHere() }, { t: '載入較新進度', f: () => void loadCloud() }];
-  if (typeof window.modal === 'function') window.modal(html, btns);
-  else if (confirm('另一台裝置有較新的進度，要載入嗎？\n（沒選的那份會在伺服器保留 30 天）')) void loadCloud(); else void keepHere();
+  if (typeof window.cloudConflict === 'function' && window.cloudConflict({ at: b.updatedAt || 0, keep: keepHere, load: loadCloud })) return;
+  if (confirm('另一台裝置有較新的進度，要載入嗎？\n（沒選的那份會在伺服器保留 30 天）')) void loadCloud(); else void keepHere();
 }
-async function loadCloud() {
+// 成功就重新整理頁面（回傳 true）；失敗回傳 false，筆記本把章撕掉、可以再選一次
+async function loadCloud(): Promise<boolean> {
   cloud.frozen = true; // game.js 的 save() 看到就不再寫 localStorage，重新整理時不會蓋掉剛載入的進度
   try {
     const r = await api<{ save: CloudSave | null }>('GET', '/api/save');
@@ -118,9 +118,11 @@ async function loadCloud() {
     ls.set(SAVE_KEY, r.body.save.data); setMeta({ owner: cloud.user!.id, ver: r.body.save.ver });
     try { sessionStorage.setItem('squish_autostart', '1'); } catch { /* 無痕模式 */ }
     location.reload();
+    return true;
   } catch {
     cloud.frozen = false; SY.paused = false;
     window.toast?.('載入雲端進度失敗，請稍後再試');
+    return false;
   }
 }
 

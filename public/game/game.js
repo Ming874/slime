@@ -133,7 +133,7 @@ const NPC_IDS = ['yun', 'chen', 'zhe', 'mei', 'jie', 'lin', 'yu', 'leo', 'kai', 
 // 宅配（氣球木箱）的機器與四間店：sanitize 在存檔區就要用，所以放在這裡（OWN、SHOPS 在後面才宣告，讀檔時還在暫時死區）
 const SHIP_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'], SHOP_IDS = ['mach', 'mall', 'gear', 'arms'];
 // 收進手帳的紙：sanitize 在讀檔時就執行，比 PAPERS 早（還在暫時死區，用到會丟例外、被 load() 當成壞檔而開新遊戲），所以只能用這裡的字串白名單
-const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|sk_(forest|coast|volcano|snow|city)|note[0-2]|hole|bottle|info_(tree|light|ice)|arms|live|gn[1-8]|moon)$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
+const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|sk_(forest|coast|volcano|snow|city)|note[0-2]|hole|bottle|info_(tree|light|ice)|arms|live|gn[1-8]|moon|branch|dream|mural_(sea|lava|ice))$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
 // 奶奶的筆記（gn1～gn8，6.1）：手帳裡那張紙 → 算進哪一個小秘密（前綴＝手帳上標的地方：home 工坊、cave 山洞）；讀檔時找到過的就補進手帳（同樹洞的紙條）
 const GN_EGG = { gn1: 'home_gn1', gn2: 'home_gn2', gn3: 'forest_gn', gn4: 'coast_gn', gn5: 'volcano_gn', gn6: 'snow_gn', gn7: 'cave_gn1', gn8: 'cave_gn2' };
 const SAVE_KEY = 'slime_world_v1';
@@ -4537,6 +4537,7 @@ function bindInput() {
     const k = e.code, tg = e.target;
     // 輸入框裡打字不觸發快捷鍵；Esc 例外：文字框先失焦，滑桿（音量）直接關介面，所以 Esc 再按一次一定關得掉選單
     if (tg.tagName === 'INPUT') { if (k !== 'Escape' || !GUI.kind) return; if (tg.type !== 'range' && tg.type !== 'checkbox') { tg.blur(); return; } }
+    if (TITLE.on && TITLE.pg && k === 'Escape' && $('#modal').hidden) { tPage(TITLE.pg === 'del' ? 'saves' : TITLE.pg === 'fullDel' ? 'full' : ''); return; } // 主選單的那張紙：Esc 翻回上一頁
     if (!$('#modal').hidden || TITLE.on) return;
     if (k === 'Escape') { if (GUI.kind) closeGui(); else openGui('pause'); return; }
     // Alt：暫時解鎖滑鼠但不暫停遊戲；再按一次 Alt 或點擊畫面就回到操控
@@ -4869,6 +4870,7 @@ function targetLabel(t) {
   if (t.type === 'avatar') { const pl = NET.players.get(t.id), h = held(); if (!pl) return ''; return h && h.t === 'gel' ? `${key}送 1 份${short(h.sp)}凝膠給 ${esc(pl.name)}` : `${esc(pl.name)}　<span style="color:var(--sub)">拿著凝膠可以送給對方</span>`; }
   if (t.type === 'npc') return `${key}跟 ${esc(t.n.d.name)} 聊天　<span style="color:var(--sub)">${esc(t.n.d.role)}</span>`;
   if (t.type === 'station' && t.it.id === 'bench' && W.letterObj) return key + '拿起奶奶的信';
+  if (t.type === 'station' && t.it.id === 'pc' && W.brLetter) return key + '拿起桌上的信'; // 轉捩點的信（placeBranchLetter）
   if (t.type === 'station' && t.it.label) return key + t.it.label; // 自訂提示文字（addInter 的 extra.label，例如「摸摸橘貓」）
   if (t.type === 'station' && t.it.id.startsWith('info:')) { const k = t.it.id.slice(5); return `${key}${hasPaper('info_' + k) ? '再看一次' : '拿一張'}「${INFO[k].t}」導覽小卡`; }
   if (t.type === 'station') { const h = held(); if (t.it.id === 'shelf' && h && h.t === 'prod') return `${key}把手上的${short(h.p.sp)}捏捏上架`; return `${key}使用${t.it.name}`; }
@@ -4918,6 +4920,7 @@ function doAct(t, tap) {
 }
 function doActAt(t) {
   if (t.type === 'station' && t.it.id === 'bench' && W.letterObj) return openPaper(PAPERS.granny, W.letterObj); // 第一次對手作台按 E：先拿起奶奶的信
+  if (t.type === 'station' && t.it.id === 'pc' && W.brLetter) return openPaper(PAPERS.branch, W.brLetter); // 轉捩點：先拿起電腦桌上的信
   if (t.it && t.it.act) return t.it.act(t.it); // 自訂互動（例如大城市的販賣機、橘貓）
   if (t.type === 'slime') hitSlime(t.sl, t.pt);
   else if (t.type === 'station') { const id = t.it.id; if (id === 'taxi') taxiAsk(); else if (id === 'hospital') hospitalAct(); else if (id.startsWith('info:')) infoAct(t.it, id.slice(5)); else if (id === 'cafe') cafeAct(); else if (id === 'market') marketAct(); else if (id === 'board') openGui('board', 'weekly'); else if (id === 'altar') openAltar(); else if (id === 'shelf') shelfAct(); else if (id === 'museum') openGui('museum'); else if (id === 'rack') openGui('inv'); else openGui(id); }
@@ -4965,6 +4968,9 @@ function coatObjective() {
 }
 function objective() {
   if (S.frozen) { const E = TOUCH ? '點擊' : '按 E'; return inCity() ? { t: '去醫院看醫生', d: '你凍僵了。到路北側的「醫院」，付診療費 ' + fmt(HOSPITAL_FEE) + '，醫生會讓你立刻痊癒。', x: CITY.x - 34, z: CITY.z - 13, c: '#f87171', n: '醫院', here: '對準醫院的門' + E + '，看醫生。' } : { t: '去醫院看醫生', d: '你凍僵了（發抖、行動變慢）。搭出生點左邊的計程車到大城市的醫院，付診療費 ' + fmt(HOSPITAL_FEE) + ' 看醫生就會好。', x: BASE.taxi[0], z: BASE.taxi[1], c: '#facc15', n: '計程車', here: '對準計程車' + E + '，前往大城市的醫院。' }; }
+  // 轉捩點的信（checkBranch）、夢想博物館開幕的氣球（dreamPump）：人在外面時，目標列與指引標記帶你回去看
+  if (!inCity() && W.brLetter) return { t: '回工坊讀奶奶的信', d: '營收和粉絲都夠多了：工作電腦的桌上多了一封蓋藍色封蠟的信。', x: BASE.pc[0], z: BASE.pc[1], c: '#93c5fd', n: '工作電腦', here: '對準工作電腦' + (TOUCH ? '點擊' : '按 E') + '，先拿起桌上的信。' };
+  if (!inCity() && DREAM.wait && W.musLabel) { const mp = W.musLabel.getWorldPosition(hv1); return { t: '回展示場看看', d: '展示場的招牌換成「夢想捏捏博物館」了，回去看看。', x: mp.x, z: mp.z, c: '#fbbf24', n: '夢想捏捏博物館', quiet: 1, here: '抬頭看看招牌。' }; }
   const co = coatObjective(); if (co && ownAny()) return co;
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
@@ -4979,6 +4985,7 @@ function objective() {
   if (!S.lineMade) return gel || M.active ? { t: '用切片機切一個', d: '', x: BASE.line[0], z: BASE.line[1], c: '#22d3ee', n: '加工產線' } : { t: '再採 2 份凝膠', d: '', track: 'slime', c: '#22d3ee' };
   const k = nextQuest(), qt = questTarget();
   if (k) { const ob = { t: QUEST[k].title, d: questReady(k) ? (qt ? (qt.d || '') : QUEST[k].hint) : `先用${ZONES.find(z => z.id === QUEST[k].from).name}的史萊姆做出 ${QUEST[k].need} 個捏捏（${madeIn(QUEST[k].from)}/${QUEST[k].need}）。`, x: qt && qt.x, z: qt && qt.z, c: '#c4b5fd', n: qt && qt.n, here: qt && qt.h }; if (questReady(k)) ob.extra = questExtra(k); return ob; }
+  if (!S.branch && hasPaper('branch') && branchReady()) return { t: '選一條事業', d: '到工作電腦的「事業」分頁，選開工廠、跟大公司合作或開小店（選了就不能改）。', x: BASE.pc[0], z: BASE.pc[1], c: '#93c5fd', n: '工作電腦', here: '對準工作電腦' + (TOUCH ? '點擊' : '按 E') + '，打開「事業」分頁。' };
   return { t: '開設夢想捏捏博物館', d: '累積粉絲與營收，到工作電腦的圖鑑頁完成夢想。' };
 }
 let objSig = '';
@@ -5264,7 +5271,7 @@ function openGui(kind, sec) {
   if (RIDE.on && HELD[kind] && RIDE.ph !== 'drive' && RIDE.ph !== 'wait') { RIDE.pend = [kind, sec]; return; } // 上下車（鏡頭正穿過車門）：拿出來的筆記本／手帳會穿過門框，坐好（或下車站好）才拿出來
   if (WARE.h) wareBack(true); // 拿著商品打開任何介面：先立刻放回
   const g = GUIS[kind]; if (!g) return; if (GUI.kind && GUI.kind !== kind) guiLeave(); // 從別的介面直接切過來：手上的紙、手作台的便條、手機的收據先收進手帳
-  if (kind !== 'paper') unlockMouse(); GUI.kind = kind; kind === 'paper' ? sfx.paper('lift') : sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now(); // 拿紙不放開滑鼠：讀完直接走
+  if (kind !== 'paper') unlockMouse(); GUI.kind = kind; kind === 'paper' ? sfx.paper('lift') : sfx.open(); save(); if (kind === 'pause') { S.savedAt = Date.now(); NPG.pg = ''; } if (kind === 'pc') BRP.k = ''; // 筆記本每次從選單那頁打開；電腦上的事業合約收回去 // 拿紙不放開滑鼠：讀完直接走
   if (kind === 'inv') $('#topbtns [data-act="inv"]').classList.remove('new');
   if (kind === 'line' || kind === 'decor' || kind === 'live') giftFlush(); // 奶奶的切片機還蓋著帆布：直接去用產線（或旁邊的工作站），機器一定已經在
   if (P) P.vx = P.vz = 0; // 停下腳步再拿東西：鏡頭的晃動與側傾回正，手上的道具才對得準 2D 介面
@@ -5354,6 +5361,15 @@ const ZSK = {
     l: ['M0 86H160', 'M10 93h8M34 93h8M58 93h8M82 93h8M106 93h8M130 93h8', 'M12 86V42H38V86', 'M44 86V24H70V86M57 24V14', 'M76 86V48H104V86M76 66h28', 'M110 86V34H134V86', 'M17 48h5v5h-5zM28 48h5v5h-5zM17 60h5v5h-5zM28 60h5v5h-5z', 'M49 30h5v5h-5zM60 30h5v5h-5zM49 42h5v5h-5zM60 42h5v5h-5zM49 54h5v5h-5zM60 54h5v5h-5z', 'M115 40h5v5h-5zM125 40h5v5h-5zM115 52h5v5h-5zM125 52h5v5h-5z', 'M86 86V74h8v12M80 54h20v8H80z', 'M146 86V58q0-5-5-5h-3'] },
 };
 Object.keys(ZSK).forEach(z => { PAPERS['sk_' + z] = { v: 'sketch', zone: z, name: ZSK[z].name + '的速寫', head: ZSK[z].name, b: [ZSK[z].sub[0]] }; }); // 手帳的速寫：第一次到一區時跟著地名字卡收進來（zcShow）
+/* 5.3 彈窗降級：原本跳在畫面中央的三段字，改成拿在手上讀的紙（讀完一樣收進手帳、剪貼區可以重讀）。
+   branch＝轉捩點：躺在工作電腦桌上的信（placeBranchLetter）；dream＝夢想博物館開幕：氣球飛起來之後被風吹到手上的信（finish）；
+   mural_*＝山洞的壁畫：抄在手帳裡的一張便條（caves.js 的 caveAct，從口袋拿出來）。 */
+const DREAM_TXT = { factory: '工廠日夜運轉，酥脆聲傳遍了全世界。', corp: '捏捏進了每個人的辦公桌，大家都在捏。', shop: '小店成了鎮上的溫暖角落，熟客天天上門。' }; // 信紙一行約 20 字：每句都不超過，不會剩一兩個字自己一行
+Object.assign(PAPERS, {
+  branch: { v: 'letter', name: '奶奶的信・三條路', head: '親愛的孩子：', b: ['聽說你的捏捏在城裡出名了，奶奶好高興。', '想開工廠、跟大公司合作，還是開間小店？', '選了就不能改，想好了再到電腦上蓋章吧。'], sig: '——奶奶', onFile: brLetterFiled },
+  dream: { v: 'letter', name: '奶奶的信・博物館開幕', head: '親愛的孩子：', get b() { return [DREAM_TXT[S.branch] || DREAM_TXT.shop, '你已經是真正的捏捏大師了，奶奶以你為榮。', '博物館的門會一直開著，想捏就回來吧。']; }, sig: '——奶奶', onFile: () => { S.dreamSeen = 1; } }, // dreamSeen：開幕看過了（手帳最多 40 張，舊的會被擠掉，不能只看 hasPaper）
+});
+if (typeof CAVE_MURAL !== 'undefined') Object.entries(CAVE_MURAL).forEach(([k, m]) => { PAPERS['mural_' + k] = { v: 'note', name: m.t, b: [m.t + '：', m.txt], sig: '——線索：' + m.next.replace(/（[^）]*）/g, '') }; });
 Object.keys(PAPERS).forEach(k => { PAPERS[k].id = k; if (GN_EGG[k]) PAPERS[k].egg = GN_EGG[k]; });
 const rcptSpec = d => ({ id: 'live', v: 'receipt', name: '直播收據', d: Object.assign({}, d), roll: 1 }); // 收據：每場一張（d＝那一場的數字）
 const paperSpec = r => (r && (r.id === 'live' ? rcptSpec(r.d || {}) : PAPERS[r.id])) || null;
@@ -6255,9 +6271,22 @@ function renderWeekly() { if (S.wk.w !== weekNo()) S.wk = { w: weekNo(), done: [
 /* ---------- 中期三線 ---------- */
 const BT = { fac: 0, ct: 0, sc: 0 };
 const branchReady = () => !S.branch && S.earned >= 2500 && S.fans >= 60;
+// 轉捩點（5.3）：不跳彈窗。工作電腦桌上鍵盤右邊多一封蓋藍色封蠟的三折信＋一道淡藍光柱（2 次繪製，讀過就拿掉）；
+// 對工作電腦按 E 先拿起這封信（doActAt），讀完收進手帳，再按一次才開電腦——「事業」分頁的 ● 本來就在等你
+// 門檻常常是在外面探索時靠網站成交跨過的：信出現的那一刻跳一行字，目標列換成「回工坊讀奶奶的信」、指引標記指著工作電腦（objective）
 function checkBranch() {
-  if (branchReady() && !S.seen_branch) { S.seen_branch = true; modal(`<h2>工坊的轉捩點</h2><p>你的捏捏已經小有名氣，累積營收 ${fmt(S.earned)}、粉絲 ${Math.floor(S.fans)}。<br>三條道路擺在眼前，玩法與劇情都不同（一旦選擇就無法更改）：</p><p>${Object.values(BRANCHES).map(b => `<b>${b.name}</b>：${b.desc}`).join('<br><br>')}</p><p>到工坊的「工作電腦 → 事業」做出選擇。</p>`); }
+  if (!branchReady() || hasPaper('branch')) return;
+  if (!S.seen_branch) { S.seen_branch = true; W.brToast = 1; objSig = ''; }
+  if (W.brToast && !TITLE.on && W.ready) { W.brToast = 0; toast('工作電腦的桌上多了一封奶奶的信'); } // 主選單上（背景照樣成交）先記著，進遊戲再說
+  placeBranchLetter();
 }
+function placeBranchLetter() {
+  if (W.brLetter || !W.ws || !BASE.pc) return; const [px, pz] = BASE.pc, x = px + .72, z = pz + .2, y = G(px, pz) + 1.004; // 桌面在 1.0 m（box(2.4, .1, 1.1) 的上緣），鍵盤右邊
+  const geo = mergeParts([[new THREE.BoxGeometry(.26, .008, .11), '#fffaf0'], [new THREE.BoxGeometry(.26, .002, .004), '#e7dcc4', M4(0, .005, -.0185)], [new THREE.CylinderGeometry(.018, .02, .006, 12), '#2563eb', M4(0, .007, 0)]]);
+  const m = mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), x, y, z, W.ws); m.rotation.y = .28; m.castShadow = false;
+  m.userData = { paper: 1, flat: 1, pw: .26 }; const b = beam(W.ws, '#bae6fd', 1.6, .09, y); b.position.x = x; b.position.z = z; b.castShadow = false; b.material.forceSinglePass = true; m.userData.beam = b; W.brLetter = m;
+}
+function brLetterFiled() { if (W.brLetter) { dropObj(W.brLetter.userData.beam); dropObj(W.brLetter); W.brLetter = null; } }
 const fmtSec = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 function tickTimers() {
   const now = Date.now();
@@ -6323,15 +6352,41 @@ function facStep(dt) {
   FAC.blocks.forEach((b, i) => { b.visible = S.workers > 0; b.position.x += dt * (w ? 1.2 : 0); if (b.position.x > 9) { b.position.x -= 18; b.material = FAC.mats[(i + Math.floor(t)) % FAC.mats.length]; } b.rotation.y += dt * (w ? 1 : 0); });
   FAC.v.cam.position.x = Math.sin(t * .2) * 1.5; FAC.v.cam.lookAt(0, .8, 0); FAC.v.render();
 }
-function chooseBranch(k) {
-  if (S.branch || !branchReady() || !BRANCHES[k]) return; const b = BRANCHES[k];
-  modal(`<h2>選擇「${b.name}」？</h2><p>${b.desc}</p><p class="small" style="color:var(--sub)">選擇後無法更改。</p>`, [{ t: '再想想', ghost: true }, { t: '確定選擇', f: () => { if (S.branch || !branchReady()) return; S.branch = k; save(); sfx.level(); renderGuiTabs(); renderBranch(); toast('已選擇：' + b.name); } }]);
-}
+// 選事業（5.3）：不跳確認彈窗。按「選擇這條路」，那張卡在網頁上翻成一張合約（Branch.tsx）：勾「想好了」、再蓋章才算數（cfStamp → branchCommit）
+const BRP = { k: '' };
+function chooseBranch(k) { if (S.branch || !branchReady() || !BRANCHES[k]) return; BRP.k = k; cfReset(); sfx.paper('flip'); renderBranch(); const el = $('#gwin .rx-contract .cf-tick'); if (el) { el.scrollIntoView({ block: 'nearest' }); el.focus({ preventScroll: true }); } } // 螢幕矮的時候合約在下緣外：捲到看得到「想好了」那一格；鍵盤焦點也放在那一格（Tab 依序到「再想想」、印章）
+function branchCommit(k) { BRP.k = ''; if (S.branch || !branchReady() || !BRANCHES[k]) return; S.branch = k; save(); sfx.level(); renderGuiTabs(); renderBranch(); toast('已選擇：' + BRANCHES[k].name); }
 
 /* ---------- 圖鑑 / 背包 ---------- */
 const GOAL = { species: SPECIES.length, fans: 800, earned: 40000 };
 function renderCodex() { ui('codex'); } // 畫面改由 React 負責（components/stations/）
-function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
+// 夢想博物館開幕（5.3）：不跳彈窗。闔上手帳（或電腦），展示場的招牌換成「夢想捏捏博物館」、招牌上緣綁著的一串氣球鬆開飛上天（1 次繪製，3 秒後拿掉），
+// 氣球飛走之後，奶奶的信被風吹到手上（PAPERS.dream，內文依你選的事業）
+// 「完成夢想」在手帳裡哪裡都按得到：人不在展示場附近（山洞、城市、別區）就先不放氣球，跳一行字、目標列帶你回去，
+// 走到看得見招牌的地方（30 m 內、招牌在畫面中間一帶，或 8 m 內）才放（dreamPump，每秒一次）。重新整理後還沒看到的（S.done 但手帳裡沒有那封信）也一樣等你回去
+const DREAM = { wait: 0, go: 0 }, dv1 = new THREE.Vector3();
+function finish() {
+  if (S.done) return; S.done = true; saveCloud();
+  if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24'); W.musLabel.position.copy(p); par.add(W.musLabel); }
+  if (GUI.kind) closeGui(); sfx.level();
+  DREAM.wait = 1; if (!dreamPump(1)) { toast('夢想捏捏博物館開幕了：回展示場看看'); objSig = ''; }
+}
+// near＝剛按下「完成夢想」：手帳正在收起、鏡頭還沒回到眼睛，只看距離（30 m 內、同一區）；之後每秒看一次，要真的看得到招牌才放
+function dreamPump(near) {
+  if (!DREAM.wait) { if (!DREAM.go && S.done && !S.dreamSeen && W.ready && !hasPaper('dream') && W.musLabel) DREAM.wait = 1; else return false; }
+  if (!W.musLabel || TITLE.on || INTRO.on || RIDE.on || inCity() || CV.c) return false;
+  const mp = W.musLabel.getWorldPosition(dv1), d = Math.hypot(mp.x - P.x, mp.z - P.z);
+  if (d > 30) return false;
+  if (!near) { if (GUI.kind || W.camAway || PAPER.cur) return false; const f = W.cam.getWorldDirection(hv1), dx = mp.x - W.cam.position.x, dy = mp.y - W.cam.position.y, dz = mp.z - W.cam.position.z; if (d > 8 && (f.x * dx + f.y * dy + f.z * dz) / Math.hypot(dx, dy, dz) < .82) return false; } // 招牌在視線 35° 以內
+  DREAM.wait = 0; DREAM.go = 1; objSig = ''; dreamGo(); return true;
+}
+function dreamGo() {
+  if (W.musLabel && !RM()) {
+    const bal = balloons(LOW ? 5 : 8, 1.6); bal.position.copy(W.musLabel.position).add(hv1.set(0, .45, 0)); W.musLabel.parent.add(bal); bal.rotation.y = Math.atan2(W.cam.position.x - bal.position.x, W.cam.position.z - bal.position.z); let t = 0; // 綁在招牌上緣、只往上飛：不會擋到招牌的字；一串氣球橫向排開、正對著你
+    W.anim.push(dt => { if (!bal.parent) return; t += dt; balloonStep(bal, t, t > 1.1 ? t - 1.1 : -1, Math.min(1, t / .9)); if (t > 1.1 && !bal.userData.go) { bal.userData.go = 1; shopSnd.flyAway(); } if (t > 2.8) dropObj(bal); }); // 跑完就是空函式（W.anim 不拿掉，免得 forEach 中途改陣列）
+  }
+  setTimeout(() => openPaper(PAPERS.dream, 'wind'), RM() ? 600 : 1900); // 先看氣球飛走，信再飄過來（手上的紙會擋住畫面中央）
+}
 let invSel = null;
 function renderInv() { ui('inv'); } // 畫面改由 React 負責（components/stations/）
 const RENDER = { paper: () => ui('paper'), bench: renderBench, eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause, map: () => ui('map') }; // map：筆記本的手繪地圖（map.js、NoteMap.tsx）
@@ -6379,8 +6434,12 @@ document.addEventListener('click', e => {
     case 'donate': donate(); break;
     case 'chat': openChat(); break;
     case 'acctName': { const C = window.SlimeCloud, inp = $('#acctName'); if (!C || !inp) break; const n = inp.value.trim(); if (!n) { toast('暱稱不能是空的'); break; } C.rename(n).then(name => { S.name = name; save(); toast(`暱稱已改成「${name}」`); renderPause(); }).catch(e => toast(e.message)); break; }
-    case 'logout': { const C = window.SlimeCloud; if (!C) break; save(); netLeave(true); C.logout(false).then(ok => { if (!ok) modal('<h2>進度還沒傳到雲端</h2><p>目前連不上伺服器。現在登出的話，新的進度會留在這台電腦，下次用同一個帳號在這台電腦登入時再上傳。</p>', [{ t: '取消', ghost: true }, { t: '仍要登出', red: true, f: () => C.logout(true) }]); }); break; }
-    case 'delMe': modal('<h2>刪除我的資料？</h2><p>會刪除你在伺服器上的帳號、遊戲進度與保留中的存檔，所有裝置都會登出，這台電腦上的進度也會清除。<b>刪除後無法復原。</b></p>', [{ t: '取消', ghost: true }, { t: '永久刪除', red: true, f: () => { netLeave(true); window.SlimeCloud.deleteMe().catch(e => toast(e.message)); } }]); break;
+    case 'logout': { const C = window.SlimeCloud; if (!C) break; save(); netLeave(true); C.logout(false).then(ok => { if (!ok) nbPage('logout'); }); break; } // 還沒傳到雲端：筆記本翻到「仍要登出？」那一頁（NotePages.tsx）
+    case 'delMe': nbPage('delMe'); break; // 筆記本翻到確認頁：打勾＋蓋章才刪（cfStamp）
+    case 'nbPage': nbPage(k || ''); break;
+    case 'tPage': tPage(k || '', +id || 0); break;
+    case 'cfTick': cfTick(); break;
+    case 'cfStamp': cfStamp(k); break;
     case 'saveNow': saveCloud(); S.savedAt = Date.now(); toast('遊戲已儲存'); renderPause(); break;
     case 'toTitle': if (M.active) { S.gel[M.rsp] = (S.gel[M.rsp] || 0) + 2; gelOut(M.rsp, -2); M.active = false; M.auto = false; M.g = null; toast('產線中斷，已退回 2 份凝膠'); } saveCloud(); netLeave(true); showTitle(); break;
     case 'netLeave': netLeave(); renderPause(); break;
@@ -6399,6 +6458,7 @@ document.addEventListener('click', e => {
     case 'buyUp': if (purchase('up', k, 'web')) sfx.level(); break;
     case 'buyPack': if (purchase('pack', k, 'web')) sfx.level(); break;
     case 'chooseBranch': chooseBranch(k); break;
+    case 'brBack': BRP.k = ''; cfReset(); sfx.paper('fold'); renderBranch(); break; // 合約收回去，三條路重新攤開
     case 'hire': { const c = Math.round(400 * Math.pow(1.5, S.workers)); if (S.money >= c) { S.money -= c; S.workers++; renderBranch(); renderTop(); saveCloud(); } break; }
     case 'auto': { const c = Math.round(600 * Math.pow(1.8, S.auto)); if (S.money >= c) { S.money -= c; S.auto++; renderBranch(); renderTop(); saveCloud(); } break; }
     case 'deliver': { const c = S.contracts.find(x => x.id === +id); if (!c) return; const it = contractItems(c); if (it.length < c.n) return; S.stock = S.stock.filter(p => !it.includes(p)); S.contracts = S.contracts.filter(x => x !== c); addMoney(c.reward); S.rep++; gainXP(8); S.fans += 2; sfx.pop(); toast(`交貨完成 +${fmt(c.reward)}`); refresh(); save(); break; }
@@ -6408,11 +6468,11 @@ document.addEventListener('click', e => {
     case 'devMoon': moonDev(); break; // 遺跡的石柱：點亮下一根／演一次開花（story.js）
     case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
     case 'avatar': setAvatar(k); break;
-    case 'pickSave': closeModal(); switchSave(+k); break;
-    case 'delSave': delSaveAsk(+k); break;
+    case 'pickSave': TITLE.pg = ''; switchSave(+k); break;
+    case 'delSave': if (+k) tPage('del', +k); break; // 主選單的紙翻到「撕掉這個存檔？」（打勾＋蓋章）
     case 'quality': if (['auto', 'high', 'low'].includes(k)) { S.quality = k; applyQuality(true); save(); ui('pause'); toast('畫質：' + { auto: '自動', high: '高', low: '低' }[k]); } break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
-    case 'help': showHelp(); break;
+    case 'help': nbPage('help'); break; // 操作說明＝筆記本第 1 頁的手繪鍵位圖（主選單：釘在選單欄上的那張紙）
     case 'home': if (RIDE.on) break; if (inCity()) { closeGui(); const rm = RM(); setTimeout(() => rideStart('c2v', rm ? { seated: true } : { fly: true }), HC.fade + 30); } else homeGlide(); break; // 城市：從原地滑翔到招呼站那台車的右門外、坐進去走回程（減少動態：筆記本擋著時直接坐進去）；月光谷：滑翔回中央平地
     case 'paperFlip': if (GUI.kind === 'paper' && PAPER.cur && PAPER.cur.v === 'postcard') { PAPER.flip ^= 1; sfx.paper('flip'); ui('paper'); } break;
     case 'clipOpen': if (S.papers[+k]) { CLIP.i = +k; CLIP.flip = 0; sfx.paper('lift'); ui('inv'); } break;
@@ -6423,18 +6483,65 @@ document.addEventListener('click', e => {
 });
 // 加工的「停機」用 pointerdown 觸發：比 click 少一個放開手指的延遲，計時更準
 function creditsHTML() { const L0 = MUS.list; if (!L0) return ''; const a = Object.values(L0).filter(t => t && t.title); return a.length ? '<p class="small" style="color:var(--sub);margin-top:8px"><b>配樂</b>：' + a.map(t => esc(t.title) + ' — ' + esc(t.author || '') + '（' + esc(t.license || '') + '）').join('；') + '</p>' : ''; }
-function showHelp() {
-  const keys = TOUCH
-    ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span><kbd>指南針</kbd><span>點一下：完整顯示錢、粉絲、流行與目標</span></div>'
-    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌（手帳的「今天」記著網站成交、流行色等小事）</span><kbd>按住 Tab</kbd><span>完整顯示畫面上的資訊（錢、粉絲、流行、目標）</span><kbd>M</kbd><span>筆記本裡的手繪地圖（走過的地方才會畫上去）</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
-  modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。捏一下之後約 0.3 秒，外圈會亮一圈，亮著的時候捏下一下就是「完美」；三下是 Do、Mi、Sol，三下都完美會響起和弦、多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。拿著捏捏對準網站貨架就能上架；站上直播舞台就開直播。多人時：巨型史萊姆要兩人一起捏、拿著凝膠對準朋友可以送給對方、朋友站在產線旁會幫你裹糖。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
+/* ---------- 筆記本的其他頁與確認頁（設計分析 5.3、11.4）：以前都是畫面中央的彈窗（解鎖滑鼠、鋪黑幕、要讀一段字） ----------
+   遊戲中：Esc 筆記本往上翻一頁（翻頁在 StationLayer.tsx，內容在 components/stations/NotePages.tsx）。
+     help＝第 1 頁的手繪鍵位圖（觸控與鍵盤自動切換）；delMe／logout＝要「打勾＋蓋章」才算數的確認頁。世界照樣在筆記本後面動。
+   主選單沒有筆記本：同樣的頁寫在一張釘在選單欄上的紙（TITLE.pg：help、saves 選存檔、del 刪存檔、new 開新遊戲、full 存檔已滿、fullDel 刪一個再開新遊戲）。
+   工作電腦的「選事業」也用同一套打勾＋蓋章（Branch.tsx，BRP）。
+   不會誤觸：危險的事（刪除我的資料、刪除存檔、載入另一台的雲端進度）要先打勾，印章才壓得下去；翻到這一頁的前 0.6 秒、打勾後的 0.4 秒內蓋章不算（連點、按住 Enter 不會一路點穿）。
+   鍵盤：翻到確認頁時焦點落在「打勾」那一格（沒有就落在翻回去），Tab 依序是翻回去、印章。 */
+const NPG = { pg: '' }, CF = { ok: 0, t: 0, done: 0 }; // CF＝畫面上這張確認頁：ok 打勾了、t 翻到這頁（或打勾）的時間、done 已經蓋章（印章動畫跑完才真的去做）
+const NB_T = { '': '選單', help: '怎麼玩', delMe: '刪除我的資料', logout: '登出', conflict: '雲端存檔', cflKeep: '雲端存檔', cflLoad: '雲端存檔' }, CF_TICK = { delMe: 1, tDel: 1, tFullDel: 1, branch: 1, cflLoad: 1 };
+function cfReset() { CF.ok = 0; CF.done = 0; CF.t = performance.now(); }
+function cfUi() { if (TITLE.on) renderTitle(); else if (GUI.kind === 'pause') ui('pause'); else if (GUI.kind === 'pc') renderBranch(); }
+function cfTick() { if (CF.done) return; CF.ok ^= 1; if (CF.ok) CF.t = Math.max(CF.t, performance.now() - 200); sfx.tick(); cfUi(); const st = CF.ok && ($('#gwin .cf-stamp') || $('.rx-tnote .cf-stamp')); if (st) st.scrollIntoView({ block: 'nearest' }); } // 打勾之後印章拿得起來了：矮的螢幕捲到看得到印章；打勾後 0.4 秒內蓋章不算（cfStamp 的 0.6 秒從 t 算）
+// 鍵盤焦點：打勾那一格 → 選項（雲端衝突那頁）→ 翻回去；印章在打勾之前是停用的，焦點放在它前面的格子，Tab 才不會一下子跳出這一頁
+const cfFocus = root => { const f = $(root + ' .cf-tick') || $(root + ' .cf-pick') || $(root + ' .nb-first') || $(root + ' .rx-resume'); if (f) f.focus({ preventScroll: true }); };
+// 筆記本翻到另一頁（pg＝'' 回到選單那頁）：從別的地方叫（例如登出時發現還沒上傳）就先拿出筆記本
+function nbPage(pg) {
+  if (!(pg in NB_T)) pg = ''; if (TITLE.on) return tPage(pg === 'help' || /^(conflict|cfl)/.test(pg) ? pg : '');
+  if (GUI.kind !== 'pause') { if (!W.ready) return; openGui('pause'); }
+  if (NPG.pg === pg) return; NPG.pg = pg; cfReset(); sfx.paper('flip'); window.dispatchEvent(new CustomEvent('slime:tab', { detail: { kind: 'pause', tab: 'pause', flip: true } })); // 上方線圈的筆記本：一張紙往上翻過去
+  $('#gtitle').textContent = NB_T[pg]; ui('pause'); $('#gbody').scrollTop = 0;
+  cfFocus('#gwin'); // 鍵盤：焦點落在這一頁的第一個要做的事（打勾、選項；沒有就是翻回上一頁／回到遊戲）
+}
+// 主選單換頁：選單欄捲回最上面（手機橫拿時，上一頁捲下去的位置會把這一頁的標題與「回主選單」藏在上緣外）
+function tPage(pg, slot = 0) { TITLE.pg = pg || ''; TITLE.slot = slot; cfReset(); sfx.paper('flip'); renderTitle(); const t = $('#title'); if (t) t.scrollTop = 0; if (TITLE.pg) cfFocus('.rx-tnote'); }
+// 蓋章：印章壓下去（CSS 0.45 秒）之後才真的去做；失敗（例如連不上伺服器）把章撕掉、可以再蓋一次
+function cfStamp(k) {
+  if (CF.done || performance.now() - CF.t < 600 || (CF_TICK[k] && !CF.ok)) return;
+  CF.done = 1; shopSnd.stamp(); cfUi();
+  setTimeout(() => {
+    const C = window.SlimeCloud, undo = e => { if (e) toast(e.message || String(e)); CF.done = 0; cfUi(); };
+    if (k === 'delMe') { if (!C) return undo(); netLeave(true); C.deleteMe().catch(undo); }
+    else if (k === 'logout') { if (C) C.logout(true); else undo(); }
+    else if (k === 'tNew') newGame(freeSlot());
+    else if (k === 'tFullDel') newGame(TITLE.slot || 0); // 0＝丟掉目前這份（不另存）
+    else if (k === 'tDel') { try { localStorage.removeItem(slotKey(TITLE.slot)); } catch (er) { } toast('存檔已刪除'); tPage(savesInfo().length > 1 ? 'saves' : ''); }
+    else if (k === 'branch') branchCommit(BRP.k);
+    else if (k === 'cflKeep') { if (!CFL.on) return undo(); CFL.on = 0; CFL.keep().catch(() => null); toast('留下這台的進度：雲端也換成這一份了'); nbPage(''); }
+    else if (k === 'cflLoad') { if (!CFL.on) return undo(); CFL.on = 0; CFL.load().then(ok => { if (!ok) { CFL.on = 1; undo(); } }); } // 成功會重新整理頁面；失敗（cloud.ts 已經跳字）把章撕掉，可以再選一次
+  }, RM() ? 160 : 520);
+}
+/* 雲端存檔衝突（lib/cloud.ts 的 conflict：上傳時伺服器回 409，別台裝置存過較新的進度）：以前是畫面中央的彈窗（黑幕、解鎖滑鼠、一鍵就把這台的進度換掉）。
+   現在筆記本翻到「留哪一份？」那一頁（conflict）：選一份 → 翻到那份的確認頁蓋章（cflKeep；換掉這台進度的 cflLoad 要先打勾）。主選單上一樣是釘在選單欄的那張紙。
+   手不空（拿著紙、開著工作站、搭車、開場、對話中）就先跳一行字記著，手空了筆記本才自己拿出來（每秒的 cflPump）；
+   闔上筆記本不選也可以：選單那頁最上面留一行（Pause.tsx），雲端暫停上傳直到選好。 */
+const CFL = { on: 0, at: 0, keep: null, load: null, wait: 0 }; // wait：1＝還沒翻出來、2＝已經跳過字、等手空
+window.cloudConflict = o => { CFL.on = 1; CFL.at = +o.at || 0; CFL.keep = o.keep; CFL.load = o.load; CFL.wait = 1; cflPump(); return true; };
+function cflPump() {
+  if (!CFL.on || !CFL.wait) return;
+  if (TITLE.on) { if (!TITLE.mp && /^(|help|saves)$/.test(TITLE.pg || '')) { CFL.wait = 0; tPage('conflict'); } return; } // 主選單：正在別頁（刪存檔的確認頁等）就等翻回來
+  if (GUI.kind === 'pause') { if (/^(|help)$/.test(NPG.pg)) { CFL.wait = 0; nbPage('conflict'); } return; }
+  if (paperBusy() || PAPER.cur || PAPER.q.length) { if (CFL.wait === 1) { CFL.wait = 2; toast('另一台裝置有較新的雲端進度：等一下翻開筆記本，選要留哪一份'); } return; }
+  CFL.wait = 0; nbPage('conflict');
 }
 
 
 /* ============================================================
    主選單（開始畫面）
    ============================================================ */
-const TITLE = { on: false };
+const TITLE = { on: false, pg: '', slot: 0 }; // pg：選單欄換成哪一頁（tPage；'' 是主選單本身）
 function fmtTime(t) { if (!t) return '—'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
 function renderTitle() { ui('title'); } // 主選單由 React 負責（components/stations/Title.tsx）
 function showTitle() {
@@ -6442,7 +6549,7 @@ function showTitle() {
   rideAbort(); // 搭車中回主選單：人放回安全的站位、兩台車回站位、霧光曝光圖層還原
   if (GUI.kind) { GUI.kind = null; GUI.focus = null; tab = ''; guiHide(true); }
   if (L.watch) L.watch = null; L.on = false; M.active = false;
-  unlockMouse(); TITLE.on = true; TITLE.mp = false; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
+  unlockMouse(); TITLE.on = true; TITLE.mp = false; TITLE.pg = ''; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
 }
 function startPlay() {
   if (S.coatMigrated) { S.coatMigrated = false; save(); setTimeout(() => toast('偵測到你已經開啟雪原：已補發保暖衣（現在雪原需要保暖衣才能進入）'), 1500); }
@@ -6491,7 +6598,6 @@ function switchSave(slot) {
   try { if (cur) localStorage.setItem(slotKey(slot), cur); else localStorage.removeItem(slotKey(slot)); localStorage.setItem(SAVE_KEY, pick); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { NOSAVE = false; toast('切換存檔失敗'); return; }
   if (window.SlimeCloud) SlimeCloud.swapLocal(); location.reload();
 }
-function closeModal() { mOpen = false; $('#modal').hidden = true; nextModal(); }
 function agoTxt(t) { if (!t) return '—'; const m = Math.floor((Date.now() - t) / 6e4); return m < 1 ? '剛剛' : m < 60 ? m + ' 分鐘前' : m < 1440 ? Math.floor(m / 60) + ' 小時前' : Math.floor(m / 1440) + ' 天前'; }
 function saveCardHTML(e) {
   const o = e.o, zs = (Array.isArray(o.zones) ? o.zones : ['forest']).filter(z => ZONES.some(x => x.id === z)), cx = o.codex && typeof o.codex === 'object' ? Object.keys(o.codex).filter(k => SP[k]).length : 0;
@@ -6502,19 +6608,9 @@ function saveCardHTML(e) {
     + '<span class="sv-ft">' + zs.map(z => ZONES.find(x => x.id === z).name).join('・') + '<i>上次遊玩 ' + fmtTime(o.last) + '（' + agoTxt(o.last) + '）</i></span></span><span class="sv-go">' + (e.slot ? '切換' : '繼續') + '</span></button>'
     + (e.slot ? '<button type="button" class="sv-del" data-act="delSave" data-k="' + e.slot + '" aria-label="刪除這個存檔">刪除</button>' : '') + '</div>';
 }
-function continueGame() {
-  const list = savesInfo(); if (list.length < 2) return startPlay();
-  modal('<h2>選擇存檔</h2><p class="small" style="color:var(--sub)">共 ' + list.length + '/' + MAX_SAVES + ' 個存檔。目前使用中的那份會同步到雲端，其他存檔只存在這台電腦。</p><div class="sv-list">' + list.map(saveCardHTML).join('') + '</div>', [{ t: '取消', ghost: true }]);
-}
-function delSaveAsk(slot) {
-  const e = savesInfo().find(x => x.slot === slot); if (!slot || !e) return; closeModal();
-  modal('<h2>刪除這個存檔？</h2><div class="sv-list">' + saveCardHTML(e).replace(/data-act="[^"]*"/g, '') + '</div><p>刪除後無法復原。</p>', [{ t: '取消', ghost: true, f: continueGame }, { t: '刪除', red: true, f: () => { try { localStorage.removeItem(slotKey(slot)); } catch (er) { } toast('存檔已刪除'); ui('title'); continueGame(); } }]);
-}
-function newGameAsk() {
-  const list = savesInfo(); if (!list.length) return newGame();
-  if (list.length < MAX_SAVES) return modal('<h2>開始新遊戲？</h2><p>目前的進度會另存起來（存檔 ' + list.length + '/' + MAX_SAVES + '），之後可以從「繼續遊戲」選回來。</p>', [{ t: '取消', ghost: true }, { t: '開始新遊戲', f: () => newGame(freeSlot()) }]);
-  modal('<h2>存檔已滿（3/3）</h2><p>要先刪除一個存檔，才能開始新遊戲。刪除後無法復原。</p>', [...list.map(e => ({ t: '刪除：' + saveLabel(e), red: true, f: () => modal('<h2>確定刪除這個存檔？</h2><p>' + esc(saveLabel(e)) + '</p><p>刪除後無法復原。</p>', [{ t: '取消', ghost: true }, { t: '刪除並開始新遊戲', red: true, f: () => newGame(e.slot ? e.slot : 0) }]) })), { t: '取消', ghost: true }]);
-}
+// 主選單的存檔選擇、刪除、開新遊戲（5.3）：不跳彈窗，選單欄換成一頁（TITLE.pg，components/stations/NotePages.tsx 的 TitleNote）
+function continueGame() { const list = savesInfo(); if (list.length < 2) return startPlay(); tPage('saves'); }
+function newGameAsk() { const n = savesInfo().length; if (!n) return newGame(); tPage(n < MAX_SAVES ? 'new' : 'full'); }
 function newGame(archiveTo) {
   // archiveTo：把目前的進度另存到這個位置（沒給＝直接丟掉目前進度）。slot 0 以外的位置若已有存檔，會被目前進度取代
   if (archiveTo) { save(); const cur = lsGet(SAVE_KEY); if (cur) { try { localStorage.setItem(slotKey(archiveTo), cur); } catch (e) { toast('存檔空間不足，無法另存目前進度'); return; } } }
@@ -10524,7 +10620,7 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { webSold(r); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; nmStep(); checkBranch(); trendDaily(); pcScreen(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
+  if (secAcc >= 1) { secAcc = 0; nmStep(); checkBranch(); dreamPump(); cflPump(); trendDaily(); pcScreen(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind; if (dt > 0) BG.fdt += (Math.min(dt, .05) - BG.fdt) * .05;
@@ -10571,7 +10667,8 @@ function ui(name) { window.dispatchEvent(new CustomEvent('slime:ui', { detail: n
 window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
-  get title() { return TITLE; }, get inCity() { return !!P && inCity(); }, get riding() { return RIDE.on; }, get rideDir() { return RIDE.on ? RIDE.dir : ''; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
+  get title() { return TITLE; }, get nb() { return NPG; }, get cf() { return CF; }, get brPick() { return BRP.k; }, get cfl() { return CFL.on ? { at: CFL.at, here: `${fmtTime(S.last)}\u00a0存檔 · ${fmt(S.money)} · 粉絲\u00a0${Math.floor(S.fans)} · 區域\u00a0${S.zones.length}/${ZONES.length}` } /* 不換行空格：窄的時候「區域」和數字不拆成兩行 */ : null; }, saves: () => savesInfo().map(e => ({ slot: e.slot, label: saveLabel(e), html: saveCardHTML(e) })), // 筆記本的其他頁與確認頁（NotePages.tsx）
+  get inCity() { return !!P && inCity(); }, get riding() { return RIDE.on; }, get rideDir() { return RIDE.on ? RIDE.dir : ''; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
   MG, STEPS, MKEY, ownAny, TOUCH, QUIRK, MASTER_N, AUTO_T,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,

@@ -22,7 +22,7 @@ type Own = { name: string; cost: number; shop: string; desc: string };
 export type Game = {
   S: State; M: { sp: string | null; active?: boolean }; BN: { busy: boolean; gift?: number }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
   trend: { sp: string | null }; invSel: number | null; tab: string; kind: string | null; likeT: () => Record<string, number>;
-  title: { on: boolean; mp?: boolean }; inCity?: boolean; riding?: boolean; rideDir?: string; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
+  title: { on: boolean; mp?: boolean; pg?: string; slot?: number }; inCity?: boolean; riding?: boolean; rideDir?: string; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
   SP: Record<string, Species>; SPECIES: Species[]; ZONES: { id: string; name: string; acc: string }[]; RAR: ({ n: string; c: string } | null)[];
   UPS: Record<string, Up>; OWN: Record<string, Own>; PACKS: Record<string, { name: string; cost: number }>;
   DECO: Record<string, { n: string; c: string; pack: string; v: number }>; CUTS: Record<string, { n: string; col: string; desc: string; pm: number }>;
@@ -47,7 +47,11 @@ export type Game = {
   clip?: () => number; hasPaper?: (id: string) => boolean; postcardImg?: (z: string) => string;
   ZSK?: Record<string, { name: string; sub: string[]; acc: string }>; skSvg?: (z: string) => string; // 換區的地名字卡與手帳的旅行速寫（區名、副標、鉛筆線稿的 SVG 字串）
   today?: () => Today; outbox?: () => number;
+  // 筆記本的其他頁與確認頁（NotePages.tsx）：nb.pg＝Esc 筆記本翻到哪一頁、cf＝確認頁的打勾／蓋章、brPick＝電腦上正在簽的事業、saves＝主選單的存檔
+  nb?: { pg: string }; MAX_SAVES?: number; cf?: { ok: number; t: number; done: number }; brPick?: string; saves?: () => SaveRow[];
+  cfl?: { at: number; here: string } | null; // 雲端存檔衝突（還沒選）：另一台裝置的存檔時間、這台進度的摘要
 };
+export type SaveRow = { slot: number; label: string; html: string };
 // 手帳的「今天」（game.js 的 note）：玩家沒在做事時發生的事；k＝web／webAway／trend／shop／shopLeft／corp／corpLate／farm，n＝併成一行的件數
 export type TodayRow = { t: number; k: string; m: string; n: number; inc: number };
 export type Today = { d: number; log: TodayRow[]; web: number; inc: number };

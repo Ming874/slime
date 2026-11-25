@@ -1,9 +1,11 @@
 'use client';
 /* 事業（工作電腦）：選擇事業道路，或管理自家工廠／企業合作訂單／溫馨小店的顧客。
+   選道路不跳確認彈窗（5.3）：按「選擇這條路」，那張卡翻成一張合約（g.brPick），勾「想好了」再蓋章才算數（game.js 的 cfStamp → branchCommit）。
    工廠的 3D 畫布 #facWrap 由 game.js 切換顯示；倒數計時（data-dl、data-dlbar）由 game.js 每秒更新。 */
 import { G, type Product } from './game';
 import { SlimeArt } from './Art';
 import { Empty } from './Items';
+import { Stamp, Tick } from './NotePages';
 
 type Contract = { id: number; sp: string; cut: string | null; n: number; min: number; reward: number; dl: number };
 type Customer = { id: number; name: string; sp: string; min: number; dl: number };
@@ -19,17 +21,25 @@ const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 
 export default function Branch() {
   const g = G(), S = g.S as typeof g.S & BranchState, x = g as unknown as BranchGame;
   if (!S.branch) {
-    const ready = x.branchReady();
+    const ready = x.branchReady(), pick = ready ? g.brPick || '' : '';
     return (
       <div className="rx-branch">
         <div className="rx-branch-hd"><b>選擇你的事業道路</b><small>一旦選擇就無法更改，玩法和收入方式都不一樣。</small></div>
         <div className="rx-paths">
-          {Object.entries(x.BRANCHES).map(([k, b]) => (
-            <article key={k} className={`rx-path p-${k}`}>
+          {Object.entries(x.BRANCHES).map(([k, b]) => pick === k ? (
+            <article key={k} className={`rx-path p-${k} rx-contract`} aria-label={`${b.name}的合約`}>
+              <b className="rx-ct-hd">事業合約</b>
+              <p>我決定走「<b>{b.name}</b>」這條路。</p>
+              <small className="rx-ct-desc">{b.desc}</small>
+              <Tick>想好了，選了就不能改</Tick>
+              <div className="cf-acts"><button type="button" className="nb-btn cf-back" data-act="brBack" disabled={!!g.cf?.done}>再想想</button><Stamp k="branch" label="蓋章簽約" mark="簽約" need /></div>
+            </article>
+          ) : (
+            <article key={k} className={`rx-path p-${k}${pick ? ' dim' : ''}`}>
               <span className="rx-path-ic" aria-hidden="true">{ICON[k]}</span>
               <b>{b.name}</b>
               <p>{b.desc}</p>
-              <button type="button" className="btn" data-act="chooseBranch" data-k={k} disabled={!ready}>選擇這條路</button>
+              <button type="button" className="btn" data-act="chooseBranch" data-k={k} disabled={!ready || !!g.cf?.done}>選擇這條路</button>
             </article>
           ))}
         </div>

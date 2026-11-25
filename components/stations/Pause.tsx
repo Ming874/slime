@@ -1,11 +1,12 @@
 'use client';
 /* 暫停選單＝手寫筆記本的一頁。按 Esc 時第一人稱的手把筆記本拿到眼前翻開（game.js 的 heldStep），這一頁的字才浮現；
    線圈、橫線、邊線與日期章在 StationLayer.tsx 與 app/stations.css，這一頁的排版在 app/menus.css。
-   左欄：回到遊戲（便利貼）、待辦（儲存、翻到地圖（下一頁，NoteMap.tsx）、說明、回中央平地）、多人房間；右欄：我的資料（頭像、暱稱、雲端存檔）、設定（音效、靈敏度、音量、畫質）、開發者工具。
+   左欄：回到遊戲（便利貼）、待辦（儲存、操作說明＝翻到第 1 頁、翻到地圖（下一頁，NoteMap.tsx）、回中央平地）、多人房間；右欄：我的資料（頭像、暱稱、雲端存檔）、設定（音效、靈敏度、音量、畫質）、開發者工具。
    按鈕帶 data-act 由 game.js 處理；暱稱輸入框 #acctName 給 game.js 讀。膠帶、印章、塗鴉只放在留白處，不蓋到任何字。 */
 import Icon from '@/components/admin/Icon';
 import { useState } from 'react';
 import { G } from './game';
+import { NotebookPage } from './NotePages';
 
 export default function Pause() {
   const g = G(), S = g.S, C = window.SlimeCloud, user = C?.user, status = C?.status() || '';
@@ -13,6 +14,7 @@ export default function Pause() {
   const net = g.NET as typeof g.NET & { room?: string; host?: boolean };
   const [pick, setPick] = useState(false), av = g.AVATARS?.find((a) => a.id === S.avatar) || g.AVATARS?.[0];
   const q = S.quality || 'auto', mv = g.mapView?.(); // 地圖那一頁的「走過幾成」
+  if (g.nb?.pg) return <NotebookPage />; // 筆記本翻到別頁：操作說明（第 1 頁的手繪鍵位圖）、刪除我的資料／登出的確認頁（NotePages.tsx）
 
   return (
     <div className="rx-pause">
@@ -23,6 +25,7 @@ export default function Pause() {
 
         <h3 className="nb-h">待辦</h3>
         <div className="nb-list">
+          {g.cfl && <button type="button" data-act="nbPage" data-k="conflict" className="nb-cfl"><Icon name="cloudOff" /><b>雲端存檔</b><small>另一台裝置有較新的進度，選要留哪一份</small></button> /* 雲端存檔衝突還沒選（game.js 的 CFL）：翻到那一頁 */}
           <button type="button" data-act="saveNow"><Icon name="save" /><b>儲存遊戲</b><small>上次 {g.fmtTime(S.last)}</small></button>
           <button type="button" data-act="sec" data-sec="map"><Icon name="map" /><b>翻到地圖</b><small>{mv ? `走過 ${mv.pct}%` : ''}{mv && !mv.touch ? '・M' : ''}</small></button>
           <button type="button" data-act="help"><Icon name="keyboard" /><b>操作說明</b><small>鍵盤與觸控</small></button>

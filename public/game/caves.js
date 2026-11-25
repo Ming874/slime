@@ -53,7 +53,7 @@ const CAVE_DEF = [
     pts: [[50.8, -6.4, 1, 3, -.6], [52.8, -2.6, 1.1, 3.2, -1.1], [52.2, 3, 1.2, 3.4, -1.6], [54.4, 7.4, 1.6, 3.8, -2], [57, 8.2, 3.8, 7.5, -2.4], [59.8, 7.4, 8.6, 12, -2.8], [62.6, 6.6, 9.2, 12.5, -2.8], [65, 6, 5.6, 9, -2.8]],
     mural: '空島', slime: 'moon' },
 ];
-// 壁畫：大廳裡的線索（下一道謎題），拍照後存進手帳（06）
+// 壁畫：大廳裡的線索（下一道謎題），抄成一張便條收進手帳（06；game.js 的 PAPERS.mural_*，剪貼區可以重讀）
 const CAVE_MURAL = {
   sea: { t: '海蝕洞的壁畫', txt: '四顆石頭在浪裡一顆接一顆亮起：第一顆像火焰，最後一顆像初春的嫩草。', next: '潮汐石陣' },
   lava: { t: '熔岩隧道的壁畫', txt: '一個裹著厚外套的人走進結冰的洞口，寒氣在他身邊散開；洞口旁畫著大城市的屋頂。', next: '雪原的寒氣' }, // 雪原只要保暖衣（大城市的武器店），不用解謎
@@ -1031,7 +1031,7 @@ function caveAhead() {
 /* ---------- 互動：壁畫、苔蘚 ---------- */
 function caveLabel(t, key) {
   const id = t.it.id;
-  if (id.startsWith('mural:')) { const m = CAVE_MURAL[id.slice(6)], got = S.cave && S.cave.mural && S.cave.mural[id.slice(6)]; return `${key}${got ? '再看一次' : '拍下'}${m.t}`; }
+  if (id.startsWith('mural:')) { const m = CAVE_MURAL[id.slice(6)], got = S.cave && S.cave.mural && S.cave.mural[id.slice(6)]; return `${key}${got ? '再看一次' : '抄下'}${m.t}`; }
   if (id.startsWith('moss:')) { const left = caveMossLeft(t.it.cave); return left > 0 ? `${key}摘下發光苔蘚（今天這個洞還能摘 ${left} 次）` : '發光苔蘚　<span style="color:var(--sub)">今天摘夠了，明天再來</span>'; }
   return '';
 }
@@ -1040,9 +1040,9 @@ function caveMossLeft(c) { const m = (S.cave && S.cave.moss) || {}; return m.d =
 function caveAct(it) {
   const id = it.id; S.cave = S.cave || {};
   if (id.startsWith('mural:')) {
-    const k = id.slice(6), m = CAVE_MURAL[k], first = !(S.cave.mural && S.cave.mural[k]); (S.cave.mural = S.cave.mural || {})[k] = Date.now();
-    if (first) { gainXP(15, '拍下壁畫'); sfx.pop(); save(); }
-    modal(`<h2>${m.t}</h2><div class="riddle" style="text-align:left">${m.txt}</div><p class="small" style="color:var(--sub)">${first ? '已經拍照存進手帳（背包的探索日誌）。' : '手帳裡已經有這張照片了。'}這是「${m.next}」的線索。</p>`, [{ t: '收進手帳' }]);
+    const k = id.slice(6), first = !(S.cave.mural && S.cave.mural[k]); (S.cave.mural = S.cave.mural || {})[k] = Date.now();
+    if (first) { gainXP(15, '抄下壁畫'); sfx.pop(); save(); }
+    if (typeof openPaper === 'function') openPaper(PAPERS['mural_' + k], null); // 5.3：不跳彈窗——從口袋拿出抄好的便條讀（滑鼠不放開、世界照畫），讀完收進手帳
     if (typeof renderQuest === 'function') renderQuest(); return;
   }
   if (id.startsWith('moss:')) {

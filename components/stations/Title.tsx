@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import Icon from '@/components/admin/Icon';
 import { G } from './game';
 import { SlimeArt } from './Art';
+import { TitleNote } from './NotePages';
 
 const ago = (t?: number) => {
   if (!t) return '';
@@ -18,7 +19,7 @@ export default function Title() {
   // Enter＝繼續遊戲（輸入框裡按 Enter 不算）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || !G()?.title.on || G().title.mp || (e.target as HTMLElement).tagName === 'INPUT' || !document.getElementById('modal')?.hidden) return;
+      if (e.key !== 'Enter' || !G()?.title.on || G().title.mp || G().title.pg || (e.target as HTMLElement).tagName === 'INPUT' || !document.getElementById('modal')?.hidden) return;
       (document.querySelector('[data-rx="title"] [data-act="tContinue"]') as HTMLElement | null)?.click();
     };
     addEventListener('keydown', onKey);
@@ -37,7 +38,7 @@ export default function Title() {
         </header>
         <p className="rx-tagline">親手把史萊姆捏成酥脆療癒的作品，再讓更多人聽見。</p>
 
-        {!mp ? (
+        {g.title.pg ? <TitleNote /> /* 存檔選擇、刪除、開新遊戲、操作說明：選單欄換成貼在這裡的一張紙（5.3，不跳彈窗） */ : !mp ? (
           <>
             {has && <SaveCard />}
             <nav className="rx-menu" aria-label="主選單">

@@ -146,6 +146,8 @@
 .nb-list small{justify-self:end;font-size:13.5px;color:var(--ink2);white-space:nowrap}
 :is(.nb-list>*,button.nb-row):not(:disabled):is(:hover,:focus-visible){background:linear-gradient(transparent 18%,#fde04770 18% 86%,transparent 86%)}
 .nb-list>:disabled{opacity:.45;cursor:default} /* 做不到的事（例如搭車中回家）：鉛筆字變淡、滑過不畫螢光筆 */
+.nb-list>.nb-cfl :is(svg,b){color:var(--pen)} /* 雲端存檔衝突還沒選：紅筆寫在待辦第一行，說明可以換行 */
+.nb-list>.nb-cfl small{white-space:normal;text-align:right;line-height:1.35}
 /* 設定：打勾的方框、三格靈敏度、鉛筆色的音量滑桿、畫質選項用紅筆圈起來 */
 .nb-set{display:grid}
 .nb-row{display:flex;align-items:center;gap:10px;min-height:42px;margin:0;padding:4px 8px 4px 4px;border:0;border-radius:6px;background:transparent;color:var(--ink);text-align:left;font:inherit;line-height:1.3}
@@ -319,3 +321,149 @@ button.rx-avatar.slime:hover,button.rx-avatar.slime.on{transform:translateY(-1px
 .rx-avpick-grid button.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 14%,transparent)}
 .rx-avpick-grid button.on small{color:inherit;font-weight:700}
 .rx-avpick-grid button>span svg,.rx-avatar.slime svg,.sv-av svg{width:100%!important;height:100%!important;stroke:none!important;fill-rule:nonzero}
+
+/* =====================================================================
+   筆記本的其他頁與確認頁（components/stations/NotePages.tsx；設計分析 5.3 彈窗降級、11.4 操作說明進筆記本）
+   以前是畫面中央的彈窗（黑幕、解鎖滑鼠）。現在：Esc 筆記本往上翻一頁（#gui[data-prop="notebook"]）、主選單欄上貼一張紙（.rx-tnote）、
+   工作電腦上的事業合約（.rx-contract）。字一律手寫字型、寫在 28px 的橫線上；確認＝紙上打勾（.cf-tick）＋蓋章（.cf-stamp → .cf-mark）
+   ===================================================================== */
+/* 筆記本以外的紙也要手寫字型與墨水色（和 stations.css 的筆記本同一組） */
+.rx-tnote,.rx-contract{--hand:"Slime Hand","Noteworthy","Bradley Hand","Segoe Print","Ink Free","Hannotate TC","HanziPen TC","Kaiti TC","BiauKai","STKaiti","DFKai-SB","標楷體","KaiTi","楷体","AR PL UKai TW","TW-Kai",serif;
+  --ink:#22314f;--ink2:#5d6880;--pen:#c2410c}
+/* 筆記本翻頁：上方線圈，一張紙從下緣往上翻過去（StationLayer.tsx 的 NbFlip；減少動態時 stations.css 已經藏起 .st-flip） */
+#gui[data-prop="notebook"] .st-flip{left:0;right:0;top:0;bottom:0;z-index:4;transform-origin:50% 0;border-radius:3px 3px 8px 8px;
+  background:linear-gradient(90deg,#0000 var(--nb-m),#ef444452 var(--nb-m) calc(var(--nb-m) + 2px),#0000 calc(var(--nb-m) + 2px)),linear-gradient(#0000 70px,#ef444433 70px 72px,#0000 72px),
+    repeating-linear-gradient(180deg,#0000 0 27px,#7aa0cc4d 27px 28px) 0 72px/100% calc(100% - 78px) no-repeat,#fffdf6;
+  box-shadow:0 10px 24px -6px #0004;animation:nb-turn .5s cubic-bezier(.4,.1,.3,1) forwards}
+@keyframes nb-turn{0%{transform:perspective(1600px) rotateX(0)}100%{transform:perspective(1600px) rotateX(178deg)}}
+#gui[data-prop="notebook"] .st-rings{z-index:5} /* 翻起來的紙蓋過日期章，但還是穿在線圈上 */
+.nb-page{font-family:var(--hand);color:var(--ink);font-size:16px;line-height:28px}
+.nb-pg-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 6px}
+.nb-pgno{font:700 15px/1 var(--hand);color:var(--ink2);transform:rotate(-4deg)}
+
+/* ---------- 手繪鍵位圖 ---------- */
+.km{display:grid;gap:12px;font-family:var(--hand);color:var(--ink)}
+.km-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 24px;align-items:start}
+.km-g{display:grid;gap:6px;align-content:start;min-width:0}
+.km-h{width:fit-content;margin:0;padding:0 8px 0 2px;font:700 19px/28px var(--hand);letter-spacing:2px;background:linear-gradient(transparent 56%,#fde04794 56% 90%,transparent 90%)}
+.km-k{display:inline-grid;place-items:center;flex:none;min-width:1.95em;height:30px;padding:0 7px;border:2px solid var(--ink);border-bottom-width:4px;border-radius:7px 9px 6px 8px/8px 6px 9px 7px;
+  background:#fffdf6;color:var(--ink);font:700 16px/1 var(--hand);box-shadow:1px 2px 0 #22314f1f;transform:rotate(-1.6deg)}
+.km-k:nth-of-type(2n){transform:rotate(1.4deg)}
+.km-wasd{display:grid;grid-template-columns:repeat(3,40px);grid-template-rows:repeat(2,34px);gap:5px;margin:2px 0 4px 8px}
+.km-wasd .km-k{width:40px;height:34px;font-size:17px}
+.km-wasd .km-k:nth-child(1){grid-area:1/2}.km-wasd .km-k:nth-child(2){grid-area:2/1}.km-wasd .km-k:nth-child(3){grid-area:2/2}.km-wasd .km-k:nth-child(4){grid-area:2/3}
+.km-l{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.km-l li{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:15.5px;line-height:1.4}
+.km-l li>i{font-style:normal;font-size:14px;color:var(--ink2)}
+.km-l li>span{flex:1 1 9em;min-width:0}
+.km-row{display:flex;align-items:center;gap:10px;font-size:15.5px;line-height:1.4}
+.km-row small{display:block;font-size:13.5px;color:var(--ink2)}
+.km-mouse{width:64px;height:58px;flex:none;fill:none;stroke:var(--ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.km-mouse .km-hl,.km-phone .km-hl{fill:#fde04799;stroke:none}
+.km-mouse .km-arrow,.km-phone .km-arrow{stroke:var(--pen)}
+/* 小撇步：便利貼（不蓋到任何字） */
+.km-tip{justify-self:start;max-width:640px;margin:2px 0 0;padding:6px 14px 8px;border-radius:2px;background:#fef3c7;box-shadow:0 3px 8px -3px #0005;font-size:14.5px;line-height:1.6;transform:rotate(-.6deg)}
+.km-tip b{margin-right:8px;color:var(--pen)}
+.km-tip.friend{background:#e0f2fe;transform:rotate(.5deg)}
+/* 觸控：橫拿的手機＋號碼對照 */
+.km-touch{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:10px 24px;align-items:center}
+.km-phone{width:100%;max-width:440px;height:auto;aspect-ratio:2/1;fill:none;stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transform:rotate(-1.2deg)}
+.km-phone .km-scr{fill:#ffffffb3;stroke-width:1.3;stroke-dasharray:4 4}
+.km-num circle{fill:var(--pen);stroke:none}
+.km-num text{fill:#fff;stroke:none;font:700 11px var(--hand);text-anchor:middle}
+.km-legend{list-style:none;margin:0;padding:0;display:grid;gap:5px}
+.km-legend li{display:flex;align-items:baseline;gap:8px;font-size:15px;line-height:1.45}
+.km-legend em{font-style:normal;font-weight:700}
+.km-n{display:inline-grid;place-items:center;width:20px;height:20px;flex:none;border-radius:50%;background:var(--pen);color:#fff;font:700 12px/1 var(--hand);transform:translateY(-1px)}
+@media (max-width:860px){.km-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.km-grid,.km-touch{grid-template-columns:minmax(0,1fr)}}
+@media (max-height:500px){.km-phone{max-width:290px}.nb-pg-top{margin:0}} /* 橫拿的手機：手機的圖小一點，整頁不用捲太多 */
+
+/* ---------- 確認頁：打勾＋蓋章 ---------- */
+.cf{position:relative;display:grid;gap:12px;max-width:600px;padding:2px 0 8px;font-family:var(--hand);color:var(--ink)}
+.cf>.cf-h{display:block;width:fit-content;margin:0;color:var(--ink);padding:0 8px 0 2px;font:700 24px/1.35 var(--hand);letter-spacing:2px;background:linear-gradient(transparent 58%,#fda4af88 58% 90%,transparent 90%)}
+.cf-b p{margin:0;font-size:17px;line-height:28px}
+.cf-b .cf-what{display:inline-block;padding:2px 12px;border:1.5px dashed #5d688099;border-radius:6px 9px 7px 10px;font-size:15.5px;line-height:1.6}
+.cf-tick{justify-self:start;width:auto;font-family:var(--hand)}
+.cf-tick b{min-width:0!important;font-size:18px}
+.cf-acts{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.cf-back:disabled{opacity:.35}
+/* 印章：木頭握把＋紅色印面；還沒打勾＝淡淡的、寫「先打勾」；可以蓋＝輕輕搖；按下去＝往下壓 */
+.cf-stamp{position:relative;width:118px;height:92px;flex:none;margin:0 6px 0 auto;padding:0;border:0;background:none;color:#fff;cursor:pointer;transform-origin:50% 100%;transition:transform .15s,filter .15s,opacity .15s}
+.cf-grip{position:absolute;left:50%;top:0;width:34px;height:44px;margin-left:-17px;border-radius:16px 16px 7px 7px;background:linear-gradient(90deg,#7c4a24,#b07a46 42%,#8a5530);box-shadow:inset 0 -7px 0 #0002,0 2px 0 #5e361b}
+.cf-grip::after{content:"";position:absolute;left:-14px;right:-14px;bottom:-8px;height:10px;border-radius:4px;background:#5e361b}
+.cf-face{position:absolute;left:4px;right:4px;bottom:2px;display:grid;place-items:center;height:36px;padding:0 6px;border-radius:7px;background:#b91c1c;font:700 15px/1.1 var(--hand);letter-spacing:1px;white-space:nowrap;box-shadow:inset 0 -4px 0 #0003,0 3px 0 #7f1d1d}
+.cf-stamp:disabled{cursor:default}
+.cf-stamp:not(.ready){filter:grayscale(.85);opacity:.5;transform:rotate(-8deg) translateY(4px)}
+.cf-stamp.ready:not(.down){animation:cf-wiggle 1.6s ease-in-out infinite}
+.cf-stamp.ready:not(.down):is(:hover,:focus-visible){animation:none;transform:translateY(-4px) rotate(-2deg)}
+.cf-stamp.ready:active{transform:translateY(6px) scale(.97)}
+.cf-stamp.down{animation:cf-press .45s cubic-bezier(.3,.7,.4,1) forwards}
+@keyframes cf-wiggle{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+@keyframes cf-press{0%{transform:translateY(-10px)}35%{transform:translateY(8px) scale(1.02,.95)}100%{transform:translateY(-26px) rotate(10deg);opacity:0}}
+/* 蓋下去之後留在紙上的章：就在印章壓下去的那一點（.cf-acts 的右下，不蓋到任何字）；雙圈、微微歪、墨色不均 */
+.cf-mark{position:absolute;right:16px;bottom:-4px;z-index:2;display:grid;place-items:center;align-content:center;width:96px;height:96px;border-radius:50%;border:4px double #dc2626;color:#dc2626;
+  font-style:normal;text-align:center;opacity:.85;transform:rotate(-14deg);pointer-events:none;-webkit-mask-image:radial-gradient(circle at 30% 35%,#000 60%,#000d 80%,#000a);mask-image:radial-gradient(circle at 30% 35%,#000 60%,#000d 80%,#000a);
+  animation:cf-ink .4s .12s cubic-bezier(.2,.9,.3,1.2) both}
+.cf-mark b{font:700 24px/1.1 var(--hand);letter-spacing:2px}
+.cf-mark small{font:700 12px/1.2 var(--hand)}
+@keyframes cf-ink{from{opacity:0;transform:rotate(-14deg) scale(1.5)}}
+.cf-picks{display:grid;gap:2px}
+.cf-pick{justify-content:space-between;width:100%;font-family:var(--hand)}
+.cf-pick b{min-width:0!important;font-size:15.5px!important;letter-spacing:0!important}
+.cf-pick small{flex:none;color:var(--pen)!important;font-size:14px}
+/* 雲端存檔衝突（NotePages.tsx 的 CloudPage）：選項下面一行寫那份進度的摘要（窄的時候自己換行，不擠出紙外）；確認頁的補充說明小一點 */
+.cf-pick.cl{flex-wrap:wrap;row-gap:0;padding:6px 8px}
+.cf-pick.cl b{font-size:18px!important;letter-spacing:1px!important}
+.cf-pick.cl em{margin-left:auto;font-style:normal;color:var(--pen);font-size:14px}
+.cf-pick.cl small{flex:1 1 100%;color:var(--ink2)!important;font-size:14px;word-break:keep-all} /* 只在「·」兩旁的空格換行：「區域 4/4」不拆開 */
+.cf-b .cf-s{margin-top:6px;font-size:15px;line-height:24px;color:var(--ink2)}
+@media (prefers-reduced-motion:reduce){.cf-stamp,.cf-mark{animation:none!important}}
+
+/* ---------- 主選單：貼在選單欄上的一張筆記本紙（存檔選擇、刪除、開新遊戲、操作說明） ---------- */
+.rx-tnote{--acc:#0e7c74;--tx:var(--ink);--sub:var(--ink2);--line:#cfd8e4;--card:#fff;--gold:#b45309;--nb-m:34px;
+  position:relative;display:grid;gap:10px;padding:24px 20px 20px calc(var(--nb-m) + 16px);border-radius:3px 3px 8px 8px;color:var(--ink);font-family:var(--hand);font-size:16px;line-height:28px;
+  background:linear-gradient(90deg,#0000 var(--nb-m),#ef444452 var(--nb-m) calc(var(--nb-m) + 2px),#0000 calc(var(--nb-m) + 2px)),repeating-linear-gradient(180deg,#0000 0 27px,#7aa0cc4d 27px 28px) 0 18px/100% calc(100% - 24px) no-repeat,#fffdf6;
+  box-shadow:0 2px 0 -1px #efe6cf,0 4px 0 -1px #e2d6ba,0 24px 50px -20px #000c;transform:rotate(-.5deg);animation:rx-note-in .38s cubic-bezier(.2,.8,.2,1) both}
+@keyframes rx-note-in{from{opacity:0;transform:translateY(18px) rotate(-3deg)}}
+.rx-tn-tape{position:absolute;left:50%;top:-10px;width:96px;height:22px;margin-left:-48px;background:#bae6fdc4;box-shadow:0 1px 2px #0002;transform:rotate(-3deg)}
+.rx-tn-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.rx-tn-hd b{width:fit-content;padding:0 8px 0 2px;font:700 23px/1.3 var(--hand);letter-spacing:2px;background:linear-gradient(transparent 56%,#fde04794 56% 90%,transparent 90%)}
+.rx-tn-sub{margin:0;font-size:15px;line-height:28px;color:var(--ink2)}
+.rx-tnote .km-grid{grid-template-columns:minmax(0,1fr)}
+.rx-tnote .km-touch{grid-template-columns:minmax(0,1fr)}
+/* 存檔卡換成紙上的樣子（game.css 的 .sv-card 原本是深色玻璃） */
+.rx-tnote .sv-list{margin-top:0}
+.rx-tnote .sv-card{border:1.5px solid #22314f40;border-radius:6px 10px 8px 12px;background:#fff;box-shadow:2px 3px 0 #22314f14;font-family:var(--hand);line-height:1.4}
+.rx-tnote .sv-card.cur{background:#f0fdfa;border-color:#0e7c7499}
+.rx-tnote .sv-hd b{font-size:18px}
+.rx-tnote .sv-lv{background:#fde68a;color:#78350f}
+.rx-tnote .sv-tag{background:#22314f0f;color:var(--ink2)}
+.rx-tnote .sv-tag.cur{background:#0e7c741f;color:#0e7c74}
+.rx-tnote .sv-ft{color:var(--ink2)}
+.rx-tnote .sv-go{color:#fff;font-family:var(--hand)}
+.rx-tnote .sv-card:not(.cur) .sv-go{background:#22314f14;color:var(--ink)}
+.rx-tnote .sv-del{border-left:1.5px dashed #22314f40;background:transparent;color:var(--pen);font-family:var(--hand);font-size:14px}
+.rx-tnote .sv-del:hover{background:#c2410c12}
+/* 數字不擠在四等分的格子裡：選單欄窄、手寫字又比較寬，¥3,070 會蓋到旁邊的粉絲數。每格自己多寬就多寬（max-content，不會疊在一起）；
+   卡片內文夠寬（250px，大約放得下 ¥1,234,567）排成一行四格，不夠就排成兩行兩格 */
+.rx-tnote .sv-body{container-type:inline-size}
+.rx-tnote .sv-stats{grid-template-columns:repeat(2,max-content);gap:0 18px}
+.rx-tnote .sv-stats b{white-space:nowrap}
+@container (min-width:250px){.rx-tnote .sv-stats{grid-template-columns:repeat(4,max-content)}}
+.rx-tnote :focus-visible{outline:2.5px solid #0e7c74;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.rx-tnote{animation:none}}
+
+/* ---------- 工作電腦：事業合約（Branch.tsx；網頁上的一張紙） ---------- */
+.rx-path.dim{opacity:.45}
+.rx-contract{position:relative;gap:10px;border:0!important;border-radius:3px!important;background:repeating-linear-gradient(180deg,#0000 0 27px,#7aa0cc40 27px 28px) 0 44px/100% calc(100% - 50px) no-repeat,#fffdf6!important;
+  color:var(--ink);font-family:var(--hand);box-shadow:0 12px 26px -12px #000c;transform:rotate(-.6deg)}
+.rx-contract .rx-ct-hd{display:block;padding-bottom:4px;border-bottom:1.5px solid #22314f55;font:700 20px/1.3 var(--hand);letter-spacing:6px;text-align:center}
+.rx-contract p{flex:none;font-size:15.5px!important;line-height:28px!important;color:var(--ink)!important}
+.rx-contract p b{font-size:inherit}
+.rx-contract .rx-ct-desc{display:block;font-size:13.5px;line-height:1.6;color:var(--ink2)}
+.rx-contract .cf-tick b{font-size:16px}
+.rx-contract .cf-stamp{width:96px;height:76px}
+.rx-contract .cf-grip{width:30px;height:36px;margin-left:-15px}
+.rx-contract .cf-face{height:32px;font-size:14px}
+.rx-contract .cf-mark{right:10px;width:84px;height:84px}
