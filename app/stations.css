@@ -34,7 +34,8 @@
 #gui[data-mode="held"][data-prop="phone"].dim{background:radial-gradient(120% 100% at 50% 45%,#0000 45%,#05070d8c 100%)}
 #gui[data-mode="face"].shown{background:radial-gradient(140% 110% at 50% 45%,#0000 55%,#05070d73 100%);transition-duration:.4s}
 #worldCv{transition:filter .14s}
-#gui[data-mode="face"][data-prop="monitor"].opening .st-boot,#gui[data-mode="face"][data-prop="monitor"].opening .st-boot::before,#gui[data-mode="face"][data-prop="monitor"].opening .st-boot b{animation-duration:.75s} /* 開機和鏡頭推近差不多同時結束 */
+#gui[data-mode="face"][data-prop="monitor"].opening .st-boot,#gui[data-mode="face"][data-prop="monitor"].opening .st-boot::before,#gui[data-mode="face"][data-prop="monitor"].opening .st-boot b{animation-duration:.5s} /* 開機和鏡頭推近（game.js 的 FACE_IN 0.4 秒）差不多同時結束 */
+#gui[data-mode="face"][data-prop="monitor"].closing .st-boot,#gui[data-mode="face"][data-prop="monitor"].closing .st-boot::before{animation-duration:.3s} /* 關機的亮線在鏡頭收回（FACE_OUT 0.3 秒）之內縮完 */
 #game.gblur #worldCv{filter:blur(2.5px) saturate(.88);transition-duration:.35s}
 /* 貼在物件表面上的紙類介面：夜裡跟著環境一起暗一點（--night 由 game.js 設定，0～1） */
 #gui[data-mode="face"]:is([data-prop="mat"],[data-prop="parchment"],[data-prop="catalog"],[data-prop="cork"],[data-prop="tablet"]) .gwin::after{

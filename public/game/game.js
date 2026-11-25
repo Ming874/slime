@@ -4545,7 +4545,7 @@ function playerStep(dt) {
   }
   const l = Math.hypot(f, s); if (l > 1) { f /= l; s /= l; }
   // 潛行（按住 C／觸控潛行鍵）：較慢、視角降低、腳步輕，怕生的史萊姆不容易察覺
-  P.sneak = !GUI.kind && (KEYS.has('KeyC') || IN.sneak);
+  P.sneak = GUI.kind ? P.sneak : KEYS.has('KeyC') || IN.sneak; // 介面開著（playerStep 只剩重力）：維持打開那一刻的姿勢，鏡頭高度不跟著變
   const run = !P.sneak && (KEYS.has('ShiftLeft') || KEYS.has('ShiftRight') || IN.run) && !!(f || s); P.running = run;
   const spd = (P.sneak ? 2.2 : run ? 7.5 : 4.3) * (1 + .1 * S.up.boots) * (S.frozen ? .5 : 1) * caveSpeed(run);
   const sy = Math.sin(P.yaw), cy = Math.cos(P.yaw), wx = (-sy * f + cy * s) * spd, wz = (-cy * f - sy * s) * spd;
@@ -4956,6 +4956,7 @@ const RM = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const HT = { raise: 430, open0: 60, open1: 330, hand: 420, done: 540, end: 800 };
 const HC = { fade: 60, hide: 190, up: 150, close0: 250, close1: 420, down0: 130, end: 580 }; // 收起時先拉遠、再闔上、最後放下（近距離翻封面會蓋滿整個畫面）
 const GX = { mode: '', kind: '', dir: 0, t0: 0, st: 0, R: null, surf: null, from: null, to: null, dur: 0, fz: null };
+const FACE_IN = 400, FACE_OUT = 300; // 工作站（face）：鏡頭 0.4 秒推到正對介面表面、關閉 0.3 秒回到原視角（設計分析 5.1）；電腦的開機動畫跟著這個長度（stations.css）
 const gxE = () => GX.fz != null ? GX.fz : performance.now() - GX.t0; // 過場經過的毫秒；測試時可設 GX.fz 把畫面停在某一刻
 const gxT = () => GX.kind === 'paper' && PAPER.T ? PAPER.T : HT, gxC = () => GX.kind === 'paper' ? PC0 : HC; // 紙的時間軸依來源（從世界飛來／口袋）每次不同，其他手持道具照舊
 let guiHideT = 0, FOCUS = null, bgAcc = 0;
@@ -4985,7 +4986,7 @@ function gxIn(kind, was) {
   if (m === 'held') { if (was) GX.t0 -= gxT().end; } // 從別的介面切過來：道具已經在手上，直接顯示
   else if (m === 'face' && (GX.surf = surfOf(GUI.focus, kind))) {
     fitSurf(GX.surf, GX.R);
-    const cam = W.cam; GX.from = { p: cam.position.clone(), q: cam.quaternion.clone() }; GX.to = facePose(GX.surf, GX.R); GX.dur = was ? 0 : 640;
+    const cam = W.cam; GX.from = { p: cam.position.clone(), q: cam.quaternion.clone() }; GX.to = facePose(GX.surf, GX.R); GX.dur = was ? 0 : FACE_IN;
     $('#gwin').style.opacity = 0; faceTrack(0);
   } else { GX.mode = ''; g.dataset.mode = 'card'; g.classList.add('shown'); gxFocus(kind); if (kind === 'paper') { PAPER.revT0 = performance.now(); PAPER.revMs = 0; } } // 減少動態：紙原地淡入，字直接寫好
 }
@@ -4995,7 +4996,7 @@ function gxOut() {
   if (!GX.mode) return GUI_OUT_MS;
   Object.assign(GX, { dir: -1, st: 0, t0: performance.now(), R: gwinRect() });
   if (GX.mode === 'held') { GX.c0 = GX.st < 1 && GX.last ? [...GX.last, 1] : [1, 1, 1, 0]; return gxC().hide; } // 還沒舉到眼前就關掉：從目前的位置收回，不跳到眼前
-  GX.from = { p: W.cam.position.clone(), q: W.cam.quaternion.clone() }; GX.dur = 460; $('#gui').classList.remove('shown'); return GX.dur;
+  GX.from = { p: W.cam.position.clone(), q: W.cam.quaternion.clone() }; GX.dur = FACE_OUT; $('#gui').classList.remove('shown'); return GX.dur;
 }
 // 過場進行中：世界要用全速重繪（loop）
 function gxBusy() { if (!GX.mode) return false; const e = gxE(); return GX.mode === 'held' ? e < (GX.dir > 0 ? gxT().end : gxC().end) + 30 : e < GX.dur + 30; }
@@ -10072,14 +10073,24 @@ function qualityStep(dt) {
   if (S.quality !== 'auto') return;
   if (fps < 28) { if (++QL.lowT >= 5 && QL.lvl < 3) { QL.lvl++; QL.lowT = 0; applyQuality(); console.info('畫面有點卡，自動降低畫質：' + ['', '關閉飄浮粒子', '減少遠景植被', '縮短可視距離、簡化地面'][QL.lvl]); } } else QL.lowT = 0; // 不跳字：和動態解析度一樣安靜地調
 }
-function worldStep(dt) {
+/* ---------- 世界的一格（設計分析 5.1）：玩家這一邊（simMove／simAim）與世界自己會動的（showStep）分開，最後 worldDraw 畫出來 ----------
+   介面開著時只停「玩家的輸入」：不能走、準心不對準、不能按住連續捏、站上舞台不會自動開播、雪原體溫不倒數；身體照樣落地（開介面時剛好在跳，不會停在半空）。
+   世界永遠照跑：天色與日夜、音樂、史萊姆、各區動畫（W.anim／regionStep）、鏡頭（推近工作站、收回）、手與手上的道具、別的玩家、送貨與修繕、計程車。
+   玩家這一邊拆成前後兩段：移動在世界之前（鏡頭跟著這一格的新位置），準心在鏡頭與手更新之後（射線用這一格的鏡頭）。
+   介面開著、過場結束以後，loop 改成每 2 格才跑一次（dt 累加，見 BG），worldDraw(true) 讓陰影貼圖降頻、手機解析度降一階，把 GPU 省回來 */
+function worldStep(dt, calm) { simMove(dt); showStep(dt); simAim(dt); worldDraw(calm); }
+function simMove(dt) {
+  if (!INTRO.on && !RIDE.on) playerStep(dt); // 介面開著也跑：輸入在 playerStep 裡依 GUI.kind 擋掉，只剩重力與落地；搭車、開場時位置由 rideStep／introStep 決定
+  if (!INTRO.on) warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時雪原體溫不倒數；開場期間也不倒數
+}
+function showStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
-  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on && !RIDE.on) playerStep(dt); if (!INTRO.on) warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數；開場期間也不倒數
+  W.t += dt; W.wind.value = W.t;
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   deliverStep(dt); shipStep(dt); giftStep(dt); fixStep(dt); parcelStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
   const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else if (RIDE.on) rideStep(dt); else cameraStep(dt); viewModelStep(dt); frostStep(dt); knTipStep(); avatarsStep(dt); // 搭計程車：鏡頭交給 rideStep（在 envStep／caveEnv 之後，隧道的霧、光、曝光會蓋過去）
-  if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); stageStep(); upgradeFx(dt);
+  if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); upgradeFx(dt);
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
   // 牌子：太近（2.4～5 m）淡掉；太遠也淡掉（預設 45～60 m；fog:false 的牌子原本會浮在霧裡），u.far 可以設更近（屋頂下的牌子）
   // 木頭招牌夜裡跟著暗一點、偏藍（不受光的 Sprite 原本整晚都像打著燈），字的對比夠，照樣看得清楚
@@ -10088,7 +10099,9 @@ function worldStep(dt) {
   if ((W.sdN = (W.sdN || 0) + 1) % 6 === 1) signDeclutter(); else signOccStep();
   for (const s of W.labels) { s.getWorldPosition(tmpV); const u = s.userData, d = tmpV.distanceTo(W.cam.position), f = u.far || 60, op = GUI.kind === 'line' ? 0 : u.keep ? 1 : smooth(2.4, 5, d) * (1 - smooth(f * .75, f, d));
     u.op = op; u.vis = u.vis == null ? 1 : clamp(u.vis + (u.hide ? -1 : 1) * dt * 5, 0, 1); const o = op * u.vis; s.material.opacity = o; s.visible = o > .02; if (u.wood && s.visible) s.material.color.setRGB(wr, wg, wb); }
-  renderCoach();
+}
+function simAim(dt) {
+  stageStep(); renderCoach();
   // 準心對到會說話的對象時，改由他頭上的「…」提示，畫面中央不顯示文字（talk.js 的 tkLabel）
   if (!GUI.kind && !RIDE.on && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = WARE.h ? wareLabel(TARGET) : tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
   else if (GUI.kind || RIDE.on) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
@@ -10096,7 +10109,18 @@ function worldStep(dt) {
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）
   if ((IN.hold || IN.holdE) && !GUI.kind && !TK.on && !RIDE.on) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
   if (W.sneakUI !== !!P.sneak) { W.sneakUI = !!P.sneak; $('#vig').classList.toggle('on', W.sneakUI); $('#btnSneak').classList.toggle('on', W.sneakUI); } // 潛行的用處寫在海岸那張奶奶的筆記（gn4）
-  W.r.render(W.scene, W.cam);
+}
+/* 介面開著（過場已經結束）時的省電：n＝距離上次重畫幾格、fdt＝平滑後的每格秒數、shN＝降頻後畫了幾次還沒更新陰影。
+   每 2 格畫一次；120 Hz 以上的螢幕照時間換算（約每秒 30 次），不會因為螢幕快就畫更多次 */
+const BG = { n: 0, fdt: 1 / 60, shN: 0 };
+const bgEvery = () => Math.max(2, Math.round(1 / 30 / BG.fdt));
+const BG_SH = 4; // 降頻時陰影貼圖每畫 4 次才更新一次（約每秒 7 次）：完全不更新的話，背後跳來跳去的史萊姆會把影子留在原地
+// 手機（LOW）本來就沒有陰影可以省：介面開著時世界畫布的解析度降一階（介面是 DOM，字照樣清楚）。在 render 之前換，換完馬上畫，不會閃一格空白
+function worldRes(calm) { const r = W.r, pr = DRS.base * DRS.k * (calm && LOW ? .85 : 1); if (r.getPixelRatio() !== pr) { r.setPixelRatio(pr); r.setSize(innerWidth, innerHeight, false); } }
+function worldDraw(calm) {
+  const r = W.r, sm = r.shadowMap, au = sm.autoUpdate; worldRes(calm);
+  if (calm && au) { sm.autoUpdate = false; if (++BG.shN >= BG_SH) { BG.shN = 0; sm.needsUpdate = true; } } else BG.shN = 0; // 隧道深處（autoUpdate 已經關掉）不動
+  r.render(W.scene, W.cam); sm.autoUpdate = au;
 }
 function loop(now) {
   const dt = clamp((now - lastT) / 1000, 0, .1); lastT = Math.max(lastT, now);
@@ -10108,14 +10132,14 @@ function loop(now) {
   if (secAcc >= 1) { secAcc = 0; nmStep(); checkBranch(); trendDaily(); pcScreen(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
-    const g = GUI.kind;
+    const g = GUI.kind; if (dt > 0) BG.fdt += (Math.min(dt, .05) - BG.fdt) * .05;
     if (W.lost) { /* 顯示資源遺失期間暫停繪製，恢復後自動繼續 */ }
-    else if (W.ready && TITLE.on) { titleStep(dt); drsStep(dt); }
-    else if (W.ready && (!g || g === 'line' || gxBusy() || RIDE.on)) { worldStep(dt); renderCompass(); drsStep(dt); bgAcc = 0; } // 搭車中窗外一直在動：介面開著也全速重畫
+    else if (W.ready && TITLE.on) { worldRes(false); titleStep(dt); drsStep(dt); } // 從暫停選單回主選單：手機的世界解析度先調回來
+    else if (W.ready && (!g || g === 'line' || gxBusy() || RIDE.on)) { worldStep(dt); renderCompass(); drsStep(dt); bgAcc = 0; BG.n = 0; } // 過場中（鏡頭推近、手拿道具）、搭車中窗外一直在動：介面開著也全速重畫
     else if (W.ready) {
-      // 介面開著：世界照樣在背後動、照樣有聲音，只是降低重繪頻率省電（玩家不能移動、準心不互動由 worldStep 依 GUI.kind 判斷）。
-      // 降頻時不讓畫質自動調整與動態解析度把它誤判成掉幀
-      bgAcc += dt; if (bgAcc >= (LOW ? .05 : .033)) { worldStep(Math.min(bgAcc, .1)); bgAcc = 0; QL.frames = QL.acc = 0; } DRS.acc = DRS.n = 0;
+      // 介面開著、過場已經結束：世界照樣在背後動、照樣有聲音（玩家不能移動、準心不互動由 simMove／simAim 依 GUI.kind 判斷），
+      // 只是每 2 格才跑一次（dt 累加）、陰影貼圖降頻（worldDraw）。降頻時不讓畫質自動調整與動態解析度把它誤判成掉幀
+      bgAcc += dt; if (++BG.n >= bgEvery()) { worldStep(Math.min(bgAcc, .1), true); bgAcc = 0; BG.n = 0; QL.frames = QL.acc = 0; } DRS.acc = DRS.n = 0;
     }
     gxStep();
     if (W.ready) { waypointStep(); tkStep(dt); paperPump(dt); } // 對話泡泡、一句話、準心的「…」：世界畫完之後把說話的人投影到畫面上（talk.js）
