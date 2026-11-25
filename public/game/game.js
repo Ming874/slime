@@ -518,6 +518,21 @@ const sfx = {
   print(n = 22) { if (!S.sound) return; const ac = audio(), t = ac.currentTime; for (let i = 0; i < n; i++) noise(ac, t + i * .05, .03, 3300, 2, .022, 'bandpass'); if (n === 22) setTimeout(() => sfx.paper('tear'), 1120); },
   shutter() { if (!S.sound) return; const ac = audio(), t = ac.currentTime; noise(ac, t, .04, 4000, 1, .05, 'highpass'); tone(1800, t, .03, .015, 'square'); },
   clack() { if (!S.sound) return; const ac = audio(), t = ac.currentTime; noise(ac, t, .08, 500, 1, .06, 'lowpass'); noise(ac, t + .12, .08, 500, 1, .05, 'lowpass'); tone(2093, t + .23, .25, .03, 'triangle'); },
+  // 凍僵（frostStep）：結霜的冰晶聲（k＝0.4 體溫剩 2 分鐘的預警、1＝凍僵那一刻，多一陣冷風）、牙齒打顫、呼嘯的冷風、手指在結霜的畫面上寫字的吱吱聲、霜退掉的融化水滴
+  frost(k = 1) {
+    if (!S.sound) return; const ac = audio(), t = ac.currentTime, n = Math.round(6 + 10 * k);
+    for (let i = 0; i < n; i++) { const tt = t + i * rnd(.03, .07) * (1 + i * .05); noise(ac, tt, .03, rnd(5000, 9000), 5, rnd(.012, .03) * k, 'bandpass'); if (i % 3 === 0) tone(rnd(2600, 4200), tt, .14, .006 * k, 'triangle'); }
+    if (k > .6) { noise(ac, t, 1, 700, .6, .03, 'lowpass', .5); sweep(520, 300, t + .1, .5, .016, 'triangle'); }
+  },
+  chatter(n = 9) { if (!S.sound) return; const ac = audio(), t = ac.currentTime; for (let i = 0; i < n; i++) { const tt = t + i * .062 + rnd(0, .012), v = 1 - i / n * .5; noise(ac, tt, .022, rnd(2400, 3200), 3.5, .04 * v, 'bandpass'); tone(rnd(1500, 1750), tt, .03, .006 * v, 'triangle'); } },
+  gust(v = 1) {
+    if (!S.sound) return; const ac = audio(), t = ac.currentTime, d = rnd(2.2, 3.4), src = ac.createBufferSource(); src.buffer = NB; src.loop = true; src.playbackRate.value = rnd(.6, .9);
+    const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 2.4; f.frequency.setValueAtTime(rnd(450, 600), t); f.frequency.linearRampToValueAtTime(rnd(850, 1150), t + d * .45); f.frequency.linearRampToValueAtTime(rnd(380, 520), t + d); // 風聲忽高忽低，像從門縫吹進來的呼嘯
+    const g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.032 * v, t + d * .4); g.gain.linearRampToValueAtTime(.0001, t + d);
+    src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + d + .05);
+  },
+  fwrite(ds) { if (!S.sound) return; const ac = audio(), t = ac.currentTime; ds.forEach((d, i) => { if (i % 2) return; sweep(rnd(1250, 1500), rnd(1800, 2300), t + d, .08, .005, 'triangle'); noise(ac, t + d, .07, 2600, 4, .008, 'bandpass'); }); },
+  thaw() { if (!S.sound) return; const ac = audio(), t = ac.currentTime; for (let i = 0; i < 6; i++) sweep(rnd(1500, 2100), rnd(700, 950), t + .2 + i * rnd(.18, .32), .12, .016, 'sine'); noise(ac, t, .8, 1200, .5, .02, 'bandpass', .6); },
 };
 
 for (const k of Object.keys(sfx)) { const f = sfx[k]; sfx[k] = (...a) => { try { f(...a); } catch (e) { } }; }
@@ -4308,7 +4323,7 @@ function cameraStep(dt) {
   }
   cam.position.copy(target);
   cam.rotation.set(P.pitch, P.yaw, P.roll, 'YXZ');
-  if (S.frozen) { cam.position.x += Math.sin(W.t * 47) * .014; cam.position.y += Math.cos(W.t * 53) * .014; cam.rotation.z += Math.sin(W.t * 41) * .012; }
+  if (FZ.sh > 0 && !FZ.rm) { const a = FZ.sh; cam.position.x += Math.sin(W.t * 47) * .014 * a; cam.position.y += Math.cos(W.t * 53) * .014 * a; cam.rotation.z += Math.sin(W.t * 41) * .012 * a; } // 凍僵發抖（看完醫生在 1 秒多裡停下來；減少動態時不抖）
   const fov = (W.fov0 || 72) + (P.running && hsp > 5 ? 7 + 2.5 * S.up.boots : 0) - (P.sneak ? 4 : 0) - (WARE.h && WARE.h.ph === 'read' && !RM() ? 3 : 0); if (Math.abs(cam.fov - fov) > .02) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
 }
 function resizeWorld() { if (!W.r) return; const w = innerWidth, h = innerHeight; W.r.setSize(w, h, false); W.cam.aspect = w / h; W.fov0 = w / h < 1 ? 80 : 72; W.cam.fov = W.fov0; W.cam.updateProjectionMatrix(); }
@@ -8232,7 +8247,7 @@ function rideCam(dt) {
     lp.set(TAXI.E[0] + h.x, TAXI.E[1] + vib, TAXI.E[2] + h.z); lq.copy(Q_SEAT).multiply(RQ2.setFromEuler(RE.set(R.lp + h.p, R.ly, h.r, 'YXZ')));
   } else if (R.cv) { rideCurve(R.cv, R.t, lp, RO); let dy = wrapA(RO.y - R.cy), dp = RO.p - R.cp; const d = Math.hypot(dy, dp), mx = 6.5 * Math.min(dt, .05); if (d > mx) { dy *= mx / d; dp *= mx / d; } R.cy += dy; R.cp += dp; lq.setFromEuler(RE.set(R.cp, R.cy, 0, 'YXZ')); } // 上下車：朝向每格最多轉 6.5 rad/s（原本看著另一邊的窗外也不會一格轉過頭）、不側傾
   cab.updateMatrixWorld(true); cam.position.copy(lp).applyMatrix4(cab.matrixWorld); cab.getWorldQuaternion(RQ); cam.quaternion.copy(RQ).multiply(lq);
-  if (S.frozen) { cam.position.x += Math.sin(W.t * 47) * .0056; cam.position.y += Math.cos(W.t * 53) * .0056; if (!rm) cam.quaternion.multiply(RQ2.setFromAxisAngle(AX_Z, Math.sin(W.t * 41) * .0048)); } // 凍僵：車上照樣發抖，只剩走路時的 40%（減少動態時不側傾）
+  if (S.frozen && !rm) { cam.position.x += Math.sin(W.t * 47) * .0056; cam.position.y += Math.cos(W.t * 53) * .0056; cam.quaternion.multiply(RQ2.setFromAxisAngle(AX_Z, Math.sin(W.t * 41) * .0048)); } // 凍僵：車上照樣發抖，只剩走路時的 40%（減少動態時不抖）
   const fov = (W.fov0 || 72) + (R.ph === 'drive' && !rm ? 3 * clamp((R.rate - 1) / 2, 0, 1) : 0); if (Math.abs(cam.fov - fov) > .02) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
   RV2.set(0, 0, -1).applyQuaternion(cam.quaternion); const wy = Math.atan2(-RV2.x, -RV2.z);
   P.x = cam.position.x; P.z = cam.position.z; P.y = cam.position.y - P.eye; P.camY = P.y; P.yaw = R.lastYaw = wy; P.pitch = seat ? R.lp : Math.asin(clamp(RV2.y, -1, 1)); P.vx = P.vz = P.vy = 0; P.ground = true;
@@ -8494,16 +8509,17 @@ const VM_POSE = {
    每個零件的頂點寫在所屬骨頭的座標裡、權重全給那根骨頭（綁定矩陣＝單位矩陣），所以和原本各自一個網格掛在那根骨頭底下長得一模一樣。
    零件原本的粗糙度、金屬度不同、指示燈不受光：改成逐頂點的屬性（vmPbr），著色器裡取代材質的常數。要藏起來的零件（沒有吸取器、沒亮的燈）把骨頭縮成 0：三角形縮成一點，畫不出任何像素。 */
 function vmGeo(parts) {
-  const gs = parts.map(([g0, c, b, m, r, mt, bs]) => { const g = g0.toNonIndexed(); g0.dispose(); if (m) g.applyMatrix4(m); return [g, new THREE.Color(c), b, r, mt, bs]; });
-  const n = gs.reduce((a, q) => a + q[0].attributes.position.count, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), pbr = new Float32Array(n * 3), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4); let o = 0;
-  gs.forEach(([g, c, b, r, mt, bs]) => { const k = g.attributes.position.count; pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); for (let i = o; i < o + k; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; pbr[i * 3] = r; pbr[i * 3 + 1] = mt; pbr[i * 3 + 2] = bs; si[i * 4] = b; sw[i * 4] = 1; } o += k; g.dispose(); });
-  const geo = new THREE.BufferGeometry(), A = (k, a, d) => geo.setAttribute(k, new THREE.BufferAttribute(a, d)); A('position', pos, 3); A('normal', nor, 3); A('color', col, 3); A('vmPbr', pbr, 3); A('skinIndex', si, 4); A('skinWeight', sw, 4); return geo;
+  const gs = parts.map(([g0, c, b, m, r, mt, bs, cd]) => { const g = g0.toNonIndexed(); g0.dispose(); if (m) g.applyMatrix4(m); return [g, new THREE.Color(c), b, r, mt, bs, cd || 0]; });
+  const n = gs.reduce((a, q) => a + q[0].attributes.position.count, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), pbr = new Float32Array(n * 3), cold = new Float32Array(n), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4); let o = 0;
+  gs.forEach(([g, c, b, r, mt, bs, cd]) => { const k = g.attributes.position.count; pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); for (let i = o; i < o + k; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; pbr[i * 3] = r; pbr[i * 3 + 1] = mt; pbr[i * 3 + 2] = bs; cold[i] = cd; si[i * 4] = b; sw[i * 4] = 1; } o += k; g.dispose(); });
+  const geo = new THREE.BufferGeometry(), A = (k, a, d) => geo.setAttribute(k, new THREE.BufferAttribute(a, d)); A('position', pos, 3); A('normal', nor, 3); A('color', col, 3); A('vmPbr', pbr, 3); A('vmCold', cold, 1); A('skinIndex', si, 4); A('skinWeight', sw, 4); return geo;
 }
 function vmMat() {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true });
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true }), cold = m.userData.cold = { value: 0 }; // 凍僵：皮膚往冷冷的青藍色偏（frostStep 設 0～1；越靠指尖越多，見 vmCold）
   m.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 vmPbr;\nvarying vec3 vPbr;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvPbr = vmPbr;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vPbr;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vPbr.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vPbr.y;')
+    sh.uniforms.uCold = cold;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 vmPbr;\nvarying vec3 vPbr;\nattribute float vmCold;\nvarying float vCold;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvPbr = vmPbr;\nvCold = vmCold;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vPbr;\nvarying float vCold;\nuniform float uCold;').replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.45, 0.64, 0.92), uCold * vCold * 0.9);').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vPbr.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vPbr.y;')
       .replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb, vPbr.z);\n#include <opaque_fragment>'); // 指示燈（vPbr.z＝1）＝MeshBasicMaterial 的樣子：只有本身的顏色（中文註解不放進著色器字串：有些驅動不收非 ASCII 字元）
   };
   m.customProgramCacheKey = () => 'vmHand'; return m;
@@ -8555,7 +8571,10 @@ function initViewModel() {
   // 史萊姆零錢包（店裡結帳）：壓扁的綠色二十面體、兩顆黑眼睛、拉鍊畫成笑臉；平常縮到看不見（wareStep 縮放 VM.purse）
   const pu = VM.purse = bone(hand, 0, .07, -.08); pu.scale.setScalar(.001);
   [[new THREE.IcosahedronGeometry(.06, 1), '#4ade80', M4(0, 0, 0, 0, 0, 0, 1.15, .72, .95)], [new THREE.SphereGeometry(.009, 6, 4), '#111827', M4(-.02, .016, .052)], [new THREE.SphereGeometry(.009, 6, 4), '#111827', M4(.02, .016, .052)], [new THREE.TorusGeometry(.024, .005, 4, 10, Math.PI), '#166534', M4(0, -.004, .054, 0, 0, Math.PI)], [new THREE.BoxGeometry(.012, .016, .01), '#fbbf24', M4(.03, -.012, .05)]].forEach(([geo, c, m]) => part(geo, c, pu, m, .35));
-  const mat = vmMat();
+  // 凍僵時發青的程度（vmCold）：指尖最多、手指中節次之、手掌、手腕一點點；袖子、吸取器、零錢包不變色
+  const bi = b => bones.indexOf(b), tip = new Set([...VM.fingers.map(f => bi(f.k2)), bi(tk2)]), mid = new Set([...VM.fingers.map(f => bi(f.k1)), bi(tk)]);
+  parts.forEach(q => { q[7] = q[1] !== SKIN && q[1] !== NAIL && q[1] !== '#e0a77e' ? 0 : tip.has(q[2]) ? 1 : mid.has(q[2]) ? .75 : q[2] === bi(hand) ? .4 : .15; }); // 往淡淡的冰藍色偏（不是深藍：膚色混一半深藍會變成紫色），手掌只是冷得發白
+  const mat = VM.mat = vmMat();
   if (W.r.capabilities.floatVertexTextures) {
     // 骨頭矩陣算成「相對於 VM.g」：Skeleton 預設上傳世界矩陣，大城市在 x＝4000，float32 只剩約 0.25 mm 的精度，手的頂點會隨走路一格格抖；先在 JS（double）扣掉 VM.g，著色器裡只剩小數字（detached＋單位綁定矩陣）
     const sk = VM.mesh = new THREE.SkinnedMesh(vmGeo(parts), mat), skel = new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4())), gi = new THREE.Matrix4(), bm = new THREE.Matrix4();
@@ -9105,6 +9124,9 @@ function viewModelStep(dt) {
   const keep = it && !tp && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
   VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
   vmPose(p);
+  // 凍僵：空手時手指冷得縮起來，整隻手細細地抖（約 9～15 Hz；減少動態時只縮手指、不抖）。看完醫生跟著 FZ 慢慢放鬆
+  const ck = FZ.cold, fs = FZ.rm ? 0 : FZ.sh, tx = fs * .0045 * (Math.sin(W.t * 59) + .5 * Math.sin(W.t * 97)), ty = fs * .0038 * Math.cos(W.t * 71);
+  if (ck > .01 && pose === 'empty') { VM.fingers.forEach((f, i) => { f.k1.rotation.x += ck * .24 + fs * .06 * Math.sin(W.t * (31 + i * 6)); f.k2.rotation.x += ck * .14; }); VM.thumb.tk.rotation.x += ck * .12; }
   // 依畫面比例固定在右下角；直向手機放大並移到下方偏右
   const d = .78, hh = Math.tan(W.cam.fov * Math.PI / 360) * d, hw = hh * W.cam.aspect, port = W.cam.aspect < .9;
   const sc = port ? hh * 1.45 : hh * 1.32, ax = port ? hw * .36 : hw * .44, ay = port ? -hh * .56 : -hh * .5;
@@ -9113,7 +9135,7 @@ function viewModelStep(dt) {
   // 手上的凝膠會隨走路、揮動與吸收凝膠而 Q 彈晃動
   VM.jv = (VM.jv || 0) + ((-(VM.j || 0)) * 220 - (VM.jv || 0) * 9) * dt + (by * 40 + sw * 4) * dt; VM.j = clamp((VM.j || 0) + VM.jv * dt, -.35, .35);
   const grip = pose === 'squeeze' ? 0 : p.c * .06; // 手指握緊時凝膠被壓扁一點
-  VM.g.scale.setScalar(sc); VM.g.position.set(ax + bx, ay - by - sw * .04 - (P.sneak ? .03 : 0), -d + sw * .03); VM.g.rotation.set(sw * .35, 0, -sw * .15 + P.roll * 2);
+  VM.g.scale.setScalar(sc); VM.g.position.set(ax + bx + tx, ay - by - sw * .04 - (P.sneak ? .03 : 0) + ty, -d + sw * .03); VM.g.rotation.set(sw * .35 + ty * 4, 0, -sw * .15 + P.roll * 2 + tx * 5);
   VM.J.group.rotation.y += dt * .5; VM.gel.rotation.y += dt * .5; VM.gel.scale.set((1 - VM.j * .5) * (1 - grip), .72 * (1 + VM.j) * (1 + grip * .6), (1 - VM.j * .5) * (1 - grip));
 }
 /* ---------- 準心環：對準史萊姆時顯示採集進度（3 格）或休息倒數 ---------- */
@@ -9188,10 +9210,7 @@ function warmStep(dt) {
   if (inS && !S.frozen) {
     S.warm = Math.max(0, S.warm - dt);
     if (S.warm <= 60 && !W.warm1) { W.warm1 = true; toast('體溫只剩 1 分鐘！快離開雪原'); }
-    if (S.warm <= 0) { // 不在畫面中央跳卡片（遊戲不停、滑鼠不解鎖）：自己的想法雲說出來，訊息欄留一行怎麼治；體溫條變成「凍僵了」、畫面發抖
-      S.frozen = true; objSig = ''; sfx.squish && sfx.squish(1, .7); saveCloud();
-      bark(SELF, '好冷……全身凍僵了，一直發抖，走路也變慢了。'); toast('凍僵了：到大城市的醫院看醫生就會好（診療費 ' + fmt(HOSPITAL_FEE) + '，搭出生點左邊的計程車）');
-    }
+    if (S.warm <= 0) { S.frozen = true; FZ.ev = 'freeze'; objSig = ''; saveCloud(); } // 不跳卡片：霜長滿畫面邊緣、手發抖、手指在霜上寫「去大城市的醫院看醫生」（frostStep），目標面板換成去醫院
   }
   let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
   const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen;
@@ -9210,8 +9229,163 @@ function hospitalAct() {
 }
 function hospCure() {
   if (!S.frozen || S.money < HOSPITAL_FEE) return ['你已經不抖了，好好休息喔。'];
-  S.money -= HOSPITAL_FEE; S.frozen = false; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level(); renderTop(); saveCloud(); tkBump('#sMoney');
+  S.money -= HOSPITAL_FEE; S.frozen = false; FZ.ev = 'cure'; S.warm = WARM_MAX; objSig = ''; warmSig = ''; sfx.level(); renderTop(); saveCloud(); tkBump('#sMoney'); // 霜在護理師說話時慢慢退掉、手回溫（frostStep）
   return [{ t: '來，熱茶和毛毯……好多了吧？', emo: 'heart' }, '下次進雪原一樣有 10 分鐘的體溫，記得保暖喔。'];
+}
+/* ---------- 凍僵的表現：不跳卡片，冷就在世界裡——畫面四角長進來的冰花、手發抖指尖發青、呼出白氣、牙齒打顫和冷風 ----------
+   「去大城市的醫院看醫生 ¥20」像用手指寫在起霧的玻璃上，幾秒後被霜蓋回去（目標面板照常有「去醫院看醫生」）。
+   霜（#frost）是 #hud 的第一個子元素：準心、提示、對話泡泡、HUD 都畫在它上面；只長在四角與邊緣，畫面中央永遠乾淨。
+   體溫剩不到 2 分鐘先薄薄結一點霜、呼出白氣當預警（玩家還來得及自己離開雪原）；凍僵時長滿邊緣；看完醫生霜退掉、手慢慢回溫。
+   減少動態：鏡頭、手、車上都不抖，霜不從角落長大而是淡入，字一次淡入。重新整理後仍是凍僵：霜直接長滿（整層淡入），進遊戲幾秒後再寫一次字 */
+const FZ = { init: false, was: false, ev: '', f: 0, fSet: -1, cold: 0, sh: 0, rm: false, rmN: 0, el: null, msgT: Infinity, wt: -1, wEnd: 0, chatT: 4, gustT: 7, bT: .4, warn: false, puff: null, pp: null, cp0: null };
+const FROST_WARN = 120, FW_D = .12; // 體溫剩幾秒開始結霜預警；手指寫一個字幾秒
+function frostStep(dt) {
+  if (--FZ.rmN <= 0) { FZ.rmN = 30; FZ.rm = RM(); }
+  const fr = !!S.frozen;
+  if (!FZ.init) { FZ.init = true; FZ.was = !fr; } // 第一格當作「讀檔」：下面直接長滿或清掉
+  if (fr !== FZ.was) {
+    FZ.was = fr;
+    if (fr && FZ.ev === 'freeze') { FZ.msgT = 2.6; FZ.chatT = 1.2; FZ.gustT = .2; sfx.frost(1); } // 剛凍僵：霜從預警的薄霜長滿（約 2 秒），2.6 秒後寫字
+    else if (fr) { FZ.f = FZ.cold = FZ.sh = 1; FZ.msgT = 4; } // 讀檔就是凍僵（重新整理、換存檔、雲端存檔）：直接長滿，#frost 整層淡入
+    else if (FZ.ev === 'cure') { FZ.msgT = Infinity; frostWriteOff(); sfx.thaw(); } // 看完醫生：霜慢慢退、手慢慢回溫（下面的速率）
+    else { FZ.f = FZ.cold = FZ.sh = 0; FZ.msgT = Infinity; frostWriteOff(); }
+    FZ.ev = '';
+  }
+  const warnK = !fr && W.inSnow && S.warm < FROST_WARN ? 1 - S.warm / FROST_WARN : -1; // 0～1：預警的程度（-1＝沒有）
+  if (warnK >= 0 && !FZ.warn && !TITLE.on) { FZ.warn = true; sfx.frost(.4); } else if (warnK < 0) FZ.warn = false;
+  const tf = fr ? 1 : warnK >= 0 ? .22 + .3 * warnK : 0, tc = fr ? 1 : warnK >= 0 ? .3 * warnK : 0;
+  FZ.f += clamp(tf - FZ.f, -dt * .45, dt * .32); FZ.cold += clamp(tc - FZ.cold, -dt * .3, dt * .5); FZ.sh += clamp((fr ? 1 : 0) - FZ.sh, -dt * .8, dt * .6); // 長滿約 2 秒、退掉約 2 秒、手回溫約 3 秒
+  if (VM.mat) VM.mat.userData.cold.value = FZ.cold;
+  const calm = !TITLE.on && !GUI.kind && !RIDE.on && !INTRO.on && !W.camAway && !(typeof TK !== 'undefined' && TK.on); // 沒有在看別的東西：才在霜上寫字
+  frostDom(dt, calm);
+  breathStep(dt, fr || warnK >= 0, !TITLE.on && !GUI.kind && !W.camAway && !INTRO.on);
+  if (fr && !TITLE.on && AC && AC.state === 'running' && S.sound && GUI.kind !== 'live') { // 牙齒打顫、冷風（直播時不出聲；坐在關著門的車裡聽不到風）
+    if ((FZ.chatT -= dt) <= 0) { FZ.chatT = rnd(5, 9); sfx.chatter(Math.round(rnd(7, 11))); }
+    if ((FZ.gustT -= dt) <= 0) { FZ.gustT = rnd(8, 14); if (!(RIDE.on && RIDE.shut)) sfx.gust(W.inSnow ? 1 : .7); }
+  }
+}
+function frostDom(dt, calm) {
+  const show = FZ.f > .002 || FZ.wt >= 0; let el = FZ.el;
+  if (!el) { if (!show || !(el = frostEl())) return; }
+  if (show === el.hidden) { el.hidden = !show; document.body.classList.toggle('frosty', show); if (show) { el.style.opacity = '0'; void el.offsetWidth; el.style.opacity = ''; } } // 出現時整層淡入（讀檔就是凍僵時不會一格就長滿）；body.frosty：角落裡沒有底的提示字加深陰影（game.css）
+  if (!show) return;
+  if (el.classList.contains('rm') !== FZ.rm) el.classList.toggle('rm', FZ.rm);
+  if (FZ.f !== FZ.fSet && (Math.abs(FZ.f - FZ.fSet) > .003 || FZ.f === 0 || FZ.f === 1)) { FZ.fSet = FZ.f; el.style.setProperty('--fz', FZ.f.toFixed(3)); }
+  if (S.frozen && FZ.msgT !== Infinity && calm) { // 只在玩家真的在看世界時倒數（標題畫面、開場、搭車、對話、介面開著都不算）
+    FZ.msgT -= dt;
+    if (FZ.msgT <= 0 && FZ.f > .9) { // 在醫院門口附近就不寫了（已經到了）
+      if (inCity() && Math.hypot(P.x - (CITY.x - 34), P.z - (CITY.z - 13)) < 16) FZ.msgT = 20; else { frostWrite(); FZ.msgT = 110; }
+    }
+  }
+  if (FZ.wt >= 0) { FZ.wt += dt; if (FZ.wt > FZ.wEnd || !calm || !S.frozen) frostWriteOff(); if (FZ.wt > FZ.wEnd + 3.6) { FZ.wt = -1; const w = el.querySelector('.fw'); w.className = 'fw'; w.textContent = ''; } }
+}
+function frostEl() {
+  const hud = document.getElementById('hud'); if (!hud) return null;
+  const el = FZ.el = document.createElement('div'), N = LOW ? 320 : 512; el.id = 'frost'; el.setAttribute('aria-hidden', 'true'); el.hidden = true; if (LOW) el.classList.add('low');
+  el.innerHTML = '<div class="fe"></div><div class="fs t"></div><div class="fs b"></div>' + ['tl', 'tr', 'bl', 'br'].map(k => '<div class="fc ' + k + '"><canvas width="' + N + '" height="' + N + '"></canvas></div>').join('') + '<div class="fw"></div>';
+  el.querySelectorAll('canvas').forEach((cv, i) => frostArt(cv, i % 2, i >> 1, 17 + i * 31));
+  // 上下緣（四角之間）：一條可以左右接起來的冰片，畫一次轉成圖片、橫向重複鋪滿（寬螢幕也長滿邊緣）
+  const sc = document.createElement('canvas'); sc.width = N; sc.height = N / 4; el.querySelectorAll('.fs').forEach((d, i) => { frostStrip(sc, i, 91 + i * 57); d.style.backgroundImage = 'url(' + sc.toDataURL() + ')'; });
+  hud.insertBefore(el, hud.firstChild); return el;
+}
+/* 一個角落的霜（畫一次，之後只用 CSS 縮放與透明度長大／退掉）：低多邊形的冰片（一片一個顏色、越往外越透明、外緣是尖尖的冰晶）、
+   幾朵圓頭的六角冰花和小亮點。沿著畫面邊緣長得比較遠（邊緣長滿、中央留白）。cx、cy＝角落在右邊／下面；seed 讓四個角長得不一樣 */
+function frostArt(cv, cx, cy, seed) {
+  const N = cv.width, g = cv.getContext('2d'), r = seeded(seed), R = (a, b) => a + r() * (b - a), ice = () => FROST_ICE[Math.floor(r() * FROST_ICE.length)];
+  g.setTransform(cx ? -1 : 1, 0, 0, cy ? -1 : 1, cx ? N : 0, cy ? N : 0); g.scale(N / 512, N / 512); g.lineJoin = 'round'; g.lineCap = 'round';
+  const p1 = R(0, 6), p2 = R(0, 6), edge = th => 250 + 45 * Math.sin(th * 4 + p1) + 25 * Math.sin(th * 9 + p2) + 170 * Math.pow(Math.abs(Math.cos(th * 2)), 4); // th：0＝沿著上下緣、π/2＝沿著左右緣
+  const rings = [[[0, 0, 0]]];
+  [.3, .56, .8, 1].forEach((k, i) => { const n = 3 + i * 2, ring = []; for (let j = 0; j <= n; j++) { const th = j === 0 ? 0 : j === n ? Math.PI / 2 : (j + R(-.3, .3)) / n * Math.PI / 2, rr = edge(th) * k * R(.92, 1.08); ring.push([Math.cos(th) * rr, Math.sin(th) * rr, th]); } rings.push(ring); });
+  const tri = (a, b, c, al) => { g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath(); g.globalAlpha = al; g.fillStyle = ice(); g.fill(); g.globalAlpha = al * .55; g.strokeStyle = '#ffffff'; g.lineWidth = 1.3; g.stroke(); };
+  const AL = [.9, .78, .6, .42];
+  const hz = g.createRadialGradient(0, 0, 0, 0, 0, 420); hz.addColorStop(0, 'rgba(226,242,255,.6)'); hz.addColorStop(.6, 'rgba(226,242,255,.3)'); hz.addColorStop(1, 'rgba(226,242,255,0)'); g.fillStyle = hz; g.fillRect(0, 0, 512, 512); // 底下一層霧（冰片之間不會只剩一張網）
+  for (let k = 0; k < 4; k++) { // 相鄰兩圈之間拉鋸齒狀的三角形（一片一個顏色）
+    const A = rings[k], B = rings[k + 1]; let i = 0, j = 0;
+    while (i < A.length - 1 || j < B.length - 1) { const al = AL[k] * R(.85, 1.1); if (j < B.length - 1 && (i >= A.length - 1 || B[j + 1][2] <= A[i + 1][2])) { tri(A[i], B[j], B[j + 1], al); j++; } else { tri(A[i], B[j], A[i + 1], al); i++; } }
+  }
+  const O = rings[4], tips = [];
+  for (let j = 0; j < O.length - 1; j++) { // 外緣：每一段長出一根冰晶尖刺，描一圈淡藍色的邊（白雪地上也看得出霜的輪廓）
+    const a = O[j], b = O[j + 1], th = (a[2] + b[2]) / 2, rr = Math.hypot((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) + R(24, 70), t = [Math.cos(th) * rr, Math.sin(th) * rr]; tips.push(t); tri(a, t, b, .32);
+    g.globalAlpha = .5; g.strokeStyle = '#7fb6dc'; g.lineWidth = 2; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(t[0], t[1]); g.lineTo(b[0], b[1]); g.stroke();
+  }
+  const flake = (x, y, s, rot) => frostFlake(g, x, y, s, rot);
+  for (let i = 0; i < 5; i++) { const th = R(.12, 1.45), rr = edge(th) * R(.42, .92); flake(Math.cos(th) * rr, Math.sin(th) * rr, R(13, 30), R(0, 1)); }
+  flake(R(60, 110), R(60, 110), R(30, 40), R(0, 1)); // 角落裡一朵大的
+  g.fillStyle = '#ffffff'; tips.forEach((t, i) => { if (i % 2) return; const s = R(4, 8); g.globalAlpha = .9; g.beginPath(); g.moveTo(t[0], t[1] - s); g.lineTo(t[0] + s * .35, t[1]); g.lineTo(t[0], t[1] + s); g.lineTo(t[0] - s * .35, t[1]); g.closePath(); g.fill(); }); // 尖刺上的小亮點
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, 230); gr.addColorStop(0, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.globalAlpha = 1; g.fillStyle = gr; g.fillRect(0, 0, 230, 230); // 角落最厚
+}
+const FROST_ICE = ['#ffffff', '#eef8ff', '#dcf0fc', '#c9e7f8', '#b7def5', '#e4f4fe', '#d2ecfa', '#a9d6f2'];
+// 圓頭的六角冰花：先描淡藍的寬邊、再描白色
+function frostFlake(g, x, y, s, rot) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  [[s * .2 + 3, '#8cc2e6', .55], [s * .2, '#ffffff', .95]].forEach(([w, c, a]) => { g.globalAlpha = a; g.strokeStyle = c; g.lineWidth = w; g.beginPath();
+    for (let k = 0; k < 6; k++) { const an = k * Math.PI / 3, cs = Math.cos(an), sn = Math.sin(an), q = (u, v) => [u * cs - v * sn, u * sn + v * cs], m = q(s * .55, 0); g.moveTo(0, 0); g.lineTo(...q(s, 0)); g.moveTo(...m); g.lineTo(...q(s * .82, s * .26)); g.moveTo(...m); g.lineTo(...q(s * .82, -s * .26)); }
+    g.stroke(); });
+  g.globalAlpha = 1; g.fillStyle = '#ffffff'; g.beginPath(); g.arc(0, 0, s * .2, 0, PI2); g.fill(); g.restore();
+}
+/* 上緣／下緣的一條霜（512×128 的座標）：貼邊一排冰片、往內長出尖尖的冰晶，比四角薄、透；左右兩端的形狀一樣，橫向重複接得起來。flip＝下緣（上下翻過來） */
+function frostStrip(cv, flip, seed) {
+  const g = cv.getContext('2d'), r = seeded(seed), R = (a, b) => a + r() * (b - a), ice = () => FROST_ICE[Math.floor(r() * FROST_ICE.length)], n = 8;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height); g.setTransform(cv.width / 512, 0, 0, (flip ? -1 : 1) * cv.height / 128, 0, flip ? cv.height : 0); g.lineJoin = 'round'; g.lineCap = 'round';
+  const tri = (a, b, c, al) => { g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath(); g.globalAlpha = al; g.fillStyle = ice(); g.fill(); g.globalAlpha = al * .55; g.strokeStyle = '#ffffff'; g.lineWidth = 1.3; g.stroke(); };
+  const hz = g.createLinearGradient(0, 0, 0, 128); hz.addColorStop(0, 'rgba(226,242,255,.55)'); hz.addColorStop(1, 'rgba(226,242,255,0)'); g.globalAlpha = 1; g.fillStyle = hz; g.fillRect(0, 0, 512, 128);
+  const top = [], mid = []; for (let i = 0; i <= n; i++) { top.push([i * 64, 0]); mid.push(i === n ? [512, mid[0][1]] : [i * 64 + (i ? R(-14, 14) : 0), R(30, 50)]); }
+  for (let i = 0; i < n; i++) { tri(top[i], top[i + 1], mid[i], .72 * R(.85, 1.1)); tri(top[i + 1], mid[i + 1], mid[i], .58 * R(.85, 1.1)); }
+  for (let i = 0; i < n; i++) { // 往內長的冰晶尖刺（淡藍色描邊：白雪地上也看得出來）
+    const a = mid[i], b = mid[i + 1], t = [(a[0] + b[0]) / 2 + R(-9, 9), R(62, 108)]; tri(a, t, b, .34);
+    g.globalAlpha = .5; g.strokeStyle = '#7fb6dc'; g.lineWidth = 2; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(t[0], t[1]); g.lineTo(b[0], b[1]); g.stroke();
+  }
+  for (let i = 0; i < 3; i++) frostFlake(g, 60 + i * 160 + R(-30, 30), R(14, 30), R(8, 14), R(0, 1));
+}
+// 用手指在結霜的畫面上寫一行字：一個字一個字擦出來（減少動態時一次淡入），停幾秒再被霜蓋回去（frostWriteOff）
+function frostWrite() {
+  const w = FZ.el.querySelector('.fw'), ln = ['好冷……', inCity() ? '醫院在路的北邊 ¥' + HOSPITAL_FEE : '去大城市的醫院看醫生 ¥' + HOSPITAL_FEE], ds = []; let n = 0;
+  w.innerHTML = ln.map((l, li) => '<div class="l">' + [...l].map(ch => { const d = n * FW_D + li * .45, dr = n === 1 || n === 8 || n === 13; n++; if (ch !== ' ' && ch !== '…') ds.push(d); return '<span' + (dr ? ' class="dr"' : '') + ' style="--d:' + d.toFixed(2) + 's">' + esc(ch) + '</span>'; }).join('') + '</div>').join('');
+  w.className = 'fw'; frostPlace(w); void w.offsetWidth; w.className = 'fw on';
+  FZ.wt = 0; FZ.wEnd = (FZ.rm ? .8 : n * FW_D + .45) + 6; sfx.fwrite(FZ.rm ? [0] : ds);
+  const s = $('#says'); if (s) s.textContent = '畫面結了霜，上面用手指寫著：' + ln.join('');
+}
+/* 字寫在哪：畫面上不擋任何 HUD（目標面板、按鈕、時鐘、體溫條、觸控按鈕、訊息、快捷列）也不擋準心與它下面的提示的地方，越靠左右兩側、越靠上越好（霜最厚的地方）。
+   桌機通常是右上角按鈕下面；手機橫拿時右邊是觸控按鈕、直拿時上面是目標面板，固定一個位置一定會被擋住，所以每次寫之前量一次（每 12 px 試一格，一次不到 1 ms） */
+const FW_AVOID = ['#stats', '#objective', '#compass', '#dnClock', '#topbtns', '#warm', '#btnJump', '#btnAct', '#btnRun', '#btnSneak', '#log', '#bottom', '#prompt', '#coach', '#chatBar', '#zoneTitle'];
+function frostPlace(w) {
+  w.style.left = w.style.top = w.style.right = '';
+  const vw = innerWidth, vh = innerHeight, bw = w.offsetWidth, bh = w.offsetHeight; if (!bw) return;
+  const ex = bw * .0024 + bh * .035, ey = bw * .035, pad = 8; // 轉了 -4° 的外框比版面大一點點
+  const R = FW_AVOID.map(q => document.querySelector(q)).filter(e => e && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden').map(e => e.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+  R.push({ left: vw / 2 - 110, right: vw / 2 + 110, top: vh / 2 - 40, bottom: vh / 2 + 70 }); // 準心與它下面的提示（#prompt 只在對準東西時出現）
+  let best = null, bs = Infinity;
+  for (let y = 8 + ey; y <= vh * .78 - bh - ey; y += 12) for (let x = 8 + ex; x <= vw - bw - 8 - ex; x += 12) {
+    let ov = 0; for (const r of R) { const ox = Math.min(x + bw + ex + pad, r.right) - Math.max(x - ex - pad, r.left), oy = Math.min(y + bh + ey + pad, r.bottom) - Math.max(y - ey - pad, r.top); if (ox > 0 && oy > 0) ov += ox * oy; }
+    const cx = x + bw / 2, sc = ov * 1000 + Math.min(cx, vw - cx) / vw * 100 + y / vh * 60 + (cx < vw / 2 ? 8 : 0); // 擋到一點點都比換個地方差
+    if (sc < bs) { bs = sc; best = [x, y]; }
+  }
+  if (best) { w.style.right = 'auto'; w.style.left = Math.round(best[0]) + 'px'; w.style.top = Math.round(best[1]) + 'px'; }
+}
+function frostWriteOff() { if (!FZ.el || FZ.wt < 0) return; const w = FZ.el.querySelector('.fw'); if (!w.classList.contains('gone')) w.classList.add('gone'); FZ.wEnd = Math.min(FZ.wEnd, FZ.wt); }
+/* 呼出的白氣：每次吐氣 3 團低多邊形的小煙（細分一次的二十面體、平面著色，每團 80 面），從嘴巴往前飄、往上散、變大再縮掉；全部一個 InstancedMesh（看得到時 1 次繪製）。
+   跟著鏡頭平移（走路時白氣大致留在眼前，只落後兩成），不跟著轉頭；瞬間移動（傳送、上下車）就清掉 */
+function breathStep(dt, emit, vis) {
+  if (!FZ.puff) {
+    if (!emit || !vis || !W.scene) return;
+    const n = LOW ? 6 : 9, m = FZ.puff = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: '#f4f9ff', emissive: '#56667e', flatShading: true, transparent: true, opacity: .38, depthWrite: false }), n); // 細分一次＝圓圓的小雲（一面一個顏色）；自發光讓背光的那幾面也是淡灰藍，不會像一團灰色的石頭
+    m.frustumCulled = false; m.renderOrder = 4; m.visible = false; W.scene.add(m);
+    FZ.pp = Array.from({ length: n }, () => ({ a: 9, life: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s: 0, q: new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(0, 6), rnd(0, 6), rnd(0, 6))) }));
+    FZ.cp0 = W.cam.position.clone(); FZ.bM = new THREE.Matrix4(); FZ.bV = new THREE.Vector3(); FZ.bS = new THREE.Vector3();
+  }
+  const m = FZ.puff, cp = W.cam.position, pp = FZ.pp, dx = cp.x - FZ.cp0.x, dy = cp.y - FZ.cp0.y, dz = cp.z - FZ.cp0.z, kill = !vis || dx * dx + dy * dy + dz * dz > 4; FZ.cp0.copy(cp);
+  if (emit && vis && (FZ.bT -= dt) <= 0) {
+    FZ.bT = S.frozen ? rnd(1.7, 2.3) : rnd(2.8, 3.6); // 凍僵時呼吸又短又急
+    const fw = FZ.bV.set(0, 0, -1).applyQuaternion(W.cam.quaternion), mo = FZ.bS.set(0, -.12, -.22).applyQuaternion(W.cam.quaternion); let k = 0; // 嘴巴在眼睛下方 12 cm、前方 22 cm
+    for (const p of pp) { if (p.a < p.life) continue; const sp = rnd(.4, .6); p.a = -k * .08; p.life = rnd(1.1, 1.5); p.x = mo.x + rnd(-.012, .012); p.y = mo.y; p.z = mo.z + rnd(-.012, .012); p.vx = fw.x * sp + rnd(-.06, .06); p.vy = fw.y * sp - .03 + rnd(-.02, .02); p.vz = fw.z * sp + rnd(-.06, .06); p.s = rnd(.017, .025) * (k ? .8 : 1); if (++k >= 3) break; }
+  }
+  let alive = 0; const M = FZ.bM, lag = RIDE.on ? 0 : .2; // 車裡的空氣跟著車走：搭車時白氣完全跟著鏡頭（不然車開快時會往後飛穿過車廂）
+  for (let i = 0; i < pp.length; i++) {
+    const p = pp[i]; let s = 0; if (kill) p.a = 9;
+    if (p.a < p.life) { p.a += dt; if (p.a > 0) { const d = Math.exp(-dt * 1.6), k = p.a / p.life; p.vx *= d; p.vz *= d; p.vy = p.vy * d + .1 * dt; p.x += p.vx * dt - dx * lag; p.y += p.vy * dt - dy * lag; p.z += p.vz * dt - dz * lag; s = p.s * (.5 + 1.6 * Math.sqrt(k)) * (1 - smooth(.55, 1, k)); } }
+    if (s > 0) alive++; M.compose(FZ.bV.set(p.x, p.y, p.z), p.q, FZ.bS.set(s, s * .85, s)); m.setMatrixAt(i, M);
+  }
+  m.visible = alive > 0; if (alive) { m.position.copy(cp); m.instanceMatrix.needsUpdate = true; }
 }
 /* 畫質：自動／高／低。自動時 FPS 連續 5 秒低於 28 就依序關掉粒子、減少遠景植被、縮短霧距（解析度原本就會自動調整） */
 const QL = { lvl: 0, lowT: 0, frames: 0, acc: 0, noParts: false };
@@ -9231,7 +9405,7 @@ function worldStep(dt) {
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   deliverStep(dt); shipStep(dt); giftStep(dt); fixStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
-  const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else if (RIDE.on) rideStep(dt); else cameraStep(dt); viewModelStep(dt); avatarsStep(dt); // 搭計程車：鏡頭交給 rideStep（在 envStep／caveEnv 之後，隧道的霧、光、曝光會蓋過去）
+  const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else if (RIDE.on) rideStep(dt); else cameraStep(dt); viewModelStep(dt); frostStep(dt); avatarsStep(dt); // 搭計程車：鏡頭交給 rideStep（在 envStep／caveEnv 之後，隧道的霧、光、曝光會蓋過去）
   if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); stageStep(); upgradeFx(dt);
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
   for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }

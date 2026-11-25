@@ -1660,9 +1660,9 @@ function introStep(dt) {
   if (!I.hint && t > .6 && !I.skipped) { I.hint = true; const el = document.getElementById('introSkip'); if (el) el.hidden = false; }
   if (!I.outOn && t >= T - .8) { I.outOn = true; document.body.classList.add('intro-out'); }
   DRS.skip = Math.max(DRS.skip || 0, 1); // 開場期間動態解析度不計時
-  // 寫進鏡頭（凍僵時最後 0.8 秒用和 cameraStep 一樣的發抖公式疊上去，接手時零誤差）
+  // 寫進鏡頭（凍僵時最後 0.8 秒用和 cameraStep 一樣的發抖公式疊上去，接手時零誤差；減少動態時兩邊都不抖）
   cam.position.copy(I.pos); cam.quaternion.copy(I.q);
-  if (S.frozen) { const k = smooth(T - .8, T, t); if (k > 0) { cam.position.x += Math.sin(W.t * 47) * .014 * k; cam.position.y += Math.cos(W.t * 53) * .014 * k; cam.quaternion.multiply(IPQ[4].setFromAxisAngle(IPV[5].set(0, 0, 1), Math.sin(W.t * 41) * .012 * k)); } }
+  if (S.frozen && !RM()) { const k = smooth(T - .8, T, t); if (k > 0) { cam.position.x += Math.sin(W.t * 47) * .014 * k; cam.position.y += Math.cos(W.t * 53) * .014 * k; cam.quaternion.multiply(IPQ[4].setFromAxisAngle(IPV[5].set(0, 0, 1), Math.sin(W.t * 41) * .012 * k)); } }
   if (Math.abs(cam.fov - I.fov) > .005) { cam.fov = I.fov; cam.updateProjectionMatrix(); }
   if (t >= T) introEnd();
 }
@@ -1678,7 +1678,7 @@ function introSkipNow() {
 function introEnd() {
   const I = INTRO; if (!I.on) return; I.on = false;
   I.res = I.E && I.q ? { dp: I.pos.distanceTo(I.E), deg: I.q.angleTo(I.Qp) * 180 / Math.PI } : null; // 收尾前的殘差（測試用：應該 < 0.1°）
-  const cam = W.cam; if (I.E && isFinite(I.E.x)) { cam.position.copy(I.E); cam.quaternion.copy(I.Qp); if (S.frozen) { cam.position.x += Math.sin(W.t * 47) * .014; cam.position.y += Math.cos(W.t * 53) * .014; cam.quaternion.multiply(IPQ[4].setFromAxisAngle(IPV[5].set(0, 0, 1), Math.sin(W.t * 41) * .012)); } }
+  const cam = W.cam; if (I.E && isFinite(I.E.x)) { cam.position.copy(I.E); cam.quaternion.copy(I.Qp); if (S.frozen && !RM()) { cam.position.x += Math.sin(W.t * 47) * .014; cam.position.y += Math.cos(W.t * 53) * .014; cam.quaternion.multiply(IPQ[4].setFromAxisAngle(IPV[5].set(0, 0, 1), Math.sin(W.t * 41) * .012)); } }
   cam.fov = W.fov0 || 72; cam.updateProjectionMatrix(); P.yaw = I.yaw0; P.pitch = I.pitch0;
   ['keydown', 'pointerdown', 'touchstart'].forEach(k => removeEventListener(k, I.onKey, { capture: true }));
   introSound(false); const el = document.getElementById('introSkip'); if (el) el.hidden = true; ipMask(0);

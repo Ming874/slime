@@ -468,6 +468,44 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 #warm.frozen{color:#fda4af}
 #warm.frozen .wbar{border-color:#fb7185}
 #warm span{font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000a;white-space:nowrap}
+/* 凍僵（game.js 的 frostStep）：畫面四角長進來的冰花。--fz：0＝沒有、0.22～0.52＝體溫剩不到 2 分鐘的預警、1＝凍僵（長滿邊緣）。
+   #frost 是 #hud 的第一個子元素：準心、提示、對話泡泡、HUD 都畫在它上面；開場的穿越機與搭計程車時也留著（還在發抖）。
+   霜只用縮放與透明度長大／退掉（合成層，不重畫）；減少動態（.rm）時不縮放、只淡入淡出 */
+#frost{position:absolute;inset:0;pointer-events:none;overflow:hidden;--fz:0;--fs:min(50vmin,540px);transition:opacity .9s ease}
+#frost[hidden]{display:none}
+#frost .fe{position:absolute;inset:0;box-shadow:inset 0 0 calc(var(--fs) * .18) calc(var(--fs) * .03) #cfe6f8d4,inset 0 0 calc(var(--fs) * .035) 0 #9fcbecb8;opacity:calc((var(--fz) - .3) * 1.5)} /* 外層淡白、貼邊一圈淡藍：白雪地上也看得出邊緣結了霜 */
+/* 上下緣：四角之間的一條霜，凍僵時才長出來（預警的薄霜只在四角） */
+#frost .fs{position:absolute;left:0;right:0;height:calc(var(--fs) * .24);background-repeat:repeat-x;background-size:auto 100%;opacity:calc((var(--fz) - .5) * 2.2);transform:scaleY(clamp(.05,calc(var(--fz) * 1.6 - .6),1));will-change:transform,opacity}
+#frost .fs.t{top:0;transform-origin:50% 0}
+#frost .fs.b{bottom:0;transform-origin:50% 100%;background-position:37% 0}
+#frost .fc{position:absolute;width:var(--fs);height:var(--fs);opacity:calc(var(--fz) * 2.4);transform:scale(calc(.4 + .6 * var(--fz)));will-change:transform,opacity}
+#frost .fc canvas{display:block;width:100%;height:100%}
+#frost .tl{left:0;top:0;transform-origin:0 0}
+#frost .tr{right:0;top:0;transform-origin:100% 0}
+#frost .bl{left:0;bottom:0;transform-origin:0 100%}
+#frost .br{right:0;bottom:0;transform-origin:100% 100%}
+#frost.rm .fc{transform:none;opacity:var(--fz)}
+#frost.rm .fs{transform:none}
+/* 角落裡沒有底色的白字（搭車的「按住開快一點」、開場的「略過」、體溫條的字）疊在白色的霜上會看不清楚：結霜時陰影加深 */
+body.frosty #rideHint,body.frosty #introSkip,body.frosty #warm b,body.frosty #warm span{text-shadow:0 0 3px #0b1626,0 1px 8px #0b1626d0}
+body.frosty #rideHint,body.frosty #introSkip{color:#fff}
+/* 手指寫在起霧玻璃上的字：先呵出一小片霧（淡白的圓斑），字一筆一筆擦出來（擦過的地方比霜透、看得到後面），幾個字往下流一道水痕；
+   停幾秒後被霜慢慢蓋回去（.gone）。位置由 frostPlace 每次量（桌機通常在右上角的按鈕下面），不擋 HUD、準心、提示；對話泡泡畫在它上面 */
+#frost .fw{position:absolute;right:max(5vw,18px);top:calc(max(12px,env(safe-area-inset-top)) + 64px + 4vh);width:max-content;max-width:min(92vw,560px);padding:.7em 1.2em .95em;transform:rotate(-4deg);
+  font:400 clamp(16px,3.6vmin,32px)/1.32 "Slime Hand","Hannotate TC","HanziPen TC","Kaiti TC","BiauKai","STKaiti","DFKai-SB",serif;letter-spacing:.04em;color:#27445fc4;
+  text-shadow:0 0 1px #fffe,0 0 7px #ffffffb8,1px 1px 0 #ffffff8c;background:radial-gradient(closest-side,#eef7ffd8,#eef7ffa0 60%,#eef7ff00);opacity:0;transition:opacity 3.4s ease,filter 3.4s ease}
+#frost .fw:empty{display:none}
+#frost .fw.on{opacity:1;transition:opacity .6s ease}
+#frost .fw.on.gone{opacity:0;filter:blur(3px);transition:opacity 3.4s ease,filter 3.4s ease}
+#frost.low .fw.on.gone{filter:none}
+#frost .fw .l{white-space:pre}
+#frost .fw .l + .l{margin-left:.7em}
+#frost .fw span{display:inline-block;position:relative;opacity:0;clip-path:inset(0 100% 0 0);animation:fwIn .3s ease-out var(--d) forwards}
+#frost .fw .dr::after{content:"";position:absolute;left:46%;top:84%;width:2px;height:0;border-radius:1px;background:linear-gradient(#2c4a6890,#2c4a6800);animation:fwDrip 2.6s ease-in calc(var(--d) + .5s) forwards}
+#frost.rm .fw span{animation:none;opacity:1;clip-path:none}
+#frost.rm .fw .dr::after{display:none}
+@keyframes fwIn{to{opacity:1;clip-path:inset(0 0 0 0)}}
+@keyframes fwDrip{to{height:.85em}}
 @keyframes warmBlink{50%{box-shadow:0 0 10px #fb7185}}
 
 /* 第 3 堂：時鐘（指南針旁）——「一天」的軌道依長度上色（白天 5、黃昏 1、夜晚 3、黎明 1 分鐘），太陽／月亮沿軌道走；
@@ -545,22 +583,22 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 
 /* 第 4 堂：開場的穿越機鏡頭——HUD 先收起來（訊息列 #log 照常，房號、時段提示看得到）、上下一點黑邊、右下角「略過」提示；
    最後 0.8 秒黑邊收回（intro-out），結束時 HUD 用 0.5 秒淡入（intro-done），不會一下子跳回來 */
-body.intro #hud > *:not(#vig):not(#log) { opacity: 0 !important; transition: opacity .3s; pointer-events: none; }
+body.intro #hud > *:not(#vig):not(#log):not(#frost) { opacity: 0 !important; transition: opacity .3s; pointer-events: none; }
 body.intro #game::before, body.intro #game::after { content: ''; position: fixed; left: 0; right: 0; height: 7vh; background: #000; z-index: 5; pointer-events: none; animation: introBar .5s ease both; }
 body.intro #game::before { top: 0; } body.intro #game::after { bottom: 0; }
 @keyframes introBar { from { height: 0; } }
 body.intro.intro-out #game::before, body.intro.intro-out #game::after { animation: introBarOut .8s ease forwards; }
 @keyframes introBarOut { to { height: 0; } }
-body.intro-done #hud > *:not(#vig):not(#log) { animation: hudIn .5s ease both; }
+body.intro-done #hud > *:not(#vig):not(#log):not(#frost) { animation: hudIn .5s ease both; }
 @keyframes hudIn { from { opacity: 0; } }
 #introSkip { position: fixed; right: 22px; bottom: calc(7vh + 14px); z-index: 7; color: rgba(255, 255, 255, .78); font-size: 13px; letter-spacing: .08em; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); animation: introHint 2.4s ease-in-out infinite; }
 @keyframes introHint { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 #introFade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 8; } /* 遮罩：caves.js 每格設 opacity 與顏色（黑幕、雲、出口的白光），和鏡頭同步 */
 
 /* 搭計程車（game.js 的 rideStart）：HUD 讓位給窗外。只留右上角的背包與選單（觸控沒有 Esc，要留一個出口）、對話泡泡、聊天列與第一次的地名字卡；下車時 0.3 秒淡回 */
-body.riding #hud > *:not(#vig):not(#topbtns):not(#talk):not(#chatBar):not(#zoneTitle) { opacity: 0 !important; transition: opacity .4s; pointer-events: none; }
+body.riding #hud > *:not(#vig):not(#topbtns):not(#talk):not(#chatBar):not(#zoneTitle):not(#frost) { opacity: 0 !important; transition: opacity .4s; pointer-events: none; }
 body.riding #topbtns { opacity: .55; transition: opacity .4s; }
-body.ride-done #hud > *:not(#vig):not(#talk):not(#zoneTitle) { animation: hudIn .3s ease both; }
+body.ride-done #hud > *:not(#vig):not(#talk):not(#zoneTitle):not(#frost) { animation: hudIn .3s ease both; }
 /* 觸控：右下角按住開快一點（56 px，避開安全區）；不建搖桿，整個畫面都能拖曳轉頭 */
 #rideFF { display: none; position: fixed; right: 16px; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 16px); width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .45); background: rgba(15, 23, 42, .42); color: #fff; place-items: center; padding: 0; z-index: 7; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 #rideFF svg { width: 26px; height: 26px; fill: currentColor; }
