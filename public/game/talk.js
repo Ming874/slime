@@ -531,7 +531,7 @@ function tkMouth(t) {
 function tkWhoOf(t) {
   if (!t) return null; const key = t.n || t.it; if (!key) return null;
   if (TK.wk === key && TK.wn-- > 0) return TK.wv; let w = null; // 以目標物件當快取鍵，每 30 次重算一次（計程車要看你站在哪一側）
-  if (t.type === 'npc') w = npcWho(t.n); else if (t.type === 'station' && typeof TALK_AT !== 'undefined' && TALK_AT[t.it.id]) w = TALK_AT[t.it.id]();
+  if (t.type === 'npc') w = t.n.d.shop && typeof WARE !== 'undefined' && WARE.h ? null : npcWho(t.n); // 拿著商品對準店員：提示交給 wareLabel（E 結帳） else if (t.type === 'station' && typeof TALK_AT !== 'undefined' && TALK_AT[t.it.id]) w = TALK_AT[t.it.id]();
   TK.wk = key; TK.wv = w; TK.wn = 30; return w;
 }
 const tkSeen = w => { w.at(tkV); tkProj(tkV, PA); return PA.z > .05 && PA.x >= 0 && PA.x <= innerWidth && PA.y >= 0 && PA.y <= innerHeight; };

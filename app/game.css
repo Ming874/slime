@@ -555,3 +555,15 @@ body.touch.riding #rideFF { display: grid; }
 #rideHint { position: fixed; right: 22px; bottom: 26px; z-index: 7; color: rgba(255, 255, 255, .78); font-size: 13px; letter-spacing: .08em; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); opacity: 0; visibility: hidden; transition: opacity .6s, visibility .6s; }
 #rideHint.on { opacity: 1; visibility: visible; animation: introHint 2.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { #rideHint.on { animation: none; } }
+
+/* ===== 在店裡買東西（game.js 的 WARE）：拿著商品時目標面板讓開、互動鍵換圖示、付錢時錢包閃一下、東西收進背包時按鈕彈一下 ===== */
+body.ware #objective { display: none; }
+#btnAct .i-pay, #btnAct .i-back { display: none; }
+#btnAct[data-mode="pay"] .i-hand, #btnAct[data-mode="back"] .i-hand { display: none; }
+#btnAct[data-mode="pay"] .i-pay, #btnAct[data-mode="back"] .i-back { display: block; }
+#btnAct[data-mode="pay"] { border-color: #fbbf24; color: #fbbf24; }
+#sMoney.pay { animation: wPay .6s ease-out; }
+@keyframes wPay { 0% { transform: scale(1); background: #0b0f17b0; } 30% { transform: scale(1.12); background: #fbbf2455; color: #fef3c7; } 100% { transform: scale(1); } }
+.hbtn.got { animation: wGot .5s cubic-bezier(.34,1.56,.64,1); }
+@keyframes wGot { 0% { transform: scale(1); } 40% { transform: scale(1.22); border-color: #86efac; } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { #sMoney.pay, .hbtn.got { animation: none; } }

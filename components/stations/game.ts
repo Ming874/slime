@@ -10,6 +10,7 @@ export type Review = { s: number; who: string; t: string; sp: string };
 export type State = {
   money: number; fans: number; earned: number; xp: number; gel: Record<string, number>; stock: Product[]; web: Product[]; show: Product[];
   zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number }>;
+  ship?: Ship[]; wish?: Record<string, number>; shopSeen?: Record<string, number>;
   reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number; vol?: { music: number; sfx: number }; quality?: string; avatar?: string;
 };
 type Up = { name: string; desc: string; max: number; mach?: number; need?: string };
@@ -36,7 +37,11 @@ export type Game = {
   AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string;
   tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
   eggs?: () => Egg[];
+  ship?: Ship[]; wareState?: (t: string, k: string) => WareState | null;
 };
+// 付了錢、還沒演的到貨（氣球木箱）；商品狀態（城市與網購共用的規則）
+export type Ship = { k: string; via: 'city' | 'web'; at: number };
+export type WareState = { id: string; t: string; k: string; name: string; cost: number; can: boolean; why: '' | 'has' | 'max' | 'need' | 'poor'; d: number; lv: number; max: number; need: string; go: 'ship' | 'bag' | 'wear' };
 // 月光谷的小秘密（彩蛋）：id 開頭是區域（forest_／coast_／volcano_／snow_／city_）
 export type Egg = { id: string; name: string; hint: string; found: boolean };
 

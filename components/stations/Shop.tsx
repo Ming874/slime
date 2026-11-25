@@ -9,7 +9,7 @@ const INTRO: Record<string, string> = {
   gear: '直播設備、裝飾桌與裝飾零件。',
   mall: '倉儲、網站伺服器與生活用品。',
   arms: '武器與防具。保暖衣是進入雪原的必備品；長劍目前只供收藏，之後會派上用場。',
-  eshop: '加工機器、裝飾桌、直播設備與各種升級，下單後直接宅配到中央平地。武器店的商品要到大城市購買。',
+  eshop: '下單後，箱子會綁著氣球從大城市飛來，降落在擺放的位置。保暖衣、長劍要到大城市的武器店買。',
 };
 
 // 說明文字裡的 **粗體**
@@ -47,7 +47,7 @@ export default function Shop() {
       {eshop && (
         <div className="rx-eshop-bar" aria-hidden="true">
           <span className="rx-search">搜尋機器、設備、零件…</span>
-          <span className="rx-ship">全館免運・中央平地當天到貨</span>
+          <span className="rx-ship">氣球宅配・關上電腦就降落</span>
         </div>
       )}
       <div className="rx-shop-intro">
