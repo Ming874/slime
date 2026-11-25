@@ -8496,7 +8496,7 @@ function cullChunks(at = P) {
   }
 }
 /* ---------- 雪原體溫：每次進入雪原有 10 分鐘，歸零就凍僵（發抖、減速），要到大城市的醫院看醫生 ---------- */
-const inSnowZone = () => !!P && P.x < -56 * K && !inCity(P.x) && !CV.c;
+const inSnowZone = () => !!P && P.x < -56 * K && !inCity(P.x) && !CV.c && domBiome(P.x, P.z) === 'snow'; // 只看 x 的話，火山西半部（例如 (−72, −108)）也會跳出體溫條
 let warmSig = '';
 function warmStep(dt) {
   const inS = inSnowZone();
