@@ -17,7 +17,7 @@ type Up = { name: string; desc: string; max: number; mach?: number; need?: strin
 type Own = { name: string; cost: number; shop: string; desc: string };
 
 export type Game = {
-  S: State; M: { sp: string | null }; BN: { busy: boolean }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
+  S: State; M: { sp: string | null }; BN: { busy: boolean; gift?: number }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
   trend: { sp: string | null }; invSel: number | null; tab: string; kind: string | null; likeT: () => Record<string, number>;
   title: { on: boolean; mp?: boolean }; inCity?: boolean; riding?: boolean; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
   SP: Record<string, Species>; SPECIES: Species[]; ZONES: { id: string; name: string; acc: string }[]; RAR: ({ n: string; c: string } | null)[];
@@ -38,7 +38,17 @@ export type Game = {
   tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
   eggs?: () => Egg[];
   ship?: Ship[]; wareState?: (t: string, k: string) => WareState | null;
+  paper?: () => PaperData | null; papers?: () => PaperRow[]; paperAt?: (i: number) => PaperData | null; paperOf?: (id: string) => PaperData | null; rcptView?: (d: Rcpt) => PaperData;
+  clip?: () => number; hasPaper?: (id: string) => boolean; postcardImg?: (z: string) => string;
 };
+// 手上的紙（game.js 的 paperView）：v＝letter／note／postcard／receipt；b＝內文每一行；rev＝字已經寫好；live＝要跑墨水；hint＝右下按鍵提示的透明度
+export type Rcpt = { n: number; inc: number; tip: number; fan: number; sec: number; t: number; torn?: number };
+export type PaperData = {
+  id: string; v: string; name: string; head: string; b: string[]; sig: string; zone: string; zoneName: string; acc: string; gift: boolean; torn?: boolean; d: Rcpt | null;
+  who: string; day: string; touch: boolean; rm: boolean; rev: number; flip: number; live: number; hint: number | boolean; seq: number;
+};
+// 手帳剪貼區的一張（i＝S.papers 的索引，新的在前）
+export type PaperRow = { i: number; id: string; v: string; name: string; zone: string; gift: boolean; torn?: boolean; t: number; isNew: boolean };
 // 付了錢、還沒演的到貨（氣球木箱）；商品狀態（城市與網購共用的規則）
 export type Ship = { k: string; via: 'city' | 'web'; at: number };
 export type WareState = { id: string; t: string; k: string; name: string; cost: number; can: boolean; why: '' | 'has' | 'max' | 'need' | 'poor'; d: number; lv: number; max: number; need: string; go: 'ship' | 'bag' | 'wear' };

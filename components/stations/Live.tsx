@@ -3,6 +3,8 @@
    舞台畫布、LIVE 標誌、觀眾數、人氣條、彈幕、斗內、聊天仍由 game.js 每格畫面更新（game/dom.html 的 #liveWrap、#chat）。 */
 import { G } from './game';
 import { Empty, PriceTiers, ProdTile } from './Items';
+import { PaperView } from './Paper';
+import type { Rcpt } from './game';
 
 type LiveGame = { L: { on: boolean; stageId: number | null; watch: { id: string } | null } };
 
@@ -38,6 +40,19 @@ export function LiveStock() {
         ? <div className="rx-strip">{S.stock.map((p) => <ProdTile key={p.id} p={p} act="stageSel" sel={L.stageId === p.id} extra={`直播售價 ${g.fmt(g.priceOf(p, 'live'))}`} />)}</div>
         : <Empty>背包裡沒有捏捏，先到加工產線做一個。</Empty>}
     </div>
+  );
+}
+
+// 結束直播：熱感紙收據從直播畫面上緣印出來（CSS steps）；點一下撕下收進手帳，關手機也會一起收（game.js 的 rcptTear／guiLeave）
+export function LiveRcpt() {
+  const g = G(), r = (g as unknown as { L: { rcpt?: Rcpt | null } }).L.rcpt;
+  if (!r || !g.rcptView) return null;
+  const p = g.rcptView(r);
+  return (
+    <button type="button" className={`lv-rcpt${r.torn ? ' torn' : ''}`} data-act="rcptTear" aria-label="撕下收據，收進手帳">
+      <PaperView p={p} />
+      <span className="lv-rcpt-tip" aria-hidden="true">{p.touch ? '點一下撕下來' : '點一下撕下來・關手機也會收進手帳'}</span>
+    </button>
   );
 }
 

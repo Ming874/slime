@@ -423,3 +423,24 @@
   .st-flip,.st-boot,.st-cover,.st-door{display:none}
   #worldCv{transition:none}
 }
+
+/* ---------- 手上的紙（game.js 的 PAPER、components/stations/Paper.tsx）----------
+   #gwin 就是那張紙（大小依 data-v），3D 的紙停在和它完全重合的位置後 2D 接手；收起時 2D 先淡出，露出底下同位置的 3D 紙再由手收回。
+   接手後背後只有淡淡暗角、不模糊（世界照樣在動）；紙在 #gui（z-index 20）上，所以字永遠不會被 HUD 蓋住 */
+#gui[data-prop="paper"]{background:transparent}
+#gui[data-prop="paper"] .gwin{background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible;max-height:none}
+#gui[data-prop="paper"] .ghead{display:none}
+#gui[data-prop="paper"] .gbody{padding:0;height:100%;overflow:visible}
+#gui[data-prop="paper"] #p-paper.on,#gui[data-prop="paper"] #p-paper>.rx{height:100%;animation:none}
+#gui[data-prop="paper"][data-v="letter"] .gwin{width:min(520px,calc(100vw - 32px));height:min(640px,calc(100dvh - 110px))}
+#gui[data-prop="paper"][data-v="note"] .gwin{width:min(440px,calc(100vw - 48px));height:min(330px,calc(100dvh - 140px))}
+#gui[data-prop="paper"][data-v="postcard"] .gwin{width:min(600px,calc(100vw - 40px),calc((100dvh - 120px) * 1.5));aspect-ratio:3/2;height:auto}
+#gui[data-prop="paper"][data-v="flyer"] .gwin{width:min(420px,calc(100vw - 40px));height:min(540px,calc(100dvh - 110px))}
+#gui[data-prop="paper"][data-v="receipt"] .gwin{width:min(320px,calc(100vw - 60px));height:min(calc(150px + 30px * var(--pp-n,7)),calc(100dvh - 120px))}
+@media (max-height:500px){#gui[data-prop="paper"][data-v="receipt"] .gwin{height:min(360px,calc(100dvh - 40px))}} /* 手機橫拿：收據長，可以蓋過上方的 HUD，整張不用捲 */
+@media (max-aspect-ratio:3/4){#gui[data-prop="paper"][data-v="postcard"] .gwin{width:min(400px,calc(100vw - 40px),calc((100dvh - 120px) * .667));aspect-ratio:2/3}}
+#gui[data-mode="held"][data-prop="paper"].dim{background:radial-gradient(120% 100% at 50% 45%,#0000 42%,#05070d6b 100%)}
+#gui[data-prop="paper"][data-mode="card"]{background:radial-gradient(120% 100% at 50% 45%,#0000 42%,#05070d6b 100%)}
+#gui[data-prop="paper"][data-mode="card"].opening .gwin{animation:st-fade-in .18s ease-out both}
+#gui[data-prop="paper"][data-mode="card"].closing .gwin{animation:pp-fade-out .18s ease-in forwards}
+@keyframes pp-fade-out{to{opacity:0}}

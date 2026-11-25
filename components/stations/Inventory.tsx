@@ -1,8 +1,11 @@
 'use client';
 /* 背包（手帳的右頁）：縫線口袋裡的凝膠與捏捏、貼著紙膠帶的說明便條、裝備清單、夾著迴紋針的探索日誌。
    點格子＝data-act="hb"（game.js 把它放到快捷列並重繪）。 */
+import type { CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { G, pct, prodName, type InvItem } from './game';
 import { SlimeArt } from './Art';
+import { PaperView } from './Paper';
 
 export default function Inventory() {
   const g = G(), S = g.S, items = g.invItems(), n = Math.max(27, Math.ceil(items.length / 9) * 9);
@@ -21,6 +24,7 @@ export default function Inventory() {
       </div>
       <Quest />
       <Eggs />
+      <Clips />
     </div>
   );
 }
@@ -126,6 +130,34 @@ function Eggs() {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// 收到的信與明信片（手上的紙收起來的地方）：迷你的紙交錯旋轉、貼一條紙膠帶，新的貼紅色「新」；點一下就在手帳中央抽出來重讀，再點一下或按 E 放回
+const CLIP_R = (id: string) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 997; return (h % 9) - 4; };
+function Clips() {
+  // 只有手帳開著時才把重讀的紙畫進 #gwin：#gwin 是所有介面共用的框，換成別的介面時不能留著
+  const g = G(), list = g.papers?.() ?? [], ci = g.kind === 'inv' ? g.clip?.() ?? -1 : -1, cur = ci >= 0 ? g.paperAt?.(ci) : null;
+  const host = typeof document !== 'undefined' ? document.getElementById('gwin') : null;
+  if (!list.length) return null;
+  return (
+    <div className="rx-clips">
+      <div className="rx-clips-hd"><b>收到的信與明信片</b><span>{list.length} 張</span></div>
+      <div className="rx-clip-row">
+        {list.map((c) => (
+          <button key={c.i} type="button" className={`rx-clip v-${c.v}${c.gift ? ' gift' : ''}${c.torn ? ' torn' : ''}${c.isNew ? ' new' : ''}`} data-act="clipOpen" data-k={c.i} style={{ '--r': `${CLIP_R(c.id + c.t)}deg` } as CSSProperties} aria-label={`重讀：${c.name}`}>
+            <span className="rx-clip-p" aria-hidden="true">{c.v === 'postcard' && g.postcardImg ? <img src={g.postcardImg(c.zone)} alt="" draggable={false} /> : <i />}</span>
+            <small>{c.name}</small>
+            {c.isNew && <em>新</em>}
+          </button>
+        ))}
+      </div>
+      {cur && host && createPortal(
+        <div className="rx-clipview" data-act="clipClose" role="dialog" aria-label={`重讀：${cur.name}`} data-v={cur.v}>
+          <div className="rx-clipview-in"><PaperView p={cur} /></div>
+          <small className="rx-clipview-tip">{cur.touch ? '點一下放回' : '點一下或按 E 放回'}</small>
+        </div>, host)}
     </div>
   );
 }

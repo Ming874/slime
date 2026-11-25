@@ -456,3 +456,177 @@
 .rx-want b{color:var(--tx)}
 .rx-patience{height:6px;margin:2px 0 0}
 @container (max-width:420px){.rx-customer{grid-template-columns:auto 1fr}.rx-customer>.btn{grid-column:1/-1}}
+
+/* ---------- 手上的紙（Paper.tsx 的 PaperView）：信、便條、明信片、收據；--pp-* 在 game.css 的 :root ----------
+   紙的底色、橫線、摺痕、膠帶、郵票框、地址線和 game.js 的 paperArt（3D 那張）同一組位置，交接時看不出換手。
+   墨水：.ink 的每一行先藏起來，#gui.shown（2D 接手）之後才一行一行寫出來；.now＝直接寫好（讀過、減少動態、重讀） */
+.pp{position:relative;width:100%;height:100%;overflow:hidden auto;color:var(--pp-ink);font:400 21px/1.6 var(--pp-hand);text-align:left;box-shadow:0 30px 60px -24px #000c;-webkit-user-select:none;user-select:none;scrollbar-width:thin;cursor:default}
+.pp p{margin:0}
+.pp .pp-l{overflow-wrap:anywhere;text-wrap:pretty} /* pretty：最後一行不會只剩「了。」一兩個字 */
+.pp.ink .pp-l{clip-path:inset(0 100% 0 0)}
+#gui.shown .pp.ink .pp-l,.rx-gift .pp.ink .pp-l{animation:pp-ink .26s calc(var(--i,0) * 110ms + 60ms) linear both}
+@keyframes pp-ink{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+.pp.now .pp-l{animation:none;clip-path:none}
+.pp-sig{text-align:right;color:var(--pp-ink2)}
+.pp-hint{position:absolute;right:14px;bottom:8px;font:600 12px/1.4 Inter,system-ui,sans-serif;color:var(--pp-ink2);letter-spacing:.5px;pointer-events:none;white-space:nowrap}
+.pp svg{overflow:visible}
+.pp .pp-red{stroke:var(--pp-pen)}
+@media (max-width:480px){.pp{font-size:17px}}
+/* 信：淡藍橫線每 34 px（從 78 px 起，字坐在線上）、1/3 與 2/3 的淡摺痕、上緣半個紅封蠟、右上手寫日期、左下壓花四葉草 */
+.pp-letter{background:linear-gradient(#0000 calc(33.333% - 1px),#78603c17 0 calc(33.333% + 1px),#0000 0 calc(66.667% - 1px),#78603c17 0 calc(66.667% + 1px),#0000 0),repeating-linear-gradient(#0000 0 33px,#7aa0cc38 33px 34px) 26px 45px/calc(100% - 52px) calc(100% - 63px) no-repeat,var(--pp-paper);padding:52px 40px 34px;line-height:34px}
+.pp-letter .pp-sig{margin-top:34px}
+/* 矮的畫面（手機橫拿）：行距 28 px、字 18 px，整封信不用捲就讀得完（橫線位置和 game.js 的 paperArt 一起改：PP_SHORT） */
+@media (max-height:500px){
+  .pp-letter{background-image:linear-gradient(#0000 calc(33.333% - 1px),#78603c17 0 calc(33.333% + 1px),#0000 0 calc(66.667% - 1px),#78603c17 0 calc(66.667% + 1px),#0000 0),repeating-linear-gradient(#0000 0 27px,#7aa0cc38 27px 28px);background-position:0 0,26px 35px;background-size:auto,calc(100% - 52px) calc(100% - 53px);padding:36px 34px 18px;font-size:18px;line-height:28px}
+  .pp-letter .pp-sig{margin-top:0}
+  .pp-letter .pp-clover{display:none}
+  .pp-date{top:10px;font-size:14px}
+}
+.pp-seal{position:absolute;left:50%;top:0;width:44px;height:22px;margin-left:-22px;border-radius:0 0 22px 22px;background:var(--pp-stamp);box-shadow:inset 0 -3px 0 #0002}
+.pp-date{position:absolute;right:30px;top:14px;font-size:16px;line-height:1.2;color:var(--pp-ink2);transform:rotate(-3deg)}
+.pp-clover{position:absolute;left:22px;bottom:16px;width:38px;height:38px;fill:#9bb38f3d;stroke:#7d9a7066;stroke-width:1}
+/* 便條：左上紙膠帶；奶奶的便條是方形黃便條，角落畫一台小切片機 */
+.pp-note{background:var(--pp-paper2);padding:44px 30px 24px 34px;line-height:1.55}
+.pp-note.pp-gift{background:#fef9c3}
+.pp-tape{position:absolute;left:6px;top:-1px;width:96px;height:26px;background:var(--pp-tape);transform:rotate(-8deg);z-index:1}
+.pp-note .pp-sig{margin-top:4px}
+.pp-doodle{position:absolute;left:30px;bottom:16px;display:flex;align-items:flex-end;gap:8px;color:var(--pp-pen);font-size:18px;line-height:1.2;transform:rotate(-3deg)}
+.pp-slicer{width:54px;height:38px;fill:none;stroke:var(--pp-ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (max-width:480px){.pp-note{padding:40px 22px 20px 26px}.pp-doodle{left:22px}}
+/* 撕碎的紙條（潮汐石的謎語）：上緣撕過的鋸齒、沒有膠帶 */
+.pp-note.pp-torn{padding-top:34px;-webkit-mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) 50%/16px 100%;mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) 50%/16px 100%}
+.pp-note.pp-torn .pp-tape{display:none}
+/* 明信片：寫字面（左 58% 寫字、右上郵票與郵戳、三條地址線）／風景面；翻面 rotateY 420 ms */
+.pp-postcard{overflow:visible;box-shadow:none;perspective:1600px}
+.pp-card{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .42s cubic-bezier(.4,.1,.2,1)}
+.pp-card.flip{transform:rotateY(180deg)}
+.pp-back,.pp-front{position:absolute;inset:0;-webkit-backface-visibility:hidden;backface-visibility:hidden;box-shadow:0 30px 60px -24px #000c}
+.pp-back{background:var(--pp-paper2)}
+.pp-back::before{content:"";position:absolute;left:58%;top:26px;bottom:26px;width:1.5px;background:#7b6a5259}
+.pp-front{transform:rotateY(180deg);background:#fffdf8}
+.pp-front img{display:block;width:100%;height:100%;object-fit:cover}
+.pp-postcard .pp-txt{position:absolute;left:0;top:0;bottom:0;width:58%;padding:24px 18px 18px 26px;font-size:19px;line-height:1.55;overflow:auto;scrollbar-width:thin}
+.pp-ph{display:inline-block} /* 逗號分開的一段整段換行；比一行還長時在段內照常換行 */
+.pp-stamp{position:absolute;right:20px;top:20px;width:84px;height:100px;background:var(--acc,#94a3b8);box-shadow:0 0 0 4px #fff,0 2px 8px 4px #0001;display:grid;place-items:center;align-content:center;gap:4px}
+.pp-stamp svg{width:32px;height:40px;fill:#ffffffd9;stroke:#fff;stroke-width:1.5;stroke-linejoin:round}
+.pp-stamp small{font:700 15px/1 var(--pp-hand);color:#fff;text-shadow:0 1px 2px #0005}
+.pp-pmark{position:absolute;right:72px;top:70px;width:72px;height:72px;border-radius:50%;border:2px solid #b91c1cb0;box-shadow:inset 0 0 0 4px var(--pp-paper2),inset 0 0 0 6px #b91c1c8c;display:grid;place-content:center;text-align:center;transform:rotate(-14deg);color:#b91c1cc4;font:700 13px/1.2 var(--pp-hand);pointer-events:none}
+.pp-pmark span{font:700 12px/1.2 Inter,sans-serif;letter-spacing:1px}
+.pp-addr span{position:absolute;left:62%;width:34%;height:28px;border-bottom:1.5px solid #7b6a5273;font-size:16px;line-height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--pp-ink)}
+.pp-addr span:nth-child(1){top:calc(56% - 28px)}.pp-addr span:nth-child(2){top:calc(68% - 28px)}.pp-addr span:nth-child(3){top:calc(80% - 28px)}
+.pp-flipbtn{position:absolute;right:0;bottom:-56px;min-width:72px;min-height:44px;padding:0 16px;border-radius:22px;border:1.5px solid #fff8;background:#0b0f17b3;color:#fff;font:700 15px/1 var(--pp-hand);cursor:pointer}
+.pp-thumb{position:absolute;left:12px;top:-42px;z-index:2;width:84px;height:56px;object-fit:cover;border:4px solid #fff;box-shadow:0 4px 10px -3px #0007;transform:rotate(-6deg);pointer-events:none} /* 減少動態：明信片正面的小縮圖，壓在背面左上角外緣（不蓋到第一行字） */
+@media (max-height:500px){.pp-thumb{top:-24px;width:64px;height:42px;border-width:3px}} /* 手機橫拿：紙上方只剩 60 px，不壓到 HUD */
+@media (max-aspect-ratio:3/4){
+  .pp-back::before{left:26px;right:26px;top:58%;bottom:auto;width:auto;height:1.5px}
+  .pp-postcard .pp-hint{right:auto;left:26px} /* 直向的郵票在右下：按鍵提示改到左下，不壓在郵票上 */
+  .pp-postcard .pp-txt{width:auto;right:0;bottom:42%;padding:22px 22px 10px}
+  .pp-stamp{top:auto;bottom:20px}
+  .pp-pmark{top:auto;bottom:74px;right:84px}
+  .pp-addr span{left:26px;width:calc(100% - 176px)}
+  .pp-addr span:nth-child(1){top:calc(72% - 28px)}.pp-addr span:nth-child(2){top:calc(82% - 28px)}.pp-addr span:nth-child(3){top:calc(92% - 28px)}
+}
+@media (max-width:480px){.pp-postcard .pp-txt{font-size:17px;padding:18px 14px 12px 18px}}
+@media (max-height:500px) and (min-aspect-ratio:3/4){.pp-pmark{top:22px;right:84px;width:62px;height:62px}} /* 矮的明信片：郵戳往上移，不蓋到第一條地址線 */
+/* 收據：熱感紙、下緣鋸齒；數字用 Inter 等寬數字；墨水改成每行由上往下印出來 */
+.pp-receipt{background:#fbfaf7;padding:16px 20px 22px;font:500 18px/27px Inter,"Noto Sans TC",system-ui,sans-serif;color:#2f2a26;-webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/14px 100%;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/14px 100%}
+.pp-rc-hd{display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:8px;padding-bottom:6px}
+.pp-rc-hd b{font:900 18px/1.3 Inter,sans-serif;letter-spacing:2px}
+.pp-rc-hd small{grid-column:1/-1;font-size:14px;line-height:1.35;color:#6b6259;font-variant-numeric:tabular-nums}
+.pp-rc-logo{width:22px;height:18px;border-radius:50% 50% 42% 42%/62% 62% 38% 38%;background:#6ee7b7;box-shadow:inset 0 -3px 0 #0002}
+.pp-rc-row{display:flex;justify-content:space-between;gap:10px}
+.pp-rc-row b{font-weight:700;font-variant-numeric:tabular-nums}
+.pp-rc-cut{border:0;border-top:1.5px dashed #3b2f2a45;margin:6px 0}
+.pp-rc-sum{font-size:18px;line-height:32px} /* 桌機每行至少 18 px */
+.pp-rc-sum b{font-size:20px}
+.pp-rc-thx{text-align:center;font:400 18px/30px var(--pp-hand);margin-top:2px!important}
+.pp-rc-bar{display:block;height:30px;margin:6px auto 0;width:min(190px,80%);background:repeating-linear-gradient(90deg,#3b2f2ac4 0 2px,#0000 2px 4px,#3b2f2ac4 4px 5px,#0000 5px 8px,#3b2f2ac4 8px 11px,#0000 11px 12px,#3b2f2ac4 12px 13px,#0000 13px 15px)}
+@media (max-height:500px){.pp-receipt{padding:10px 18px 16px;font-size:16px;line-height:22px}.pp-rc-hd{padding-bottom:2px}.pp-rc-cut{margin:4px 0}.pp-rc-sum{line-height:28px}.pp-rc-sum b{font-size:18px}.pp-rc-thx{line-height:26px}.pp-rc-bar{height:24px;margin-top:4px}}
+.pp-receipt.ink .pp-l{clip-path:inset(0 0 100% 0)}
+#gui.shown .pp-receipt.ink .pp-l{animation-name:pp-print}
+@keyframes pp-print{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0 0 0 0)}}
+/* 傳單：亮黃紙、四周 10 px 紅白斜紋邊、正中對摺痕（和 game.js 的 paperArt 同位置）；吊牌左右交錯歪一點；騎士史萊姆依紙的高度縮放（手機橫拿也放得下） */
+.pp-flyer{background:#fde68a;padding:10px}
+.pp-flyer::before{content:"";position:absolute;inset:0;border:10px solid #0000;border-image:repeating-linear-gradient(45deg,#dc2626 0 8px,#fff 8px 16px) 10;pointer-events:none}
+.pp-flyer::after{content:"";position:absolute;left:10px;right:10px;top:calc(50% - 1px);height:2px;background:#92400e1f;pointer-events:none}
+.pp-fl-in{position:relative;height:100%;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 16px 26px;text-align:center} /* 下面留給右下的按鍵提示 */
+.pp-fl-hd{font-size:38px;line-height:1.15;color:#b91c1c;letter-spacing:2px;text-shadow:0 2px 0 #fff8}
+.pp-fl-hd span{display:inline-block;margin:0 .3em} /* 窄的時候在「武器店」和「新開幕！」之間換行，不從字中間斷 */
+.rx-clipview .pp-fl-hd{font-size:30px}
+.pp-fl-hero{flex:1 1 0;min-height:40px;width:100%;position:relative}
+.pp-knight{position:absolute;inset:0;margin:auto;width:100%;height:100%;max-height:190px} /* 依剩下的高度縮放（viewBox 保持比例） */
+.pp-fl-tag{display:flex;align-items:baseline;justify-content:center;flex-wrap:wrap;gap:2px 10px;padding:3px 16px;background:#fffaf0;border-radius:6px 20px 20px 6px;box-shadow:0 2px 0 #92400e33;transform:rotate(-1.5deg)}
+.pp-fl-tag+.pp-fl-tag{transform:rotate(1.2deg)}
+.pp-fl-tag b{color:#b91c1c;font-size:22px;font-weight:700}
+.pp-fl-tag span{font-size:18px;color:var(--pp-ink2)}
+.pp-fl-ft{font-size:18px;line-height:1.4}
+.pp-fl-ft i{font-style:normal;color:var(--pp-pen)}
+@media (max-height:520px){.pp-fl-ft{font-size:17px}.pp-fl-hd{font-size:28px}.pp-fl-in{gap:4px;padding:10px 12px 22px}.pp-fl-tag b{font-size:19px}.pp-fl-tag span{font-size:16px}}
+
+/* 手作台：第一個捏捏做好時，奶奶的便條從凝膠罐那排底下滑出來，貼著紙膠帶 */
+.rx-gift{position:relative;width:min(360px,100%);margin:6px auto 12px;transform-origin:20% 0;animation:rx-gift-in .52s cubic-bezier(.2,.9,.3,1.1) both}
+/* 便條在捏製區右邊（寬的手作台）：捏製按鈕留在原地；窄的時候疊在捏製區上面 */
+.rx-bench-row.has-gift{display:grid;grid-template-columns:minmax(0,1fr) min(340px,44%);gap:18px;align-items:start;margin-top:14px}
+.rx-bench-row.has-gift .rx-craft{margin-top:0}
+.rx-bench-row.has-gift .rx-gift{width:auto;margin:0 0 8px}
+@media (max-width:640px){.rx-bench-row.has-gift{grid-template-columns:minmax(0,1fr);gap:8px}.rx-bench-row.has-gift .rx-gift{order:-1;width:min(360px,100%);margin:6px auto 4px}}
+.rx-gift .pp{font-size:18px;box-shadow:0 14px 24px -14px #0009}
+.rx-gift .pp-note{height:auto;padding:40px 24px 72px 28px} /* 高度跟著字；下面留給小切片機的塗鴉 */
+@keyframes rx-gift-in{from{transform:translateY(48px) rotate(-7deg);opacity:0}to{transform:translateY(0) rotate(-2deg);opacity:1}}
+
+/* 手機：結束直播時收據從直播畫面上緣印出來（steps 22 下），點一下撕下收進手帳 */
+.lv-rcpt-mount{position:absolute;left:50%;top:0;width:min(220px,74%);transform:translateX(-50%);z-index:6;clip-path:inset(0 -300px -600px -300px);pointer-events:none}
+.lv-rcpt-mount:empty{display:none}
+.lv-rcpt{display:block;width:100%;padding:0;border:0;background:none;cursor:pointer;pointer-events:auto;text-align:left;animation:lv-print 1.1s steps(22) both}
+.lv-rcpt .pp{height:auto;font-size:12px;line-height:19px;box-shadow:0 10px 18px -8px #0009}
+.lv-rcpt .pp-receipt{padding:10px 14px 16px}
+.lv-rcpt .pp-rc-hd b{font-size:13px}
+.lv-rcpt .pp-rc-hd small{font-size:10px}
+.lv-rcpt .pp-rc-sum{font-size:13px;line-height:24px}.lv-rcpt .pp-rc-sum b{font-size:15px}
+.lv-rcpt .pp-rc-thx{font-size:14px;line-height:22px}
+.lv-rcpt .pp-rc-bar{height:20px;margin-top:4px}
+.lv-rcpt .pp-rc-cut{margin:3px 0}
+.lv-rcpt-tip{display:block;margin-top:6px;text-align:center;font:600 11px/1.3 Inter,system-ui,sans-serif;color:#e2e8f0;text-shadow:0 1px 3px #000}
+.lv-rcpt.torn{animation:lv-tear .32s ease-in forwards}
+@keyframes lv-print{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+@keyframes lv-tear{from{transform:none}to{transform:translate(70px,120px) rotate(-10deg);opacity:0}}
+#liveWrap:has(.lv-rcpt) :is(#danmaku,#reqBox){visibility:hidden}
+
+/* 手帳：收到的信與明信片（剪貼區）。縮圖是迷你的紙，交錯旋轉、貼一條紙膠帶，新的貼紅色「新」；點一下在手帳中央抽出來重讀 */
+.rx-clips{grid-column:1/-1;padding:12px 14px 16px;border-radius:10px;background:color-mix(in srgb,#fef3c7 16%,var(--card));border:1.5px dashed color-mix(in srgb,#b45309 35%,var(--line))}
+.rx-clips-hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:13px}
+.rx-clips-hd span{color:var(--sub)}
+.rx-clip-row{display:flex;flex-wrap:wrap;gap:16px 14px;margin-top:12px}
+.rx-clip{position:relative;width:92px;padding:0;border:0;background:none;color:inherit;cursor:pointer;transform:rotate(var(--r,0deg));transition:transform .15s}
+.rx-clip:hover,.rx-clip:focus-visible{transform:rotate(0deg) translateY(-2px)}
+.rx-clip-p{position:relative;display:block;height:64px;margin:0 auto;background:#fffaf0;box-shadow:0 3px 7px -2px #0006}
+.rx-clip-p::before{content:"";position:absolute;left:50%;top:-6px;z-index:1;width:36px;height:12px;margin-left:-18px;background:var(--pp-tape2);transform:rotate(-5deg)}
+.rx-clip-p img{display:block;width:100%;height:100%;object-fit:cover}
+.rx-clip small{display:block;margin-top:6px;font:400 12px/1.3 var(--pp-hand);text-align:center}
+.rx-clip em{position:absolute;right:-6px;top:-9px;z-index:2;width:24px;height:24px;border-radius:50%;background:#dc2626;color:#fff;font:700 12px/24px var(--pp-hand);font-style:normal;text-align:center;transform:rotate(12deg);box-shadow:0 1px 3px #0005}
+.rx-clip.v-letter .rx-clip-p i{position:absolute;inset:0;background:linear-gradient(to bottom right,#0000 calc(50% - 1px),#d6c7a6 0 calc(50% + 1px),#0000 0) left/50% 62% no-repeat,linear-gradient(to bottom left,#0000 calc(50% - 1px),#d6c7a6 0 calc(50% + 1px),#0000 0) right/50% 62% no-repeat}
+.rx-clip.v-letter .rx-clip-p i::after{content:"";position:absolute;left:50%;top:58%;width:14px;height:14px;margin:-7px;border-radius:50%;background:var(--pp-stamp)}
+.rx-clip.v-note .rx-clip-p{width:66px;background:var(--pp-paper2)}
+.rx-clip.v-note.gift .rx-clip-p{background:#fef9c3}
+.rx-clip.v-note.torn .rx-clip-p{-webkit-mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) 50%/8px 100%;mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) 50%/8px 100%}
+.rx-clip.v-note.torn .rx-clip-p::before{display:none}
+.rx-clip.v-note .rx-clip-p i{position:absolute;inset:16px 10px 10px;background:repeating-linear-gradient(#0000 0 7px,#3b2f2a33 7px 8px)}
+.rx-clip.v-receipt .rx-clip-p{width:40px;background:#fbfaf7;-webkit-mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/8px 100%;mask:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg) 50%/8px 100%}
+.rx-clip.v-receipt .rx-clip-p i{position:absolute;inset:8px 6px 10px;background:repeating-linear-gradient(#0000 0 5px,#3b2f2a40 5px 6px)}
+.rx-clip.v-flyer .rx-clip-p{width:56px;background:#fde68a;outline:3px dashed #dc2626;outline-offset:-3px}
+.rx-clip.v-flyer .rx-clip-p i{position:absolute;left:10px;right:10px;top:12px;height:8px;background:#b91c1c;border-radius:2px;box-shadow:0 14px 0 -1px #fffaf0,0 24px 0 -1px #fffaf0}
+.rx-clipview{position:absolute;inset:0;z-index:30;display:grid;place-items:center;padding:20px;background:#f5ead0c4;cursor:pointer;animation:rx-clip-in .3s cubic-bezier(.2,.8,.2,1) both}
+.rx-clipview-in{position:relative;width:min(400px,92%);height:min(300px,80%)}
+.rx-clipview[data-v="letter"] .rx-clipview-in{width:min(420px,92%);height:min(520px,88%)}
+.rx-clipview[data-v="postcard"] .rx-clipview-in{width:min(480px,92%);height:auto;aspect-ratio:3/2}
+.rx-clipview[data-v="receipt"] .rx-clipview-in{width:min(280px,82%);height:min(370px,88%)}
+.rx-clipview[data-v="flyer"] .rx-clipview-in{width:min(340px,82%);height:min(440px,88%)}
+.rx-clipview .pp{font-size:18px}
+.rx-clipview[data-v="note"] .rx-clipview-in{height:auto;max-height:80%}
+.rx-clipview .pp-note{height:auto;min-height:170px;max-height:100%}.rx-clipview .pp-note.pp-gift{padding-bottom:72px} /* 便條、紙條高度跟著字（便條下面留給小切片機的塗鴉） */
+.rx-clipview .pp-flipbtn{bottom:-52px}
+.rx-clipview-tip{position:absolute;left:0;right:0;bottom:8px;text-align:center;font:400 13px/1.3 var(--pp-hand);color:var(--pp-ink2)}
+@media (max-aspect-ratio:3/4){.rx-clipview[data-v="postcard"] .rx-clipview-in{width:min(320px,86%);aspect-ratio:2/3}}
+@media (max-height:500px){.rx-clipview[data-v="receipt"]{padding:10px 20px 26px}.rx-clipview[data-v="receipt"] .rx-clipview-in{height:100%}} /* 手機橫拿：收據用滿手帳的高度，條碼不會被裁掉 */
+@keyframes rx-clip-in{from{opacity:0;transform:scale(.7)}}
+@media (prefers-reduced-motion:reduce){.pp .pp-l,.lv-rcpt,.rx-gift,.rx-clipview,.pp-card{animation:none!important;clip-path:none!important;transition:none!important}}
