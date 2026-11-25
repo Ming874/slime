@@ -572,7 +572,7 @@ body.touch.riding #rideFF { display: grid; }
 @media (prefers-reduced-motion: reduce) { #rideHint.on { animation: none; } }
 
 /* ===== 在店裡買東西（game.js 的 WARE）：拿著商品時目標面板讓開、互動鍵換圖示、付錢時錢包閃一下、東西收進背包時按鈕彈一下 ===== */
-body.ware #objective { display: none; }
+body.ware #objective, body.ware #wp, body.ware #coach { display: none; } /* 目標的星星與距離、教學小卡也是畫在最上層的 DOM：拿著卡片時一起收起來，不壓在卡片的字上，也把位置讓給店員的泡泡 */
 #btnAct .i-pay, #btnAct .i-back { display: none; }
 #btnAct[data-mode="pay"] .i-hand, #btnAct[data-mode="back"] .i-hand { display: none; }
 #btnAct[data-mode="pay"] .i-pay, #btnAct[data-mode="back"] .i-back { display: block; }

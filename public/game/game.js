@@ -631,8 +631,9 @@ function textSprite(txt, color = '#e6edf5', sub = '') {
   const c = document.createElement('canvas'); c.width = 512; c.height = 160; const g = c.getContext('2d');
   g.fillStyle = 'rgba(10,14,20,.78)'; const r = 30; g.beginPath(); g.roundRect ? g.roundRect(8, 8, 496, 144, r) : g.rect(8, 8, 496, 144); g.fill();
   g.strokeStyle = color; g.lineWidth = 4; g.stroke();
-  g.fillStyle = color; g.font = 'bold 60px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 256, sub ? 64 : 80);
-  if (sub) { g.fillStyle = '#8b9bb0'; g.font = '34px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.fillText(sub, 256, 118); }
+  const fit = (t, px, wt) => { const f = n => (wt ? 'bold ' : '') + n + 'px "Noto Sans TC","Microsoft JhengHei",sans-serif'; g.font = f(px); const w = g.measureText(t).width; if (w > 452) g.font = f(Math.floor(px * 452 / w)); }; // 太長（「直播台（機器還沒送來）」）就把字縮小到放得下：牌子上的字不裁切、不擠扁
+  g.fillStyle = color; fit(txt, 60, 1); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, 256, sub ? 64 : 80);
+  if (sub) { g.fillStyle = '#8b9bb0'; fit(sub, 34); g.fillText(sub, 256, 118); }
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter;
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, fog: false, transparent: true })); s.scale.set(2.4, .75, 1); s.userData.ownTex = true; W.labels.push(s); return s;
@@ -2946,7 +2947,7 @@ function drawPhotos() {
 // 里程碑：自動拍照貼上照片牆，前 6 個里程碑順便把小屋修好一處
 const PHOTO_EVT = [
   ['first', '第一個捏捏', () => Object.keys(S.codex).find(k => S.codex[k] && S.codex[k].made > 0)],
-  ['machine', '第一台機器', () => ownAny() && 'grass'],
+  ['machine', '第一台機器', () => MKEY.some(k => S.own[k] && !S.ship.some(e => e.k === k)) && 'grass'], // 機器真的到了工坊（木箱開箱）才拍：在城市結帳時不跳 toast
   ['sale', '第一筆訂單', () => S.sales > 0 && 'honey'],
   ['firstlive', '第一次直播', () => L.on && 'coral'],
   ['best90', '第一個極品捏捏', () => { const p = [...S.stock, ...S.web, ...S.show].find(p => p.crisp >= .9); return p && p.sp; }],
@@ -3249,14 +3250,14 @@ function openGate(k) {
   W.inter = W.inter.filter(it => it !== gt.it);
 }
 function discoverZone(k, o = {}) { // o.quiet：自己買保暖衣觸發的解鎖（人在大城市，看不到世界的回應）只留一行字
-  if (S.zones.includes(k)) return; S.zones.push(k); gainXP(50, '發現新區域'); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
+  if (S.zones.includes(k)) return; S.zones.push(k); const up = gainXP(50, '發現新區域', { quiet: o.quiet }); save(); sfx.pop(); setTimeout(() => sfx.pop(), 250); openGate(k); if (!W.mirror) spawnZone(k);
   // 不跳彈窗：奶奶的明信片從解開謎題的地方浮起來、飄到手上；買保暖衣解開的雪原那張插在冰洞口外的雪堆上；山洞口立一道該區顏色的光柱
   if (k === 'coast') postcardRise('coast', new THREE.Vector3(ALTAR[0], H(...ALTAR) + 1.1, ALTAR[1]));
   else if (k === 'volcano') postcardRise('volcano', W.lastTide && W.lastTide.userData.gem ? W.lastTide.userData.gem.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, .25, 0)) : new THREE.Vector3(P.x, P.y + 1.4, P.z));
   else if (k === 'snow') {
     // 熔岩柱謎題解開（人就站在柱子旁）：明信片從四根柱子中間浮起來，上面寫著要穿保暖衣、雪原大約十分鐘就會冷透（還沒買保暖衣也馬上知道下一步）
     if (!o.quiet && !inCity()) postcardRise('snow', pillarMid());
-    refreshCold(); if (o.quiet || inCity()) toast('發現新區域：雪原');
+    refreshCold(); if (o.quiet || inCity()) toast('發現新區域：雪原' + (o.quiet && up ? `　升級！達到 Lv ${up}` : '')); // 買保暖衣：升級併進同一則
   }
   buildRoads(); renderQuest();
 }
@@ -4513,13 +4514,13 @@ function renderCompass() {
 const XP_LV = [0, 20, 50, 100, 180, 300, 480, 720, 1050, 1500, 2100];   // 到達各等級所需的累計經驗，最高 10 級
 const XP_HARV = [0, 2, 4, 8, 20];                                         // 採集一次：依史萊姆稀有度
 const xpLevel = xp => { let lv = 0; while (lv < XP_LV.length - 1 && xp >= XP_LV[lv + 1]) lv++; return lv; };
-function gainXP(n, why) {
-  n = Math.round(n); if (!(n > 0) || !S) return;
+function gainXP(n, why, o = {}) { // o.quiet：升級不另外跳 toast，回傳新等級讓呼叫的人併進自己那一則
+  n = Math.round(n); if (!(n > 0) || !S) return 0;
   const before = xpLevel(S.xp); S.xp += n; const after = xpLevel(S.xp);
   const bar = $('#xpbar'); if (bar) { let em = $('#xpgain'); if (!em) { em = document.createElement('em'); em.id = 'xpgain'; bar.appendChild(em); } em.textContent = '+' + n + ' XP'; em.style.animation = 'none'; void em.offsetWidth; em.style.animation = ''; }
   if (before < ARMS_LV && after >= ARMS_LV) setTimeout(unlockArms, 900);
-  if (after > before) { sfx.level && sfx.level(); toast('升級！達到 Lv ' + after + (after >= XP_LV.length - 1 ? '（滿級）' : '')); const sp = bar && bar.querySelector('span'); if (sp) { sp.classList.remove('up'); void sp.offsetWidth; sp.classList.add('up'); } }
-  renderXP();
+  if (after > before) { sfx.level && sfx.level(); if (!o.quiet) toast('升級！達到 Lv ' + after + (after >= XP_LV.length - 1 ? '（滿級）' : '')); const sp = bar && bar.querySelector('span'); if (sp) { sp.classList.remove('up'); void sp.offsetWidth; sp.classList.add('up'); } }
+  renderXP(); return after > before ? after : 0;
 }
 function renderXP() {
   const x = S.xp, lv = xpLevel(x), max = lv >= XP_LV.length - 1, a = XP_LV[lv], b = XP_LV[Math.min(lv + 1, XP_LV.length - 1)], pct = max ? 100 : (x - a) / (b - a) * 100;
@@ -6078,27 +6079,35 @@ function slotMark(parent, [x, z], t, sub, r) {
 }
 const DELIV = [];
 /* 到貨的木箱：從空中落下、四面倒下、東西升起。o.h＝落下高度（預設 7）、o.fall＝落下秒數（預設 .55）、o.bal＝綁著氣球（宅配，搖搖晃晃降落）、
-   o.done＝東西升起那一刻呼叫一次。落地之後的時間軸跟原本一樣，只是整段往後平移 fall − .55 */
+   o.done＝東西升起那一刻呼叫一次。落地之後的時間軸跟原本一樣，只是整段往後平移 fall − .55。
+   o.from＝[x, z, 朝向]：定位上方有屋頂（工棚、花棚）時先降落在屋簷外的這一點，氣球鬆開往上飄走，再跳兩下進到定位——
+   兩下跳躍放在原本「落地 → 四面倒下」中間那 .75 秒的空檔裡，開箱的時間點不變 */
 function deliverFx(group, wx, wz, name, o = {}) {
-  const y = G(wx, wz), baseY = group.position.y;
+  const y = G(wx, wz), baseY = group.position.y, [ax, az, ry] = o.from || [wx, wz, 0], ay = G(ax, az), hop = Math.hypot(ax - wx, az - wz) > .3;
   if (RM()) { group.visible = true; fx3(new THREE.Vector3(wx, y + 3.2, wz), name + ' 到貨！', '#34d399', 'big'); if (o.done) o.done(); return; } // 減少動態：不落下，東西直接在定位出現
-  const crate = new THREE.Group(); crate.position.set(wx, y, wz); W.scene.add(crate);
+  const crate = new THREE.Group(); crate.position.set(ax, ay + (o.h || 7), az); crate.rotation.y = ry; W.scene.add(crate); // 一開始就在空中（shipStep 在 deliverStep 之後才放箱子，原本第一格會在地上閃一下）
   const cw = woodMat('#b08a5e'), parts = [[0, .9, -.9, 0], [0, .9, .9, 0], [-.9, .9, 0, 1], [.9, .9, 0, 1]].map(([x, yy, z, rot]) => box(rot ? .08 : 1.9, 1.8, rot ? 1.9 : .08, cw, x, yy, z, crate));
   const lid = box(1.9, .08, 1.9, cw, 0, 1.84, 0, crate); group.visible = false;
   const bal = o.bal ? balloons(LOW ? 2 : 3, .9) : null; if (bal) { bal.position.set(0, 1.88, 0); crate.add(bal); }
-  DELIV.push({ t: 0, crate, parts, lid, group, baseY, name, wx, wz, y, h: o.h || 7, fall: o.fall || .55, bal, done: o.done });
+  DELIV.push({ t: 0, crate, parts, lid, group, baseY, name, wx, wz, y, ax, az, ay, hop, h: o.h || 7, fall: o.fall || .55, bal, done: o.done });
 }
 function deliverStep(dt) {
   for (let i = DELIV.length - 1; i >= 0; i--) {
     const d = DELIV[i]; d.t += dt; const F = d.fall, t = d.t - (F - .55); // t：跟原本一樣的時間軸（.55 落地）
-    if (d.bal) { const u = clamp(d.t / F, 0, 1); d.crate.position.y = d.y + d.h * (1 - out3(u)); d.crate.position.x = d.wx + .25 * Math.sin(3 * Math.PI * u) * (1 - u); d.crate.rotation.z = .06 * Math.sin(3 * Math.PI * u + .6) * (1 - u); balloonStep(d.bal, d.t, d.landed ? d.t - F : -1); } // 綁著氣球：搖搖晃晃慢慢降落
-    else d.crate.position.y = d.y + Math.max(0, d.h * (1 - t / .55)) ** 1.6 * (t < .55 ? 1 : 0); // 從空中落下
-    if (t > .55 && !d.landed) { d.landed = true; d.crate.position.x = d.wx; d.crate.rotation.z = 0; sfx.land && sfx.land(.9, 'dirt'); if (W.goo) W.goo.emit(new THREE.Vector3(d.wx, d.y + .2, d.wz), 10, '#c9b48a', { gy: d.y + .02, up: 1.6, speed: 1.6, size: .06 }); if (d.bal) shopSnd.flyAway(); }
+    if (d.bal) { const u = clamp(d.t / F, 0, 1); if (!d.landed) { d.crate.position.y = d.ay + d.h * (1 - out3(u)); d.crate.position.x = d.ax + .25 * Math.sin(3 * Math.PI * u) * (1 - u); d.crate.rotation.z = .06 * Math.sin(3 * Math.PI * u + .6) * (1 - u); } balloonStep(d.bal, d.t, d.landed ? d.t - F : -1); } // 綁著氣球：搖搖晃晃慢慢降落
+    else if (!d.landed) d.crate.position.y = d.ay + Math.max(0, d.h * (1 - t / .55)) ** 1.6 * (t < .55 ? 1 : 0); // 從空中落下
+    if (t > .55 && !d.landed) { d.landed = true; d.crate.position.set(d.ax, d.ay, d.az); d.crate.rotation.z = 0; sfx.land && sfx.land(.9, 'dirt'); if (W.goo) W.goo.emit(new THREE.Vector3(d.ax, d.ay + .2, d.az), 10, '#c9b48a', { gy: d.ay + .02, up: 1.6, speed: 1.6, size: .06 }); if (d.bal) { shopSnd.flyAway(); W.scene.attach(d.bal); } } // 鬆開的氣球留在原地往上飄（不跟著木箱跳進屋頂下面）
+    if (d.hop && t > .55 && !d.in) { // 跳兩下進到定位：每下 .3 秒、高 .45 m（花棚的橫木在 2.95 m，木箱 1.88 m 高），落地時壓扁一點
+      const v = clamp((t - .55) / .6, 0, 1), k = Math.min(1.999, v * 2), f = k - Math.floor(k), pr = v, q = Math.max(0, 1 - Math.min(f, 1 - f) / .2) * (v < 1 ? 1 : 0), c = d.crate;
+      c.position.set(d.ax + (d.wx - d.ax) * pr, d.ay + (d.y - d.ay) * pr + 4 * .45 * f * (1 - f), d.az + (d.wz - d.az) * pr); c.scale.set(1 + .07 * q, 1 - .1 * q, 1 + .07 * q);
+      if (k >= 1 && !d.hop1) { d.hop1 = true; sfx.land && sfx.land(.3, 'dirt'); }
+      if (v >= 1) { d.in = true; c.position.set(d.wx, d.y, d.wz); c.scale.setScalar(1); sfx.land && sfx.land(.45, 'dirt'); if (W.goo) W.goo.emit(new THREE.Vector3(d.wx, d.y + .2, d.wz), 6, '#c9b48a', { gy: d.y + .02, up: 1, speed: 1, size: .05 }); }
+    }
     if (t > 1.3) { const k = Math.min(1, (t - 1.3) / .5); d.parts.forEach((p, j) => { const out = [[0, 0, -1], [0, 0, 1], [-1, 0, 0], [1, 0, 0]][j]; p.rotation.set(out[2] * k * 1.5, 0, -out[0] * k * 1.5); p.position.y = .9 - k * .8; }); d.lid.position.y = 1.84 + k * 2; d.lid.rotation.z = k * 1.2; }
     if (t > 1.8) { d.group.visible = true; const k = Math.min(1, (t - 1.8) / .7), e = 1 - (1 - k) ** 3; d.group.position.y = d.baseY + (1 - e) * 1.6 + Math.sin(k * Math.PI) * .15; }
     if (t > 1.8 && !d.lit) { d.lit = true; sfx.pop && sfx.pop(); fx3(new THREE.Vector3(d.wx, d.y + 3.2, d.wz), d.name + ' 到貨！', '#34d399', 'big'); if (d.done) d.done(); }
     if (t > 2.4) d.crate.scale.setScalar(Math.max(.001, 1 - (t - 2.4) / .5));
-    if (t > 3) { d.group.position.y = d.baseY; dropObj(d.crate); DELIV.splice(i, 1); }
+    if (t > 3) { d.group.position.y = d.baseY; dropObj(d.crate); if (d.bal) dropObj(d.bal); DELIV.splice(i, 1); }
   }
 }
 /* 氣球：薄荷、蜜桃、檸檬三色的小史萊姆（壓扁的球＋兩點眼睛＋細繩），一個 InstancedMesh（一次繪製）；原點＝繩子綁住的地方。
@@ -6128,6 +6137,12 @@ function shipSpot(k) {
   const i = MKEY.indexOf(k); if (i >= 0) { const p = W.lineG.localToWorld(new THREE.Vector3(MX[i], 0, 0)); return [p.x, p.z, W.lineParts.m[i]]; }
   return k === 'decor' ? [BASE.decor[0], BASE.decor[1], W.decorG] : [BASE.live[0], BASE.live[1], W.liveG];
 }
+// 有屋頂的定位先降落在屋簷外（deliverFx 的 o.from）：產線在工棚南側屋簷外（中間那台斜著跳進來，避開 x＝.75 的柱子）、裝飾桌在花棚正面（從兩根柱子中間進去）；直播台上方是開放的天空，照原本直直降落
+function shipFrom(k) {
+  const i = MKEY.indexOf(k); if (i >= 0) { const p = W.lineG.localToWorld(new THREE.Vector3(MX[i] + (i === 1 ? -2.2 : 0), 0, 3.9)); return [p.x, p.z, 0]; }
+  if (k === 'decor') { const a = W.decorG.rotation.y; return [BASE.decor[0] + Math.sin(a) * 3.6, BASE.decor[1] + Math.cos(a) * 3.6, a]; }
+  return null;
+}
 const SHIPV = { delay: 1.2, gap: .9, fall: 2.4, h: 16 };
 const SHIPS = { t: 0, go: new Set() }; // go：這次遊玩已經在演的到貨（記憶體旗標，不會重放）
 /* 月光谷這一半：回到中央平地附近、沒開介面（產線例外，看得到）時，1.2 秒後木箱綁著氣球從落點正上方 16 m 搖搖晃晃降落，之後每箱隔 .9 秒。
@@ -6139,7 +6154,7 @@ function shipStep(dt) {
   const e = S.ship.find(x => !SHIPS.go.has(x.k)); if (!e) return;
   SHIPS.t += dt; if (SHIPS.t < (SHIPS.n ? SHIPV.gap : SHIPV.delay)) return; SHIPS.t = 0; SHIPS.n = 1; // 第一箱等 1.2 秒，之後每箱隔 .9 秒
   SHIPS.go.add(e.k); const [x, z, g] = shipSpot(e.k); if (W.slotInter.line && MKEY.includes(e.k)) W.slotInter.line.off = true; // 箱子降落到開箱這段時間產線先不能點（打開時才不會少一台機器）
-  deliverFx(g, x, z, OWN[e.k].name, { h: SHIPV.h, fall: SHIPV.fall, bal: true, done: () => { S.ship = S.ship.filter(q => q.k !== e.k); SHIPS.go.delete(e.k); refreshBase(); shipPush(); save(); } });
+  deliverFx(g, x, z, OWN[e.k].name, { h: SHIPV.h, fall: SHIPV.fall, bal: true, from: shipFrom(e.k), done: () => { S.ship = S.ship.filter(q => q.k !== e.k); SHIPS.go.delete(e.k); refreshBase(); shipPush(); save(); } });
 }
 // 開箱那一刻玩家站在新的碰撞範圍裡：往最近的邊推出去
 function shipPush() {
@@ -6160,8 +6175,8 @@ function refreshBase() {
   if (GIFT.on) giftHold(); // 奶奶的切片機還蓋著帆布
   if (prev && W.ready) {
     const nw = k => o[k] && !prev[k] && !S.ship.some(e => e.k === k);
-    MKEY.forEach((k, i) => { if (nw(k)) { const p = W.lineG.localToWorld(new THREE.Vector3(MX[i], 0, 0)); deliverFx(W.lineParts.m[i], p.x, p.z, OWN[k].name); } });
-    if (nw('decor')) deliverFx(W.decorG, BASE.decor[0], BASE.decor[1], OWN.decor.name);
+    MKEY.forEach((k, i) => { if (nw(k)) { const p = W.lineG.localToWorld(new THREE.Vector3(MX[i], 0, 0)); deliverFx(W.lineParts.m[i], p.x, p.z, OWN[k].name, { from: shipFrom(k) }); } }); // 不走宅配的（新手送的切片機）：一樣先落在屋簷外再跳進去
+    if (nw('decor')) deliverFx(W.decorG, BASE.decor[0], BASE.decor[1], OWN.decor.name, { from: shipFrom('decor') });
     if (nw('live')) deliverFx(W.liveG, BASE.live[0], BASE.live[1], OWN.live.name);
   }
 }
@@ -8816,8 +8831,9 @@ function wWorld(p, q, sw, R, out) { out.p.copy(p); W.cam.worldToLocal(out.p); ou
 function wLerp(a, b, up, uq, us, out) { out.p.lerpVectors(a.p, b.p, up); out.q.slerpQuaternions(a.q, b.q, uq); out.s = a.s + (b.s - a.s) * us; return out; }
 function wCopy(a, out) { out.p.copy(a.p); out.q.copy(a.q); out.s = a.s; return out; }
 // 縮小模型在卡片上的位置：左 36% 那一格（卡片的像素座標），慢慢轉
-function wMiniOn(c, R, spin, out) { out.p.set(-R.w / 2 + R.w * .18, -R.h * .04, 0).multiplyScalar(c.s).applyQuaternion(c.q).add(c.p); const f = Math.max(.5, 1 - 40 * c.s / Math.max(.05, -out.p.z)); out.p.multiplyScalar(f); out.q.copy(c.q).multiply(wq1.setFromEuler(wE.set(.32, spin, 0))); out.s = R.h * .52 * c.s * f; return out; } // 往鏡頭拉近一點（沿著視線，畫面上的位置不變）
-const WP = { a: wPose(), b: wPose(), c: wPose(), m: wPose(), n: wPose(), t: wPose() };
+function wMiniOn(c, R, spin, out) { out.p.set(-R.w / 2 + R.w * .18, -R.h * .04, 0).multiplyScalar(c.s).applyQuaternion(c.q).add(c.p); const f = Math.max(.5, 1 - 40 * c.s / Math.max(.05, -out.p.z)); out.p.multiplyScalar(f); out.q.copy(c.q).multiply(wq1.setFromEuler(wE.set(.32, spin, 0))); out.s = R.h * .52 * c.s * f * (WARE.mk || 1); return out; } // 往鏡頭拉近一點（沿著視線，畫面上的位置不變）
+const WP = { a: wPose(), b: wPose(), c: wPose(), m: wPose(), n: wPose(), t: wPose(), u: wPose(), v: wPose() };
+const WG = { position: new THREE.Vector3(), quaternion: new THREE.Quaternion() }; // WARE.gk：手握的位置跟卡片分開時（送貨單飛走，手留在原地放下）
 /* ---------- 吊牌卡的畫布：名稱、價格、等級、兩行短說明、去向；結帳後重畫成送貨單 ---------- */
 function wareCard(h, mode) {
   const R = WARE.R, f = Math.min(LOW ? 1.5 : 2, devicePixelRatio || 1), cw = Math.round(R.w * f), ch = Math.round(R.h * f);
@@ -8837,16 +8853,19 @@ function wareCard(h, mode) {
   const sg = g.createRadialGradient(w * .18, H * .8, 2, w * .18, H * .8, w * .15); sg.addColorStop(0, 'rgba(90,60,30,.32)'); sg.addColorStop(1, 'rgba(90,60,30,0)'); g.fillStyle = sg; g.beginPath(); g.ellipse(w * .18, H * .8, w * .15, H * .07, 0, 0, PI2); g.fill(); // 縮小模型的影子
   const done = st.why === 'has' || st.why === 'max', fN = Math.max(22, H * .13), fP = Math.max(26, H * .17), fD = Math.max(15, H * .075), fG = Math.max(15, H * .065);
   g.fillStyle = '#2b1b0e'; g.font = F('700', fN); g.fillText(st.name, x0, H * .22, mw);
-  let y = H * .22 + fP * 1.05;
+  // 已購買／滿級：價格那一格換成紅色圓章（章的上緣在名稱下面），說明往下讓出章的高度——章不蓋到任何字
+  let y = H * .22 + fP * 1.05; const sr = done ? clamp(H * .17, 30, 40) : 0, sy = H * .22 + fN * .22 + sr + 4; if (done) y = sy + fP * .21;
   if (!done) { g.fillStyle = '#8a2a12'; g.font = F('700', fP); g.fillText(fmt(st.cost), x0, y, mw * .55); }
-  if (st.t === 'up') { const lx = x0 + mw * .58, dr = Math.max(3.5, H * .016); g.fillStyle = '#7c5a2a'; g.font = F('400', fD, hand); g.fillText(done ? 'Lv ' + st.lv : 'Lv ' + st.lv + ' → ' + (st.lv + 1), lx, y - fP * .42, mw * .42); for (let i = 0; i < st.max; i++) { g.fillStyle = i < st.lv ? '#b45309' : 'rgba(120,90,50,.3)'; g.beginPath(); g.arc(lx + dr + i * dr * 3, y - fP * .02, dr, 0, PI2); g.fill(); } }
-  y += fD * 1.5; const note = st.why === 'poor' ? '還差 ' + fmt(st.d) : st.why === 'need' ? '要先有' + st.need : '';
+  if (st.t === 'up') { const lx = done ? x0 + sr * 2 + 26 : x0 + mw * .58, dr = Math.max(3.5, H * .016); g.fillStyle = '#7c5a2a'; g.font = F('400', fD, hand); g.fillText(done ? 'Lv ' + st.lv : 'Lv ' + st.lv + ' → ' + (st.lv + 1), lx, y - fP * .42, mw * .42); for (let i = 0; i < st.max; i++) { g.fillStyle = i < st.lv ? '#b45309' : 'rgba(120,90,50,.3)'; g.beginPath(); g.arc(lx + dr + i * dr * 3, y - fP * .02, dr, 0, PI2); g.fill(); } }
+  y = done ? sy + sr + 5 + fD * .9 : y + fD * 1.5; const note = st.why === 'poor' ? '還差 ' + fmt(st.d) : st.why === 'need' ? '要先有' + st.need : '';
   if (note) { g.fillStyle = '#9a3412'; g.font = F('400', fD * 1.1, hand); g.fillText(note, x0, y, mw); y += fD * 1.45; }
   g.fillStyle = '#2b1b0e'; g.font = F('400', fD, hand); const desc = wareDesc(st.id), lines = []; let cur = '';
   for (const c of [...desc]) { if (g.measureText(cur + c).width > mw && cur) { lines.push(cur); cur = c; } else cur += c; } if (cur) lines.push(cur);
   lines.slice(0, 2).forEach((l, i) => g.fillText(l, x0, y + i * fD * 1.3, mw)); y += Math.min(2, lines.length) * fD * 1.3;
-  g.fillStyle = '#6b4f2a'; g.font = F('400', fG, hand); g.fillText(done ? (st.why === 'max' ? '已經是最高級了' : '你已經有了') : { ship: '氣球宅配到工坊・回到中央平地就降落', bag: '包好帶走・馬上就有效', wear: '可以當場穿上' }[st.go], x0, Math.max(y + fG * .4, H - 16), mw);
-  if (done) inkStamp(g, x0 + mw * .62, H * .42, Math.min(H * .19, 44), st.why === 'max' ? '滿級' : '已購買');
+  // 去向（已購買／滿級不寫，章就說了）：一行放不下（橫向手機的小卡）就在「・」斷成兩行；兩行的高度也不夠，只留前半句——不硬擠扁
+  if (!done) { g.fillStyle = '#6b4f2a'; g.font = F('400', fG, hand); const gt = { ship: '氣球宅配到工坊・回到中央平地就降落', bag: '包好帶走・馬上就有效', wear: '可以當場穿上' }[st.go] || '', gy = Math.max(y + fG * .4, H - 16), [ga, gb] = gt.split('・');
+    if (g.measureText(gt).width <= mw || !gb) g.fillText(gt, x0, gy, mw); else if (H - 16 - fG * 1.25 >= y + fG * .2) { g.fillText(ga, x0, H - 16 - fG * 1.25, mw); g.fillText(gb, x0, H - 16, mw); } else g.fillText(ga, x0, gy, mw); }
+  if (done) inkStamp(g, x0 + sr + 14, sy, sr, st.why === 'max' ? '滿級' : '已購買'); // 往右留 12 px：轉到最寬的縮小模型（透視放大）也碰不到章
   if (S.wish[st.id]) heartMark(g, w - 26, 26, 12);
   WARE.tx.needsUpdate = true;
 }
@@ -8861,13 +8880,13 @@ function wareAct(t, tap) {
   const atC = !!t && ((t.type === 'counter' && t.it.shop === h.shop) || kp === h.shop), home = !!t && t.type === 'ware';
   if (tap && !atC && !home) return; // 觸控：只認點到的東西（點天空、地板、牆壁什麼都不做）
   const st = h.st = wareState(h.t, h.k); if (!st.can) return st.why === 'poor' ? warePoor(st) : wareRefuse(st); // 買不了：放回，原因由店員說（錢不夠先攤零錢）
-  if (home) return wareBack(); // 對準原位：放回
+  if (home && (tap || !wareDesk(h) || !nearCounter(h.shop))) return wareBack(); // 對準原位：放回（櫃台上的商品例外：拿起來時準心還在原位，人又在櫃台前，E／互動鍵＝結帳；點原位、Q 才是放回）
   if (atC || nearCounter(h.shop)) return warePay(st);
   kpSay(h.shop, 'far'); const n = kpNpc(h.shop); if (n) npcGest(n, 'wave'); // 離櫃台遠：店員招手，不結帳
 }
 function wareTake(it) {
-  if (WARE.h || GUI.kind || !inCity()) return; wareInit();
-  const st = wareState(it.t, it.k); if (!st) return; WARE.R = wareRect();
+  if (WARE.h || GUI.kind || !inCity()) return; wareInit(); WARE.bag.visible = false;
+  const st = wareState(it.t, it.k); if (!st) return; WARE.R = wareRect(); WARE.mk = clamp(1 - (WARE.R.h / innerHeight - .3) * 2.5, .7, 1); // 卡片佔畫面高度四成以上（橫向手機）：縮小模型相對變大、透視放大得多，轉到最寬時會伸進右邊的字，縮小一點（桌機、直向手機不變）
   WARE.h = { it, wid: it.wid, t: it.t, k: it.k, shop: it.shop, st, ph: 'take', t0: performance.now(), low: 0, mvT: 0, stT: 0, spin: 0, sig: '', sigT: 0, said: 0, from: wPose(), mf: wPose() };
   wareCard(WARE.h, 'card'); WARE.h.sig = wareSig(WARE.h); WARE.mini.geometry = wareMini(it.wid).geo; WARE.mode = '';
   tagDirty(it.wid); TAG.t = 1; shopSnd.take(); document.body.classList.add('ware');
@@ -8879,21 +8898,24 @@ function wareBack(now, say) {
   if (h.ph !== 'read' && h.ph !== 'take') return;
   wCopy(WP.c.s ? WP.c : wRead(WARE.R, WP.c), h.from); h.ph = 'back'; h.t0 = performance.now(); if (say) kpSay(h.shop, 'back');
 }
-function warePay(st) { const h = WARE.h; wCopy(WP.c, h.from); wCopy(WP.m, h.mf); h.ph = 'pay'; h.t0 = performance.now(); h.st = st; h.ev = {}; h.cost = st.cost; h.go = st.go; h.n = clamp(Math.round(st.cost / 150), 2, 5); h.lv0 = S.up.net; }
+function warePay(st) { const h = WARE.h; wCopy(WP.c, h.from); wCopy(WP.m, h.mf); h.ph = 'pay'; h.t0 = performance.now(); h.st = st; h.ev = {}; h.cost = st.cost; h.go = st.go; h.n = clamp(Math.round(st.cost / 150), 2, 5); h.lv0 = S.up.net; if (h.k === 'net' && h.t === 'up' && !RM()) WARE.gadN = h.lv0; } // 吸取器：付錢那一刻等級就加了，手腕的燈先停在舊等級，蓋章後才一顆顆亮（不會先亮、熄、再亮）
 function warePoor(st) { const h = WARE.h; h.ph = 'poor'; h.t0 = performance.now(); h.st = st; h.ev = {}; h.n = clamp(Math.round(S.money / st.cost * 5), 0, 3); }
 function wareRefuse(st) { const h = WARE.h; h.ph = 'refuse'; h.t0 = performance.now(); h.st = st; h.ev = {}; }
 function wareEnd() {
   const h = WARE.h; if (!h) return; WARE.h = null; WARE.pose = ''; WARE.gadN = null; if (WARE.g) WARE.g.visible = false; if (WARE.coins) WARE.coins.visible = false; if (VM.purse) VM.purse.scale.setScalar(.001);
+  if (WARE.bag) WARE.bag.visible = false; // 紙盒只在結帳演出裡出現：被打斷（Esc、背包、數字鍵、滾輪、離開城市）也要收掉，否則下一次拿起來會蓋在卡片前面
   WARE.cmat.opacity = 1; WARE.mmat.opacity = 1; tagDirty(h.wid); TAG.t = 1; VM.key = ''; document.body.classList.remove('ware'); setHTML($('#prompt'), '');
   if (h.fly && h.fly.t < 0) { h.fly.t = 0; h.fly.k = 1; } // 演出被打斷（開介面）：綁好氣球的紙盒照樣飛走
+  if (h.go !== 'wear' && h.ev && h.ev.charged && !h.ev.pk) wareGot(); // 送貨單／紙包還沒收進背包就被打斷：東西已經是你的了，背包按鈕照樣彈一下
   if (h.go === 'wear' && h.k === 'coat' && h.ev && h.ev.charged) W.pendT = performance.now();
   const b = $('#btnAct'); if (b && b.dataset.mode) b.dataset.mode = '';
 }
+const wareDesk = h => SHOPS[h.shop].desk.includes(h.wid); // 擺在櫃台上的商品（吸取器）
 // #prompt：拿著時一律寫出這一下會做什麼
 function wareLabel(t) {
   const h = WARE.h; if (!h || h.ph !== 'read') return ''; const E = TOUCH ? '' : '<kbd>E</kbd>', Q = TOUCH ? '' : '　<kbd>Q</kbd>放回', st = h.st;
   if (t && t.type === 'ware' && t.it !== h.it) return E + '換拿　' + esc(t.it.name);
-  if (t && t.type === 'ware') return E + '放回';
+  if (t && t.type === 'ware' && (!st.can || !wareDesk(h) || !nearCounter(h.shop))) return E + '放回';
   if (!st.can) return TOUCH ? '點原位放回' : E + '放回';
   const atC = !!t && ((t.type === 'counter' && t.it.shop === h.shop) || (t.type === 'npc' && t.n.d.shop === h.shop));
   if (atC || nearCounter(h.shop)) return TOUCH ? '點櫃台結帳・點原位放回' : E + '結帳 ' + fmt(st.cost) + Q;
@@ -8904,7 +8926,7 @@ const wMat = (id, v) => { const sh = SHOPS[id]; return v.set(CITY.x + sh.x + sh.
 const wTray = (id, v) => { const sh = SHOPS[id]; return v.set(CITY.x + sh.x + sh.w / 2 - .95, 1.04, CITY.z - 14 - 2.5); };
 /* ---------- 每一格（viewModelStep 開頭）：依時間軸推進。回傳 true＝手拿著卡片（手交給 propGrip），false＝手照平常的擺法（WARE.pose 指定手勢） ---------- */
 function wareStep(dt) {
-  const h = WARE.h; WARE.pose = '';
+  const h = WARE.h; WARE.pose = ''; WARE.gk = null;
   if (!h) { if (WARE.g && WARE.g.visible) WARE.g.visible = false; return false; }
   if (!inCity() || RIDE.on || TITLE.on || W.lost) { wareBack(true); return false; } // 離開城市（搭車、傳送）：立刻放回
   if (h.ph === 'read' && !inShop(h.shop, 1.6)) { wareBack(false, true); } // 拿著走出店頭：東西飛回原位，店員「先幫你放回去囉」
@@ -8944,7 +8966,8 @@ function wareStep(dt) {
   const b = $('#btnAct'), md = h.ph !== 'read' ? '' : !h.st.can ? 'back' : nearCounter(h.shop) || (TARGET && ((TARGET.type === 'counter' && TARGET.it.shop === h.shop) || (TARGET.type === 'npc' && TARGET.n.d.shop === h.shop))) ? 'pay' : ''; if (b && b.dataset.mode !== md) b.dataset.mode = md;
   if (!grip) return false;
   VM.g.visible = hk > .01 && !GUI.kind; if (!VM.g.visible) return true;
-  propGrip(r, [R.w * .32, -R.h / 2 - 6, 8], C.s, 1.5, R.h, hk, .42 * Math.tan(cam.fov * Math.PI / 360), dt);
+  const gk = WARE.gk; if (gk) { WG.position.copy(gk.p); WG.quaternion.copy(gk.q); } // 送貨單縮小飛走時：手留在原地慢慢放下，不跟著縮
+  propGrip(gk ? WG : r, [R.w * .32, -R.h / 2 - 6, 8], gk ? gk.s : C.s, 1.5, R.h, hk, .42 * Math.tan(cam.fov * Math.PI / 360), dt);
   return true;
 }
 // 結帳（1760 ms，第 3 節）：放上櫃台 → 零錢包 → 硬幣一枚枚跳進托盤（第一枚落下那一刻扣錢）→ 收銀機叮 → 蓋章、送貨單／紙包 → 交回手上 → 收進背包
@@ -8979,17 +9002,19 @@ function warePayStep(h, e, rm, R, B, C, Mn) {
     const mineBag = h.go === 'bag', u = clamp((e - WT.give) / (WT.pocket - WT.give), 0, 1), v = clamp((e - WT.pocket) / (WT.end - WT.pocket), 0, 1);
     if (!h.ev.g0) { h.ev.g0 = 1; wCopy(C.s ? C : B, h.from); wCopy(Mn, h.mf); }
     const hand = wRead({ x: R.x + R.w * .1, y: R.y + R.h * .2, w: R.w * .8, h: R.h * .8 }, WP.t), bag = $('#topbtns [data-act="inv"]'), br = bag ? bag.getBoundingClientRect() : { left: innerWidth - 60, top: 10, width: 40, height: 40 };
-    const tgt = wRead({ x: br.left + br.width / 2 - R.w * .06, y: br.top + br.height / 2 - R.h * .06, w: R.w * .12, h: R.h * .12 }, WP.n);
-    if (h.go === 'ship') { wLerp(h.from, hand, out3(u), ease3(u), ease3(u), C); if (v > 0) wLerp(hand, tgt, in3(v), ease3(v), ease3(v), C); WARE.cOp = 1 - smooth(.6, 1, v); WARE.miniOn = false; grip = v < .7; WARE.hk = v > 0 ? 1 - ease3(clamp((v - .15) / .5, 0, 1)) : ease3(u); } // 手托著送貨單，單子飛走時才放下
-    else if (mineBag) { wMiniOn(hand, R, h.spin, WP.c); wLerp(h.mf, WP.c, out3(u), ease3(u), ease3(u), Mn); if (v > 0) { wMiniOn(tgt, R, h.spin, WP.t); wLerp(Mn, WP.t, in3(v), 1, in3(v), Mn); } WARE.cOp = 0; WARE.mOp = 1 - smooth(.6, 1, v); WARE.bag.visible = true; WARE.bag.scale.setScalar(Math.max(1e-4, Mn.s * 1.15)); wCopy(hand, C); grip = v < .7; WARE.hk = v > 0 ? 1 - ease3(clamp((v - .15) / .5, 0, 1)) : ease3(u); }
+    const tgt = wRead({ x: br.left + br.width / 2 - R.w * .06, y: br.top + br.height / 2 - R.h * .06, w: R.w * .12, h: R.h * .12 }, WP.n); tgt.s *= .12; // wRead 的 s 是「每像素幾公尺」、跟矩形大小無關：乘上 12% 才會真的縮進按鈕
+    if (h.go === 'ship') { wLerp(h.from, hand, out3(u), ease3(u), ease3(u), C); if (v > 0) { wLerp(hand, tgt, in3(v), ease3(v), ease3(v), C); WARE.gk = hand; } WARE.cOp = 1 - smooth(.6, 1, v); WARE.miniOn = false; grip = v < .7; WARE.hk = v > 0 ? 1 - ease3(clamp((v - .15) / .5, 0, 1)) : ease3(u); } // 手托著送貨單，單子飛走時才放下
+    else if (mineBag) { wMiniOn(hand, R, h.spin, WP.u); wLerp(h.mf, WP.u, out3(u), ease3(u), ease3(u), Mn); if (v > 0) { wMiniOn(tgt, R, h.spin, WP.v); wLerp(Mn, WP.v, in3(v), 1, in3(v), Mn); } WARE.cOp = 0; WARE.mOp = 1 - smooth(.6, 1, v); WARE.bag.visible = true; WARE.bag.scale.setScalar(Math.max(1e-4, Mn.s * 1.15)); wCopy(hand, C); grip = v < .7; WARE.hk = v > 0 ? 1 - ease3(clamp((v - .15) / .5, 0, 1)) : ease3(u); } // 紙包的姿勢另外放（原本寫進 hand 那一格，手會跟著紙包縮小、飛到右上角）
     else { WARE.cOp = 0; WARE.miniOn = false; wCopy(hand, C); }
     if (h.go === 'wear' && h.k === 'net') WARE.pose = e < WT.end ? 'offer' : '';
-    if (at(WT.end - 60) && h.go !== 'wear') { shopSnd.pocket(); const b = $('#topbtns [data-act="inv"]'); if (b) { b.classList.remove('got'); void b.offsetWidth; b.classList.add('got'); setTimeout(() => b.classList.remove('got'), 600); } }
+    if (at(WT.end - 60) && h.go !== 'wear') { h.ev.pk = 1; wareGot(); }
   }
   if (h.go === 'wear' && h.k === 'net' && e >= WT.stamp && e < WT.end) { WARE.pose = 'offer'; const n = h.lv0 + Math.min(S.up.net - h.lv0, Math.floor((e - WT.stamp - 200) / 160) + 1); if (n !== WARE.gadN) { WARE.gadN = Math.max(h.lv0, n); if (n > h.lv0) sfx.tick && sfx.tick(); } } // 吸取器：手腕往前，燈一顆顆亮到新等級
   if (e >= WT.end) { WARE.bag.visible = false; wareEnd(); return false; }
   return grip;
 }
+// 收進背包：背包按鈕彈一下（.got）＋收納聲
+function wareGot() { shopSnd.pocket(); const b = $('#topbtns [data-act="inv"]'); if (b) { b.classList.remove('got'); void b.offsetWidth; b.classList.add('got'); setTimeout(() => b.classList.remove('got'), 600); } }
 // 螢幕報讀器：名稱、價格、說明（卡片是 3D 畫布，DOM 裡沒有字）
 function wareAria(st, paid) { const e = $('#says'); if (!e) return; e.textContent = paid ? '已付款 ' + fmt(st.cost) + '，' + st.name : st.name + '，' + (st.why === 'has' ? '已購買' : st.why === 'max' ? '滿級' : fmt(st.cost) + (st.why === 'poor' ? '，還差 ' + fmt(st.d) : st.why === 'need' ? '，要先有' + st.need : '')) + '，' + wareDesc(st.id); }
 // 扣錢（第一枚硬幣落進托盤那一刻）：之後不能取消，走開、關掉頁面也已經存檔
@@ -9002,7 +9027,7 @@ function wareCharge(h) {
 function wareDone(h, rm) {
   if (h.go === 'ship') { wareCard(h, 'slip'); if (!rm) { h.fly = cityFlyStart(wMat(h.shop, new THREE.Vector3()).add(tmpV.set(-.36, 0, 0))); shopSnd.inflate(); setTimeout(() => shopSnd.inflate(), 120); setTimeout(() => shopSnd.inflate(), 240); } else shopSnd.flyAway(); }
   else if (h.go === 'bag') { shopSnd.wrap(); WARE.bag.visible = true; WARE.bag.scale.setScalar(1e-4); }
-  else { const k = h.k; if (k === 'coat') shopSnd.coat(); else if (k === 'boots') { P.dipV -= 1.6; sfx.step('city', .8); setTimeout(() => sfx.step('city', .8), 150); } else if (k === 'net') WARE.gadN = h.lv0; }
+  else { const k = h.k; if (k === 'coat') shopSnd.coat(); else if (k === 'boots') { P.dipV -= 1.6; sfx.step('city', .8); setTimeout(() => sfx.step('city', .8), 150); } else if (k === 'net' && !rm) WARE.gadN = h.lv0; }
 }
 // 硬幣：從零錢包沿弧線跳進托盤（叮、叮、叮，一枚比一枚高）
 function wareCoinsPay(h, e) {

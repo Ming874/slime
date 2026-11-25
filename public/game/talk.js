@@ -260,9 +260,12 @@ function tkSafe() {
   let t = 12; for (const id of ['stats', 'compass', 'topbtns']) { const r = R(id); if (r && r.bottom < vh * .5) t = Math.max(t, r.bottom + 8); }
   const bt = R('bottom'), obs = [{ x: vw / 2 - 22, y: vh / 2 - 22, w: 44, h: 44 }], add = r => { if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height }); };
   const lg = document.getElementById('log'); if (lg && lg.children.length) add(R('log'));
-  if (!document.body.classList.contains('talk')) add(R('coach')); add(R('warm')); // 教學提示在對話中是淡出的（talk.css），不用讓 { const r = R('cmpDeg'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 指南針下面的角度小牌：盡量不蓋到 if (!document.body.classList.contains('talk')) { const r = R('objective'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 目標面板（對話中會淡出）：最先讓步的障礙
+  if (!document.body.classList.contains('talk')) add(R('coach')); add(R('warm')); // 教學提示在對話中是淡出的（talk.css），不用讓
+  { const r = R('cmpDeg'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 指南針下面的角度小牌：盡量不蓋到
+  if (!document.body.classList.contains('talk')) { const r = R('objective'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 目標面板（對話中會淡出）：最先讓步的障礙
+  { const r = R('prompt'), pw = Math.max(r ? r.width : 0, 180), py = r ? r.top : vh / 2 + 24; obs[0] = { x: vw / 2 - Math.max(22, pw / 2), y: vh / 2 - 22, w: Math.max(44, pw), h: Math.max(44, py + (r ? r.height : 30) - (vh / 2 - 22)) }; } // 準心連同下面那一行提示（「E 放回」「E 結帳」）：空著時也先留 180 px 寬，提示一出現泡泡不用跳開
   if (TOUCH) { // 觸控：搖桿區與按鈕群是「軟」障礙（盡量讓開；橫向手機實在放不下時，只避開真正的按鈕）
-    ['btnAct', 'btnJump', 'btnRun', 'btnSneak'].forEach(id => add(R(id)));
+    ['btnAct', 'btnJump', 'btnRun', 'btnSneak'].forEach(id => { const r = R(id); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, btn: 1 }); }); // btn：一句話的尾巴也停在按鈕前面
     const sl = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slot')) || 40; obs.push({ x: 0, y: vh * .4, w: vw * .45, h: vh * .6, soft: 1 }, { x: vw - 200, y: vh - sl - 240, w: 200, h: sl + 240, soft: 1 }); }
   return { l: 12, t, r: vw - 12, b: Math.max(t + 40, bt ? bt.top - 10 : vh - 12), obs };
 }
@@ -284,8 +287,10 @@ function tkCand(A, M, bw, bh, s, mid) {
   C[2][1] = M.x + 44 * s; C[2][2] = M.y - .6 * bh; C[3][1] = M.x - bw - 44 * s; C[3][2] = M.y - .6 * bh; return mid ? TK_CK : C;
 }
 // 從四個候選挑第一個整塊在安全區裡、不碰障礙的；目前的位置還可以就不換，失效超過 250ms 才換（居民轉身、走動時泡泡不會左右亂跳）
-function tkChoose(o, C, sf, bw, bh, now, obs = sf.obs) {
-  const fits = c => c[1] >= sf.l && c[2] >= sf.t && c[1] + bw <= sf.r && c[2] + bh <= sf.b && !tkHit(c[1], c[2], bw, bh, obs);
+// tp＝嘴巴在畫面上的位置（一句話的泡泡才給）：尾巴會穿過畫面上另一個泡泡（obs 裡 bub 的）的位置也不要，換下一個候選
+function tkChoose(o, C, sf, bw, bh, now, obs = sf.obs, tp) {
+  const bs = tp ? obs.filter(q => q.bub) : null, tailOK = c => !bs || !bs.length || tkSeg(clamp(tp.x, c[1] + 22, c[1] + bw - 22), clamp(tp.y, c[2], c[2] + bh), tp.x, tp.y, bs, 4) >= 1;
+  const fits = c => c[1] >= sf.l && c[2] >= sf.t && c[1] + bw <= sf.r && c[2] + bh <= sf.b && !tkHit(c[1], c[2], bw, bh, obs) && tailOK(c);
   const cur = o.pl && C.find(c => c[0] === o.pl);
   if (cur && fits(cur)) { o.plBad = 0; return [cur[1], cur[2]]; }
   if (cur) {
@@ -357,6 +362,19 @@ function tkTipSide(tl, s) {
   }
   if (lf !== TK.tipL) { TK.tipL = lf; tp.style.left = lf; tp.classList.toggle('side', !!lf); }
 }
+// 線段 (x0,y0)→(x1,y1) 第一次碰到矩形群 bs（外擴 m px：尾巴是往一側彎的弧線）的位置（0～1；沒碰到＝1）
+function tkSeg(x0, y0, x1, y1, bs, m = 3) {
+  let best = 1; const dx = x1 - x0, dy = y1 - y0;
+  for (const o of bs) { let t0 = 0, t1 = 1; const ok = [[-dx, x0 - (o.x - m)], [dx, o.x + o.w + m - x0], [-dy, y0 - (o.y - m)], [dy, o.y + o.h + m - y0]].every(([p, q]) => { if (Math.abs(p) < 1e-9) return q >= 0; const r = q / p; if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; } return true; }); if (ok && t0 < best) best = t0; }
+  return best;
+}
+// 泡泡 b 擺在 (x, y)、縮放 s；(tx, ty)＝尾巴要指的點（泡泡本身的座標）。尾巴會穿過已經擺好的泡泡本體 boxes：縮短到它前面，太短就不畫
+function tkTailCap(b, x, y, s, tx, ty, pin, max, boxes) {
+  const tl = tkTail(b, tx, ty, pin, max); if (!tl || !boxes.length) return tl;
+  const bx = x + tl.bx * s, by = y + tl.by * s, gx = x + tx * s, gy = y + ty * s, L0 = Math.hypot(gx - bx, gy - by); if (L0 < 1) return tl;
+  const w0 = (pin ? Math.min(24, max) : Math.min(max, L0 / s - 12)) * s, k = tkSeg(bx, by, bx + (gx - bx) / L0 * w0, by + (gy - by) / L0 * w0, boxes, 8); if (k >= 1) return tl;
+  const m2 = (w0 * k - 4) / s; return m2 >= 8 ? tkTail(b, tx, ty, pin, m2) : null;
+}
 // 尾巴：紙色＋墨線的彎尖角，底寬 20px、最長 110px、尖端離嘴 12px；底邊伸進泡泡裡，用紙色蓋住接縫。pin＝貼邊時的小楔形
 function tkTail(L, tx, ty, pin, max = 110) {
   const x0 = L.bx, y0 = L.by, w = L.bw, h = L.bh; let bx, by, nx = 1, ny = 0;
@@ -367,7 +385,7 @@ function tkTail(L, tx, ty, pin, max = 110) {
   else if (ty > y0 + h - 6) { bx = clamp(tx, x0 + 22, x0 + w - 22); by = y0 + h - 3; }
   else return null;
   let vx = tx - bx, vy = ty - by; const len = Math.hypot(vx, vy); if (len < 10) return null; vx /= len; vy /= len;
-  const want = pin ? 24 : Math.min(max, len - 12); if (want < 8) return null;
+  const want = pin ? Math.min(24, max) : Math.min(max, len - 12); if (want < 8) return null;
   const ex = bx + vx * want, ey = by + vy * want, hw = pin ? 9 : 10, ax = bx - nx * hw, ay = by - ny * hw, cx = bx + nx * hw, cy = by + ny * hw, px = -vy * want * .16, py = vx * want * .16, f = v => v.toFixed(1);
   return { d: 'M' + f(ax) + ' ' + f(ay) + 'Q' + f((ax + ex) / 2 + px) + ' ' + f((ay + ey) / 2 + py) + ' ' + f(ex) + ' ' + f(ey) + 'Q' + f((cx + ex) / 2 + px * .4) + ' ' + f((cy + ey) / 2 + py * .4) + ' ' + f(cx) + ' ' + f(cy), bx, by, vx, down: ny === 0 && vy > 0 };
 }
@@ -455,7 +473,8 @@ function tkPose() { return TK.cards && (TK.st === 'ask' || TK.st === 'fly') ? 'f
 // 不佔按鍵的一句話：最多 2 個，新的擠掉最舊的。o：{ egg（章要蓋在這裡）, stamp（直接附章）, quiet（不出聲）, pin（說話的人在畫面外時貼在邊上，不消失：店員在你背後回答） }
 function bark(who, text, o = {}) {
   if (!who || !text || !W.ready || TITLE.on || GUI.kind || !tkInit()) return null; // 介面開著、主選單：直接丟掉
-  const now = tkNow(), self = who.k === 'self'; while (BK.list.length >= 2) tkBkKill(BK.list[0]);
+  const now = tkNow(), self = who.k === 'self'; if (!self) BK.list.filter(b => b.who === who).forEach(tkBkKill); // 同一個人一次只說一句：新的一句換掉他上一句（兩個泡泡疊在一起時，後一句的尾巴會穿過前一句的字）
+  while (BK.list.length >= 2) tkBkKill(BK.list[0]);
   const el = document.createElement('div'); el.className = 'bkw' + (self ? ' self' : '') + (o.cls ? ' ' + o.cls : ''); // o.cls：店員的一句話字大一點（app/game.css）
   el.innerHTML = '<div class="tki"><div class="tb ' + (self ? 'self' : 'bark') + '">' + tkRich(text) + '</div>' + (self ? '' : '<svg class="tkt" aria-hidden="true"><path/></svg>') + '</div>'; el.style.opacity = '0'; el.firstChild.style.transformOrigin = self ? '50% 100%' : '30% 100%';
   TK.bEl.appendChild(el);
@@ -472,30 +491,38 @@ function barkStep(dt, now) {
   if (--BK.safeN <= 0 || !BK.safe) { BK.safeN = 30; BK.safe = tkSafe(); } const sf = BK.safe, vw = innerWidth, vh = innerHeight, rm = RM();
   const obs = sf.obs.slice(); if (TK.mw && TK.el && !TK.el.hidden) obs.push({ x: TK.x, y: TK.y, w: TK.w * TK.s, h: TK.h * TK.s }); if (TK.cards && TK.crect) obs.push(TK.crect);
   if (typeof WARE !== 'undefined' && WARE.h && WARE.R) obs.push(WARE.R); // 店裡拿在手上的吊牌卡（game.js）：泡泡讓開
+  const boxes = TK.mw && TK.el && !TK.el.hidden ? [{ x: TK.x + TK.bx * TK.s, y: TK.y + TK.by * TK.s, w: TK.bw * TK.s, h: TK.bh * TK.s }] : []; // 對話泡泡的本體（一句話的尾巴不穿過它的字）
   let stack = sf.b; // 想法雲：疊在快捷列上方中間，新的在上面
   for (const b of BK.list.slice()) {
     const e = now - b.t0; if (e > b.dur + 220 || GUI.kind || TITLE.on) { tkBkKill(b); continue; }
-    let op = e > b.dur ? 1 - (e - b.dur) / 220 : rm ? clamp(e / TKT.rm, 0, 1) : clamp(e / TKT.popFade, 0, 1), sc = rm || e >= TKT.pop ? 1 : e < TKT.popUp ? .55 + .49 * (e / TKT.popUp) : 1.04 - .04 * ((e - TKT.popUp) / (TKT.pop - TKT.popUp)), x, y, d = '';
+    let op = e > b.dur ? 1 - (e - b.dur) / 220 : rm ? clamp(e / TKT.rm, 0, 1) : clamp(e / TKT.popFade, 0, 1), sc = rm || e >= TKT.pop ? 1 : e < TKT.popUp ? .55 + .49 * (e / TKT.popUp) : 1.04 - .04 * ((e - TKT.popUp) / (TKT.pop - TKT.popUp)), x, y;
     if (b.who.k === 'self') {
       x = clamp((vw - b.w) / 2, sf.l, Math.max(sf.l, sf.r - b.w));
       const up = ob => { let yy = Math.min(stack, sf.b) - b.h; for (let g = 0; g < 8; g++) { const o = tkHit(x, yy, b.w, b.h, ob); if (!o) break; yy = o.y - b.h - 6; } return yy; }; // 碰到主泡泡、訊息、拇指區就往上推
       y = up(obs); if (y < sf.t) y = up(tkDrop(obs, 2)); if (y < sf.t) y = up(tkDrop(obs, 1)); // 放不下：先不管目標面板，再不行只讓開真正的按鈕
-      y = Math.max(sf.t, y); stack = y - 6; b.x = x; b.y = y;
+      y = Math.max(sf.t, y); stack = y - 6; b.x = x; b.y = y; b.box = op > 0 ? { x, y, w: b.w, h: b.h } : null;
     } else {
       const w = b.who; if (!w.at) { tkBkKill(b); continue; }
       w.at(tkV); tkProj(tkV, PA); w.mouth(tkV); tkProj(tkV, PM); const p = w.xz ? w.xz() : null, dist = p ? Math.hypot(p[0] - P.x, p[1] - P.z) : 0;
       const off = PA.z < .05 || PA.x < 0 || PA.x > vw || PA.y < 0 || PA.y > vh; let dir = null;
       if ((off && !b.pin) || dist > 12) op = 0; // 說話的人不在畫面內或太遠：不顯示（pin：貼在畫面邊上，尾巴指向他那一側）
       const s = b.s = clamp(2.6 / Math.max(.3, dist), .9, 1.06), bw = b.w * s, bh = b.h * s;
-      if (off && b.pin) { const r = tkPin(PA, sf, bw, bh, obs); x = r[0]; y = r[1]; dir = [r[2], r[3]]; } else [x, y] = tkChoose(b, tkCand(PA, PM, bw, bh, s), sf, bw, bh, now, obs);
+      if (off && b.pin) { const r = tkPin(PA, sf, bw, bh, obs); x = r[0]; y = r[1]; dir = [r[2], r[3]]; } else [x, y] = tkChoose(b, tkCand(PA, PM, bw, bh, s), sf, bw, bh, now, obs, PM);
       if (!b.placed || Math.abs(x - b.x) > 160 || Math.abs(y - b.y) > 160) { b.x = x; b.y = y; b.placed = true; } else { const k = 1 - Math.exp(-18 * dt); b.x += (x - b.x) * k; b.y += (y - b.y) * k; }
-      x = b.x; y = b.y; if (op > 0) obs.push({ x, y, w: bw, h: bh }); // 後面的一句話讓開這一句（兩個店員的泡泡、貼邊時不疊在一起）
-      if (dir) { const cx = b.bx + b.bw / 2, cy = b.by + b.bh / 2, k = Math.min(b.bw / 2 / Math.max(1e-3, Math.abs(dir[0])), b.bh / 2 / Math.max(1e-3, Math.abs(dir[1]))), tl = tkTail(b, cx + dir[0] * (k + 30), cy + dir[1] * (k + 30), true); if (tl) d = tl.d; }
-      else { const tl = tkTail(b, (PM.x - x) / s, (PM.y - y) / s, false, 110 * Math.max(1, vh / 800)); if (tl) d = tl.d; }
+      x = b.x; y = b.y; if (op > 0) obs.push({ x, y, w: bw, h: bh, bub: 1 }); // 後面的一句話讓開這一句（兩個店員的泡泡、貼邊時不疊在一起）
+      if (dir) { const cx = b.bx + b.bw / 2, cy = b.by + b.bh / 2, k = Math.min(b.bw / 2 / Math.max(1e-3, Math.abs(dir[0])), b.bh / 2 / Math.max(1e-3, Math.abs(dir[1]))); b.tq = [x, y, s, cx + dir[0] * (k + 30), cy + dir[1] * (k + 30), true, 24]; }
+      else b.tq = [x, y, s, (PM.x - x) / s, (PM.y - y) / s, false, 110 * Math.max(1, vh / 800)];
+      b.box = op > 0 ? { x: x + b.bx * s, y: y + b.by * s, w: b.bw * s, h: b.bh * s } : null;
     }
     const tr = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) scale(' + b.s.toFixed(3) + ')'; if (tr !== b.tr) { b.tr = tr; b.el.style.transform = tr; }
     const kt = sc !== 1 ? 'scale(' + sc.toFixed(3) + ')' : ''; if (kt !== b.kt) { b.kt = kt; b.ki.style.transform = kt; } // 彈出：從尾巴那一側長出來
-    const os = op.toFixed(3); if (os !== b.os) { b.os = os; b.el.style.opacity = os; } if (b.path && d !== b.pd) { b.pd = d; b.path.setAttribute('d', d); }
+    const os = op.toFixed(3); if (os !== b.os) { b.os = os; b.el.style.opacity = os; }
+  }
+  // 尾巴等全部的泡泡都擺好才畫：不穿過任何另一個泡泡（或對話泡泡）的字——前面的泡泡尾巴也不會伸進後面那一個底下
+  for (const b of BK.list) {
+    if (!b.path) continue; let d = '';
+    if (b.tq) { const q = b.tq, bs = boxes.concat(BK.list.filter(o => o !== b && o.box).map(o => o.box), sf.obs.filter(o => o.btn)), tl = tkTailCap(b, q[0], q[1], q[2], q[3], q[4], q[5], q[6], bs); if (tl) d = tl.d; b.tq = null; }
+    if (d !== b.pd) { b.pd = d; b.path.setAttribute('d', d); }
   }
 }
 // 彩蛋的章「✦ 小秘密 n/28」：蓋在旁白的想法雲、正在讀的紙或說話的人的泡泡上（400ms 後蓋下去）；都沒有就冒一朵只有一行的想法雲
