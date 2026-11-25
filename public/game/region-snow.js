@@ -498,13 +498,21 @@
     kt.add(IC, nookDisc(PX, py, PZ, pr, ['#86c9ee', '#d6eefb'], LOW ? 24 : 36, 2), null);
     for (let i = 0; i < 7; i++) { const a = i / 7 * PI2 + rdm() * .5, r = pr(a) + .5 + rdm() * .6; snowRock(kt, M, PX + Math.cos(a) * r, PZ + Math.sin(a) * r, .25 + rdm() * .3, 1400 + i, rdm); }
     flowers(kt, GLOW, PX + 3.2, PZ - 4.4, LOW ? 5 : 9, rdm); flowers(kt, GLOW, PX - 4.8, PZ + 2.2, LOW ? 4 : 7, rdm);
-    // 天然的冰橋：深谷兩岸岩壁頂之間一道冰拱。斷面是有稜角的扁橢圓（兩端粗、中間細），頂上蓋一層下垂的雪，底下垂著冰柱；底下可以沿著冰河走過去
+    // 天然的冰橋：深谷兩岸岩壁頂之間一道冰拱。斷面是有稜角的扁橢圓（兩端粗、中間細），頂上蓋一層下垂的雪，底下垂著冰柱；底下可以沿著冰河走過去。
+    // 橋面走得上去（regionWalkStrip，腳步聲是薄雪底下的冰）：原本拱的兩端是一個切口、頂面比崖頂高 1.5 公尺，兩端改成順著拱的方向再往外伸、往下埋進崖頂的雪坡，
+    // 從崖頂踩著雪就走上橋背。橋上的邊緣擋人（只擋腳在橋面高度的人，看不見的細柱），底下的人照樣沿著冰河走過去，在拱底下跳起來頭會撞到拱底
     { const tx = .983, tz = .182, nx = -tz, nz = tx, ends = [-1, 1].map(s => { const X = (GORGE.x + nx * s * 4.1) * K, Z = (GORGE.z + nz * s * 4.1) * K; return new THREE.Vector3(X, H(X, Z) - .3, Z); });
       const mid = new THREE.Vector3().addVectors(ends[0], ends[1]).multiplyScalar(.5); mid.y = Math.max(ends[0].y, ends[1].y) + .55;
       const cv = new THREE.QuadraticBezierCurve3(ends[0], mid, ends[1]), N = LOW ? 10 : 16, SG = 8, up = new THREE.Vector3(0, 1, 0), sd = seeded(1440), jt = Array.from({ length: (N + 1) * SG }, () => .9 + sd() * .2);
+      // 拱的中心線：控制點在兩端的正中間，水平方向對 t 是均勻的（t＝0 北端～1 南端，t 超出 0～1＝往外伸的那段）。往外伸的長度 EX（北端崖頂比較緩、伸長一點）、
+      // 一邊順著端點的切線、一邊再往下埋 DIVE，伸出去的那頭整個埋進雪坡裡，看不到切口；斷面在 0～1 以外維持端點的大小
+      const Lh = Math.hypot(ends[1].x - ends[0].x, ends[1].z - ends[0].z), y0 = ends[0].y, y1 = mid.y, y2 = ends[1].y, EX = [3.2 / Lh, 2.4 / Lh], DIVE = .35, c01t = t => Math.min(1, Math.max(0, t));
+      const cy = t => t < 0 ? y0 + 2 * (y1 - y0) * t + DIVE * t / EX[0] : t > 1 ? y2 + 2 * (y2 - y1) * (t - 1) - DIVE * (t - 1) / EX[1] : (1 - t) ** 2 * y0 + 2 * t * (1 - t) * y1 + t * t * y2;
+      const cP = t => t >= 0 && t <= 1 ? cv.getPoint(t) : new THREE.Vector3(ends[0].x + (ends[1].x - ends[0].x) * t, cy(t), ends[0].z + (ends[1].z - ends[0].z) * t);
+      const sec = t => { const e = 1 - Math.sin(Math.PI * c01t(t)); return [1.15 + 1.2 * e, .6 + .95 * e]; }; // 斷面的半寬、半高
       const cA = new THREE.Color('#e4f5fe'), cB = new THREE.Color('#b9e2f8'), cD = new THREE.Color('#8ccbf0'), cW = new THREE.Color('#f8fafc'), cc = new THREE.Color(), ice = [], cap = [], ins = [];
-      for (let i = 0; i <= N; i++) {
-        const u = i / N, p = cv.getPoint(u), T = cv.getTangent(u), S = new THREE.Vector3().crossVectors(T, up).normalize(), U = new THREE.Vector3().crossVectors(S, T).normalize(), e = 1 - Math.sin(Math.PI * u), w = 1.15 + 1.2 * e, h = .6 + .95 * e;
+      for (const [u, i] of [[-EX[0], 0], ...Array.from({ length: N + 1 }, (_, i) => [i / N, i]), [1 + EX[1], N]]) { // 兩頭往外伸的那一圈用端點的斷面（一樣的稜角）
+        const p = cP(u), T = cv.getTangent(c01t(u)), S = new THREE.Vector3().crossVectors(T, up).normalize(), U = new THREE.Vector3().crossVectors(S, T).normalize(), [w, h] = sec(u);
         const at = (th, k, dy) => p.clone().addScaledVector(S, Math.cos(th) * w * k).addScaledVector(U, Math.sin(th) * h * k + dy);
         ice.push(Array.from({ length: SG + 1 }, (_, j) => { const th = j / SG * PI2 - Math.PI / 2, q = at(th, jt[i * SG + j % SG], 0), sn = Math.sin(th); cc.copy(sn < -.3 ? cD : sn < .4 ? cB : cA); return [q.x, q.y, q.z, cc.r, cc.g, cc.b]; }));
         cap.push([.08, .22, .38, .5, .62, .78, .92].map((f, j) => { const q = at(f * Math.PI, j === 0 || j === 6 ? 1.04 : 1.1, j === 0 || j === 6 ? -.06 : .1); return [q.x, q.y, q.z, cW.r, cW.g, cW.b]; }));
@@ -512,7 +520,18 @@
       }
       kt.add(IC, band(ice, ins), null); kt.add(M.flat, band(cap, ins), null);
       for (let i = 1; i < 12; i++) { const u = i / 12, p = cv.getPoint(u), hh = .6 + .95 * (1 - Math.sin(Math.PI * u)), l = .35 + ((i * 7) % 5) * .13; kt.add(IC, new THREE.ConeGeometry(.08, l, 5), '#e6f7ff', M4(p.x + (rdm() - .5) * .5, p.y - hh * .8 - l / 2, p.z + (rdm() - .5) * .4, Math.PI, 0, 0)); }
-      ends.forEach((e, k) => { for (let j = 0; j < 3; j++) kt.add(IC, jit(new THREE.BoxGeometry(1, 1, 1, 2, 2, 2), .3, 1450 + k * 3 + j), ['#dff3ff', '#c4e7fa'][j % 2], M4(e.x + (rdm() - .5) * 1.4, e.y + .1 + rdm() * .3, e.z + (rdm() - .5) * 1.4, rdm(), rdm() * 3, rdm(), 1 + rdm() * .6)); addCol({ x: e.x, z: e.z, r: 1.4 }); }); }
+      ends.forEach((e, k) => { for (let j = 0; j < 3; j++) kt.add(IC, jit(new THREE.BoxGeometry(1, 1, 1, 2, 2, 2), .3, 1450 + k * 3 + j), ['#dff3ff', '#c4e7fa'][j % 2], M4(e.x + (rdm() - .5) * 1.4, e.y + .1 + rdm() * .3, e.z + (rdm() - .5) * 1.4, rdm(), rdm() * 3, rdm(), 1 + rdm() * .6)); }); // 拱腳的冰塊（原本的碰撞會擋住橋頭，拿掉；拱身的實心交給 regionWalk 的頂面、底面）
+      // 走得上去的表面：頂面＝雪蓋（斷面放大 1.1 倍的橢圓再高 0.1），底面＝冰拱（冰塊的稜角最多外擴 1.1 倍）；拱有坡度的地方斷面是斜的，垂直方向要除以切線的水平分量
+      const cosT = t => { const q = c01t(t), dy = 2 * (1 - q) * (y1 - y0) + 2 * q * (y2 - y1); return Lh / Math.hypot(Lh, dy); };
+      const arc = (t, s) => { const [w, h] = sec(t), W = 1.1 * w, r = 1 - (s / W) ** 2; return r < 0 ? null : 1.1 * h * Math.sqrt(r) / cosT(t); };
+      const top = (t, s) => { const a = arc(t, s); return a == null ? null : cy(t) + a + .1 / cosT(t); }, bot = (t, s) => { const a = arc(t, s); return a == null ? null : cy(t) - a; };
+      const A = cP(-EX[0]), B = cP(1 + EX[1]), tt = t => -EX[0] + t * (1 + EX[0] + EX[1]);
+      regionWalkStrip(A.x, A.z, B.x, B.z, 1.1 * 2.35, (t, s) => top(tt(t), s), 'snowice', (t, s) => bot(tt(t), s));
+      // 橋上的邊緣：每 0.45 公尺一根看不見的細柱，人的中心最多走到冰拱半寬的八成（拱中間身體剛好到雪蓋邊上），不會一不小心從冰拱的圓背滑下深谷；
+      // 只擋腳在橋面附近的人（yr），橋底下沿著冰河走的人照樣過去；兩頭底下就是崖頂雪地的那段不擋，可以從旁邊走下橋
+      const lx = -(ends[1].z - ends[0].z) / Lh, lz = (ends[1].x - ends[0].x) / Lh;
+      for (let k = 0, n = Math.ceil(Lh / .45); k <= n; k++) { const t = k / n, y = top(t, 0), o = .8 * sec(t)[0] + .45, px = ends[0].x + (ends[1].x - ends[0].x) * t, pz = ends[0].z + (ends[1].z - ends[0].z) * t;
+        [-1, 1].forEach(e => { const x = px + lx * o * e, z = pz + lz * o * e; if (H(x, z) < y - 1.2) addCol({ x, z, r: .1, yr: [y - 1.2, y + 3] }); }); } }
     // 深谷兩側的岩壁頂：一道往谷裡翹出去的雪唇（沿著真正的崖頂，從溪床往外找到坡度變緩的地方），冰柱掛在雪唇底下，不會浮在半空
     { const cS = new THREE.Color('#f6f9fc'), cL = new THREE.Color('#e3ecf5'), cU = new THREE.Color('#b8cce0');
       [-1, 1].forEach(sd => {

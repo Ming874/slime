@@ -478,9 +478,10 @@ const sfx = {
   land(k = .5, kind = 'grass') { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, .16, 180, .8, .08 + k * .14, 'lowpass'); sfx.step(kind, 1.2 + k); },
   pop() { if (!S.sound) return; const t = audio().currentTime; [660, 880, 1320].forEach((f, i) => tone(f, t + i * 0.07, 0.25, 0.16)); },
   tick() { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, 0.05, 2500, 2, 0.2); },
-  // 腳步聲依地面材質變化：草地／泥土小徑／沙灘／岩石／雪地／城市柏油／木板橋
+  // 腳步聲依地面材質變化：草地／泥土小徑／沙灘／岩石／雪地／城市柏油／木板橋／冰橋（薄雪底下是冰）
   step(kind = 'grass', v = 1) {
     if (!S.sound) return; const ac = audio(), t = ac.currentTime;
+    if (kind === 'snowice') { sfx.step('snow', .7 * v); sfx.step('ice', .8 * v); return; } // 冰橋：踩雪的沙沙聲底下多一點冰的清脆，和崖頂的雪地聽得出不一樣
     if (kind === 'snow') { for (let i = 0; i < 3; i++) noise(ac, t + i * .018, .05, rnd(900, 1800), 1.2, .045 * v, 'bandpass'); noise(ac, t, .09, 400, .8, .04 * v, 'lowpass'); }
     else if (kind === 'sand') noise(ac, t, .13, rnd(1200, 1800), .6, .05 * v, 'bandpass', .7);
     else if (kind === 'ice') { noise(ac, t, .035, rnd(3200, 4200), 3, .05 * v, 'bandpass'); tone(rnd(1800, 2400), t, .05, .01 * v, 'triangle'); noise(ac, t, .05, 220, 1, .04 * v, 'lowpass'); }
@@ -990,16 +991,24 @@ function H0(x, z) {
 const WS_R = 16, WS_Y = .4;
 // 玩家腳下：在山洞裡用山洞自己的地面；月光隧道的洞口裡是管子的地板（地形在那裡被挖掉了，H 還是山坡的高度）。
 // yf＝玩家腳的高度：有給才算「可以走的表面」（regionWalk：橋面、踏腳石），取地形與表面中不高於 yf＋STEP_UP 的最高者——
-// 從緩坡或台階走得上去、從橋底下走過去不會被吸上橋面。史萊姆、道具擺放、開場落點不給 yf，照舊只看地形。WALK_ON＝這一次站到的表面（腳步聲用）；
-// WALK_BLK＝這一點有個表面跨不上去、又比頭低（頂面在腳＋STEP_UP 到腳＋WALK_HEAD 之間、沒埋在地形裡）：tryMove 當成牆，不會從石頭、低矮的橋身裡穿過去，跳起來才上得去
-const STEP_UP = .45, WALK_HEAD = 1.7; let WALK_ON = null, WALK_BLK = false;
+// 從緩坡或台階走得上去、從橋底下走過去不會被吸上橋面。史萊姆、道具擺放、開場落點不給 yf，照舊只看地形。WALK_ON＝這一次站到的表面（腳步聲用）。
+// 跨不上去的表面是一塊「頂面到底面」的實心（regionWalk 的 bot，沒給＝一直到地面），身體＝站上去之後的腳＋STEP_UP 到腳＋WALK_HEAD：
+// WALK_OV＝實心插進身體多深（tryMove 不准越插越深：石頭、低矮的橋身、很厚的拱腳都是牆，已經卡在裡面的人只能往外走）；
+// 整塊在頭頂上的記最低的底面 WALK_CEIL（拱橋底下照樣走過去，playerStep 跳起來頭會撞到）。原本只拿頂面和頭比，拱腳的頂面比頭高、頭其實插在冰裡
+const STEP_UP = .45, WALK_HEAD = 1.7, WALK_HI = []; let WALK_ON = null, WALK_OV = 0, WALK_CEIL = Infinity;
 function G(x, z, yf) {
-  WALK_ON = null; WALK_BLK = false; if (CV.c) return caveG(x, z);
+  WALK_ON = null; WALK_OV = 0; WALK_CEIL = Infinity; if (CV.c) return caveG(x, z);
   const T = TAXI.V, u = (x - T.x) * T.dx + (z - T.z) * T.dz; if (u > -.3 && u < TAXI.LEN && Math.abs((x - T.x) * T.dz - (z - T.z) * T.dx) < TAXI.HW) return T.y;
-  const g = H(x, z); if (yf == null || !REGION.walk.length) return g; const lim = yf + STEP_UP; let h = g;
+  const g = H(x, z); if (yf == null || !REGION.walk.length) return g; const lim = yf + STEP_UP; let h = g; WALK_HI.length = 0;
   for (const s of REGION.walk) { // 表面只有幾個：先用包圍盒篩，框外不呼叫
     const b = s.box; if (b && (x < b[0] || x > b[2] || z < b[1] || z > b[3])) continue; const y = s.fn(x, z, yf); if (y == null || y <= g) continue;
-    if (y <= lim) { if (y > h) { h = y; WALK_ON = s; } } else if (y < yf + WALK_HEAD) WALK_BLK = true;
+    if (y <= lim) { if (y > h) { h = y; WALK_ON = s; } } else WALK_HI.push(s, y);
+  }
+  if (WALK_HI.length) { const f = Math.max(yf, h), f0 = f + STEP_UP, f1 = f + WALK_HEAD; // 跨不上去的：站好之後（腳在 f）身體和實心重疊多少
+    for (let i = 0; i < WALK_HI.length; i += 2) {
+      const s = WALK_HI[i], y = WALK_HI[i + 1], b0 = s.bot ? s.bot(x, z, y) : null, b = b0 == null ? g : Math.max(g, b0);
+      if (b >= f1) { if (b < WALK_CEIL) WALK_CEIL = b; } else if (y > f0) WALK_OV = Math.max(WALK_OV, Math.min(y, f1) - Math.max(b, f0));
+    }
   }
   return h;
 }
@@ -4070,8 +4079,9 @@ const SENS = [.0016, .0025, .0038], SENS_N = ['低', '中', '高'];
 function initPlayer() {
   let sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
   if (!inCity(sp.x) && !caveAt(sp.x, sp.z) && (!regionOK(sp.x, sp.z) || coldBlocked(sp.x, sp.z))) sp = { x: 0, z: 16, yaw: 0 }; // 存檔在山洞裡（山脊底下）：保留，開場時再放到洞的地面上
-  const y = G(sp.x, sp.z, isFinite(sp.y) ? sp.y : undefined); // 存檔記了腳的高度：存在橋上的，回來還是站在橋上（不是橋底下的溪裡）
-  P = { x: sp.x, z: sp.z, y, vy: 0, vx: 0, vz: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: y, bob: 0, stepT: 0, coy: 0, jb: 0, sneak: false, running: false, dip: 0, dipV: 0, roll: 0, surf: null };
+  // 存檔記了腳的高度：存在橋上的，回來還是站在橋上（不是橋底下的溪裡）。舊存檔沒記：先放在地面，地面那裡會卡在橋身裡（例如小木橋的橋面底下）才放到最高的表面上
+  let y = G(sp.x, sp.z, isFinite(sp.y) ? sp.y : -Infinity); if (!isFinite(sp.y) && WALK_OV > 0) y = G(sp.x, sp.z, Infinity);
+  P = { x: sp.x, z: sp.z, y, vy: 0, vx: 0, vz: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: y, bob: 0, stepT: 0, coy: 0, jb: 0, sneak: false, running: false, dip: 0, dipV: 0, roll: 0, surf: null, climb: 0 };
 }
 // 腳下的地面材質（決定腳步聲）
 function surfaceAt(x, z) {
@@ -4207,8 +4217,13 @@ function bumpTree(c) {
 }
 function tryMove(dx, dz) {
   { const cm = caveMove(dx, dz); if (cm !== undefined) return cm; } // 在山洞裡（或剛走進洞口）：地面與牆壁用山洞的曲線算
-  let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z, P.y), blk0 = WALK_BLK, h1 = G(nx, nz, P.y), d = Math.hypot(dx, dz) || 1e-6; // 帶腳的高度：橋面上的坡度用橋面算，橋底下用地形算
-  if (h1 < -2.2 || (WALK_BLK && !blk0)) return false; // 前面是跨不上去的表面（溪中間的踏腳石、橋身）：像撞到石頭一樣停住；已經在底下（舊存檔）的人照樣走得出來
+  let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z, P.y), ov0 = WALK_OV, h1 = G(nx, nz, P.y), s1 = WALK_ON, d = Math.hypot(dx, dz) || 1e-6; // 帶腳的高度：橋面上的坡度用橋面算，橋底下用地形算
+  // 前面的表面跨不上去、又會插進身體（溪中間的踏腳石、低矮的橋身、拱腳）：像撞到石頭一樣停住。比的是「插多深」而不是「有沒有插到」：
+  // 已經卡在裡面的人（傳送、舊存檔）往外走會越來越淺、走得出來；原本只要這一點擋到就放行，在拱底下跳起來擋到一下，落地後就一路穿過橋身
+  if (h1 < -2.2 || WALK_OV > ov0 + 1e-4) return false;
+  // 表面上的陡坡（冰拱圓圓的側面）：每一小步都低於 STEP_UP、跨得上去，一步一步就爬上去了（下面 0.7 公尺外的坡度檢查看不到跨不上去的表面）。
+  // 累積「比坡度上限 1.1 多爬的高度」，超過一個台階就停住：台階一次 0.45 照樣跨得上去，走平路慢慢消掉；只看踩在表面上（或正要踩上去）的時候，地形照舊
+  const cl = P.ground && (s1 || P.surf) ? Math.max(0, P.climb + h1 - h0 - 1.1 * d) : 0; if (cl > STEP_UP) return false;
   const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7, P.y);
   if ((ha - h0) / .7 > 1.1) { const rr = Math.max(Math.abs(nx), Math.abs(nz)) / K; if (!inCity(nx) && rr > 44 && rr < 60) barrierMsg('山脊太陡了，爬不上去。沿著小徑走到山洞口（路標會告訴你還有多遠）。'); return false; }
   if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) { if ((ha - h0) / .7 < .8) barrierMsg(barrierWhy(nx, nz)); return false; }
@@ -4222,7 +4237,7 @@ function tryMove(dx, dz) {
   { const b = cabBlock(nx, nz, P.r); nx = b[0]; nz = b[1]; } // 計程車會動，不在靜態的碰撞格子裡
   if (inCity(nx)) { const cx = nx - CITY.x, cz = nz - CITY.z; if (Math.abs(cx) > 70 || cz < -30 || cz > 44) { barrierMsg(cx < -70 && Math.abs(cz) < 14 ? '前面是回月光谷的隧道，用走的太遠了，搭計程車吧。' : '這個街區就到這裡了。想回月光谷，到醫院門口搭計程車。'); return false; } }
   else if (Math.max(Math.abs(nx), Math.abs(nz)) > 178 * K) return false;
-  P.x = nx; P.z = nz; return true;
+  P.x = nx; P.z = nz; P.climb = cl; return true;
 }
 function playerStep(dt) {
   let f = 0, s = 0;
@@ -4244,7 +4259,9 @@ function playerStep(dt) {
   if (P.vx && !tryMove(P.vx * dt, 0)) P.vx = 0; if (P.vz && !tryMove(0, P.vz * dt)) P.vz = 0;
   P.jb = Math.max(0, P.jb - dt); P.coy = P.ground ? .12 : Math.max(0, P.coy - dt);
   if (P.jb > 0 && P.coy > 0) { P.vy = P.sneak ? 5.6 : 7.2; P.ground = false; P.coy = 0; P.jb = 0; sfx.jump(); }
-  const vy0 = P.vy, y0 = P.y; P.vy -= 22 * dt; P.y += P.vy * dt; const g = G(P.x, P.z, Math.max(y0, P.y)); P.surf = WALK_ON; // 用這一格落下之前的腳：掉得快也不會一格穿過橋面
+  const vy0 = P.vy, y0 = P.y; P.vy -= 22 * dt; P.y += P.vy * dt;
+  if (P.y > y0) { G(P.x, P.z, y0); if (P.y + WALK_HEAD > WALK_CEIL) { P.y = Math.max(y0, WALK_CEIL - WALK_HEAD); P.vy = Math.min(P.vy, 0); } } // 往上跳：頭頂到橋身的底面就停住（撞頭），不會跳進冰拱裡
+  const g = G(P.x, P.z, Math.max(y0, P.y)); P.surf = WALK_ON; // 用這一格落下之前的腳：掉得快也不會一格穿過橋面
   if (P.y <= g) { if (!P.ground && vy0 < -3.5) { const k = clamp((-vy0 - 3.5) / 10, 0, 1); P.dipV -= 1.4 + k * 3.2; sfx.land(k, footAt()); } P.y = g; P.vy = 0; P.ground = true; }
   else if (P.y - g > .25) P.ground = false;
   const hsp = Math.hypot(P.vx, P.vz), moving = hsp > .6 && P.ground; P.bob += moving ? dt * hsp * 2.1 : 0;

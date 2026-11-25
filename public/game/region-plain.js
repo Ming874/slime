@@ -227,7 +227,7 @@
   function flowers(k, x, z, n, rad, cols, seed) {
     const rd = seeded(seed);
     for (let i = 0; i < n; i++) {
-      const a0 = rd() * 6.28, r = Math.sqrt(rd()) * rad, fx = x + Math.cos(a0) * r, fz = z + Math.sin(a0) * r; if (onPath(fx, fz) > .05) continue;
+      const a0 = rd() * 6.28, r = Math.sqrt(rd()) * rad, fx = x + Math.cos(a0) * r, fz = z + Math.sin(a0) * r; if (onPath(fx, fz) > .05 || regionWalkAt(fx, fz, .12)) continue; // 小木橋的石階、橋面底下不長花（花莖會從石板頂面穿出來）
       const h = .17 + rd() * .15, a = obj(k, fx, fz, { ry: rd() * 6.28, sw: .3, dy: -.02, gl: cols.gl || 0 });
       a(new THREE.CylinderGeometry(.012, .016, h, 3, 1, true), '#4f8a3f', 0, h / 2, 0, 0, 0, 0, 1, 1, 1, { gl: 0 });
       a(FLW.clone(), cols[i % cols.length], 0, h, 0, (rd() - .5) * .5, rd() * 2, 0, .1, .05, .1); // 扁扁的二十面體當花冠：平視時不會只剩一根莖
@@ -352,7 +352,7 @@
       });
       // 兩頭的石階：一塊扁平的七角石板，頂面在地面和橋頭中間（地面 → 石階 → 橋頭，每級約 0.11）；靠岸的那頭埋進土坡
       const steps = [-1, 1].map(sd => { const u = sd * (Ls + .42), [px, pz] = at(u), top = Math.max(gE(sd)[1] + .05, (sd < 0 ? yA : yB) - .11); ks.add(jit(new THREE.CylinderGeometry(.5, .56, .4, 7), .04, 890 + sd), (nx, ny) => ny > .6 ? '#b4b8ae' : '#8d948c', M4(px, top - .2, pz, 0, ry + .3, 0, 1, 1, .9)); return [px, pz, top]; });
-      regionWalkStrip(...at(-Ls), ...at(Ls), .76, t => deck((2 * t - 1) * Ls), 'wood'); // 橋面：木板寬 1.5，邊上留一點
+      regionWalkStrip(...at(-Ls), ...at(Ls), .76, t => deck((2 * t - 1) * Ls), 'wood', t => deck((2 * t - 1) * Ls) - .25); // 橋面：木板寬 1.5，邊上留一點；底面＝木板＋橋樑底下
       steps.forEach(([sx, sz, top]) => regionWalk((px, pz) => (px - sx) ** 2 + (pz - sz) ** 2 < .25 ? top : null, [sx - .5, sz - .5, sx + .5, sz + .5], 'rock')); }
     // 溪岸：水邊的石頭（三五顆一組）、彎道內側的蘆葦、稍遠一點的蕨類與藍色小花
     for (let i = 8; i < Cp.length - 8; i += 3) {
