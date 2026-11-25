@@ -60,7 +60,7 @@ const CAVE_MURAL = {
   ice: { t: '冰洞的壁畫', txt: '月光谷南方的山壁上有一道裂縫，月亮升起的時候，裂縫裡透出紫色的光。', next: '月光洞窟' },
   moon: { t: '湖邊的石碑', txt: '「月亮最近的地方，有一座漂在雲上的島。帶著月光凝膠的人，會被月光接引。」', next: '空島的傳說（第 5 堂）' },
 };
-const CAVES = [], CV = { c: null, i: 0, s: 0, l: 0, k: 0, mode: 'out', dir: 1, raw: false, exp: 1, flash: 0, lift: 0, f0: null, scanN: 0 };
+const CAVES = [], CV = { c: null, i: 0, s: 0, l: 0, k: 0, mode: 'out', dir: 1, raw: false, exp: 1, flash: 0, lift: 0, f0: null, scanN: 0, far: 0 };
 let CAVE_M = null; const CAVE_SEC = []; // 洞口（基礎單位）與洞口兩段的範圍：地形整平與墊高用
 
 /* ---------- 洞口：在建地形之前就要知道（caveShape 在 H0 裡被呼叫） ---------- */
@@ -896,6 +896,7 @@ function caveMove(dx, dz) {
   }
   const c = CV.c, q = caveQ(c, nx, nz, CV.i);
   if (q.s < -1.6 || q.s > c.L + 1.6) { caveLeave(q.s > c.L ? 1 : 0); return undefined; }
+  if (q.s > CV.far) CV.far = q.s; // 走到多深（死路的洞要走到裡面才算走過）
   return caveSlide(c, q, nx, nz);
 }
 function caveSlide(c, q, nx, nz) {
@@ -928,7 +929,7 @@ function caveBlock(c, dir) {
   if (def.night && DN.night < .5) return '岩壁上有一道細細的裂縫，白天看起來只是岩石……也許夜裡再來看看？';
   return '';
 }
-function caveEnter(c, dir) { CV.c = c; CV.dir = dir; CV.i = dir > 0 ? 0 : c.n - 1; CV.mossT = 0; }
+function caveEnter(c, dir) { CV.c = c; CV.dir = dir; CV.i = dir > 0 ? 0 : c.n - 1; CV.mossT = 0; CV.far = 0; }
 function caveLeave(side) {
   const c = CV.c; CV.c = null; CV.s = 0; if (!c) return;
   if (!c.dead && side === 1 && CV.dir === 1) { // 從月光谷走到新區域
@@ -936,6 +937,7 @@ function caveLeave(side) {
     const first = !S.cave.seen[c.id]; S.cave.seen[c.id] = 1; save();
     CV.flash = 1; if (first) { CV.lift = 1.4; W.quietZone = true; const z = ZONES.find(z => z.id === c.def.to); caveReveal(z.name, { sea: '穿過海蝕洞，白色沙灘與燈塔就在眼前', lava: '走出熔岩隧道，冒煙的火山口就在北方', ice: '走出冰洞，雪原的丘陵一片銀白' }[c.id] || ''); }
   } else if (!c.dead && side === 0 && CV.dir === -1) { S.cave = S.cave || {}; (S.cave.seen = S.cave.seen || {})[c.id] = 1; CV.flash = .7; }
+  else if (c.dead && side === 0 && CV.far > c.L * .6 && !(S.cave && S.cave.seen && S.cave.seen[c.id])) { S.cave = S.cave || {}; (S.cave.seen = S.cave.seen || {})[c.id] = 1; save(); } // 死路的洞（月光洞窟）走進去再出來也算走過：筆記本的地圖（map.js）才畫得出這條洞
 }
 function caveG(x, z) { const c = CV.c; if (!c) return H(x, z); const q = caveQ(c, x, z, CV.i); return q.s < -1.7 || q.s > c.L + 1.7 || Math.abs(q.l) > q.w + 1 ? H(x, z) : q.y; }
 // 走過的洞：按住奔跑會稍微加速（快速通行，2.3）；冰洞的地面比較滑（只影響停下來的距離）

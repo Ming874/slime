@@ -155,6 +155,13 @@
 @media (max-width:600px){#gui[data-prop="notebook"]{--nb-m:30px}#gui[data-prop="notebook"] :is(.st-doodle,.st-star){display:none}}
 @media (max-width:420px){#gui[data-prop="notebook"] .st-stamp{display:none}}
 /* 沒有 3D 過場時（系統設定減少動態、或 3D 還沒準備好）：原地淡入 */
+/* 換頁（選單 ⇄ 地圖）：上一頁從下緣掀起、繞著上面的線圈往後翻過去（蓋過日期章，但在線圈底下） */
+#gui[data-prop="notebook"] .st-rings{z-index:5}
+#gui[data-prop="notebook"] .st-flip{left:0;right:0;z-index:4;border-radius:3px 3px 8px 8px;transform-origin:50% 0;
+  background:linear-gradient(90deg,#0000 var(--nb-m),#ef444452 var(--nb-m) calc(var(--nb-m) + 2px),#0000 calc(var(--nb-m) + 2px)),linear-gradient(#0000 70px,#ef444433 70px 72px,#0000 72px),
+    repeating-linear-gradient(180deg,#0000 0 27px,#7aa0cc4d 27px 28px) 0 72px/100% calc(100% - 78px) no-repeat,linear-gradient(#fffdf6,#f6efdd);
+  box-shadow:0 8px 20px -6px #0006;animation:st-turn-up .5s cubic-bezier(.4,.1,.3,1) forwards}
+@keyframes st-turn-up{0%{transform:perspective(1800px) rotateX(0)}100%{transform:perspective(1800px) rotateX(180deg)}}
 #gui[data-prop="notebook"][data-mode="card"].opening .gwin{animation:st-fade-in .2s ease-out}
 #gui[data-prop="notebook"][data-mode="card"].closing .gwin{animation:st-fade-out .2s ease-in forwards}
 @keyframes st-fade-in{from{opacity:0}}

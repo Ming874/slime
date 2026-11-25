@@ -151,6 +151,7 @@ function fresh() {
     papers: [], // 收進手帳的紙：[{ id, t, d? }]（收據 d＝那一場的數字）
     jrSeen: 0, ppN: 0, // 上次打開手帳的時間（之後收到的紙貼「新」）、拿過幾次紙（前 3 次按鍵提示全亮）
     roads: {}, // 山洞口的光柱已經走到過的區域（不再立）
+    map: '', // 筆記本手繪地圖走過的格子：32×32 的位元圖（128 bytes）的 base64（map.js）
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -222,6 +223,7 @@ function sanitize(o) {
   s.jrSeen = Math.max(0, +s.jrSeen || 0); s.ppN = clamp(Math.floor(+s.ppN) || 0, 0, 99);
   s.roads = Object.fromEntries(Object.entries(obj(o.roads)).filter(([k, v]) => ROAD_IDS.includes(k) && v).map(([k]) => [k, 1]));
   s.cave = caveSan(o.cave); // 山洞：走過哪些洞、拍過的壁畫、苔蘚（caves.js）
+  s.map = nmSan(o.map); // 手繪地圖走過的格子（map.js）：舊存檔沒有＝白紙
   return s;
 }
 function load() {
@@ -2212,7 +2214,7 @@ function foundEgg(id) {
   const e = EGGS.get(id), n = S.eggs.filter(k => EGGS.has(k)).length;
   tkStamp(id, '✦ 小秘密 ' + n + '/' + EGGS.size, e ? e.name : id); // 章蓋在旁白的想法雲、正在讀的紙或說話的人的泡泡上，不再跳左下角的長句（talk.js）
   if (S.sound) { try { const t = audio().currentTime; [1318.5, 1568, 2093, 2637].forEach((f, i) => tone(f, t + i * .075, .4, .045, 'triangle')); } catch (er) { } }
-  gainXP(8, '發現小秘密'); save(); ui('inv'); return true;
+  nmEgg(id); gainXP(8, '發現小秘密'); save(); ui('inv'); return true;
 }
 // 場景觸發：還沒找到的話，先在畫面下方冒一朵自己的想法雲說出場景裡發生了什麼，再算發現（章蓋在這朵雲上）
 function eggHit(id, msg) { if (!S || (Array.isArray(S.eggs) && S.eggs.includes(id))) return false; if (msg) bark(SELF, msg, { egg: id }); return foundEgg(id); }
@@ -4225,6 +4227,8 @@ function bindInput() {
     if ((k === 'KeyT' || k === 'Enter') && NET.on && !GUI.kind) { e.preventDefault(); openChat(); return; }
     // 拿著紙按 I／Tab：先收起，收好之後打開手帳、停在剪貼區
     if (GUI.kind === 'paper' && (k === 'KeyI' || k === 'Tab')) { e.preventDefault(); if (!e.repeat && paperArmed()) { closeGui(); setTimeout(() => { if (!GUI.kind && !TITLE.on) { W.jrTo = 'clips'; openGui('inv'); } }, PC0.end + 20); } return; }
+    // M：筆記本翻到手繪地圖（已經在看地圖就收起來；開著別的介面就換成筆記本，手上的紙與運轉中的產線除外）
+    if (k === 'KeyM' && GUI.kind !== 'paper' && !(GUI.kind === 'line' && M.active)) { e.preventDefault(); if (e.repeat) return; if (GUI.kind === 'pause') { if (tab === 'map') closeGui(); else showSec('map'); } else openGui('pause', 'map'); return; }
     // Tab 在暫停選單裡留給鍵盤在按鈕之間移動
     if (k === 'KeyI' || (k === 'Tab' && GUI.kind !== 'pause')) { e.preventDefault(); GUI.kind === 'inv' ? closeGui() : openGui('inv'); return; }
     if (GUI.kind) {
@@ -4724,9 +4728,9 @@ function pickTrend() { trend.sp = pick(trendPool()).id; renderTop(); toast('流�
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '選單', tabs: ['pause'] }, paper: { t: '', tabs: ['paper'] },
+  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, shop: { t: '大城市', tabs: ['mach', 'gear', 'mall', 'arms'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, riddle: { t: '古老的石碑', tabs: ['riddle'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '筆記本', tabs: ['pause', 'map'] }, paper: { t: '', tabs: ['paper'] },
 };
-const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單', paper: '紙' };
+const TABN = { bench: '手作', mach: '機械行', gear: '器材行', mall: '生活百貨', arms: '武器店', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', riddle: '石碑', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', up: '升級', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單', map: '地圖', paper: '紙' };
 let tab = '';
 /* 沉浸式介面：每個工作站用一種「道具」呈現（components/StationLayer.tsx 加上外觀與動畫，app/stations.css 是樣式）。
    開關的過場由下面的 GX 控制，#gui[data-mode] 決定是哪一種：
@@ -4863,7 +4867,8 @@ function clipReset() { const was = CLIP.i >= 0; CLIP.i = -1; CLIP.flip = 0; if (
 function guiTabs() { const g = GUIS[GUI.kind]; return g.tabs.filter(t => (t !== 'branch' || S.branch || branchReady()) && (t !== 'arms' || armsOpen()) && (t !== 'visit' || NET.on)); }
 function renderGuiTabs() { const tabs = guiTabs(); $('#gtabs').innerHTML = tabs.length > 1 ? tabs.map(t => `<button class="${t === tab ? 'on' : ''}" data-act="sec" data-sec="${t}">${TABN[t]}${t === 'branch' && !S.branch ? ' ●' : ''}</button>`).join('') : ''; }
 const PANEL = { mach: 'up', gear: 'up', mall: 'up', arms: 'up', eshop: 'up' };
-function showSec(sec) { window.dispatchEvent(new CustomEvent('slime:tab', { detail: { kind: GUI.kind, tab: sec, flip: !!tab && tab !== sec } })); tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
+// 翻到手繪地圖那一頁：NMAP.seq 換號，NoteMap.tsx 重畫鉛筆圈、把自己的位置捲進畫面；筆記本換頁有翻紙聲
+function showSec(sec) { if (sec === 'map' && tab !== 'map') NMAP.seq++; if (GUI.kind === 'pause' && tab && tab !== sec) sfx.paper('flip'); window.dispatchEvent(new CustomEvent('slime:tab', { detail: { kind: GUI.kind, tab: sec, flip: !!tab && tab !== sec } })); tab = sec; $$('.panel').forEach(p => p.classList.toggle('on', p.id === 'p-' + (PANEL[sec] || sec))); renderGuiTabs(); RENDER[sec](); $('#gbody').scrollTop = 0; }
 function closeGui() {
   if (!GUI.kind) return; if (GUI.kind === 'line' && M.active) { toast('產線還在運轉，請先完成這一輪加工。'); return; }
   if (L.watch) stopWatch();
@@ -5578,7 +5583,7 @@ function renderCodex() { ui('codex'); } // 畫面改由 React 負責（component
 function finish() { S.done = true; saveCloud(); if (W.musLabel) { const p = W.musLabel.position.clone(), par = W.musLabel.parent; dropObj(W.musLabel); W.musLabel = textSprite('夢想捏捏博物館', '#fbbf24', '擺出得意作品，朋友可以來參觀'); W.musLabel.position.copy(p); par.add(W.musLabel); } const txt = { factory: '你的工廠日夜運轉，月光谷的酥脆聲成為了全世界的背景音樂。', corp: '你與大企業攜手，把史萊姆捏捏帶進每個人的辦公桌，成為解壓文化的代名詞。', shop: '你的小店成了鎮上的溫暖角落，熟客們帶著笑容與酥脆聲度過每個日子。' }[S.branch || 'shop']; modal(`<h2>夢想捏捏博物館開幕</h2><p>${txt}</p><p>你是真正的史萊姆捏捏大師。你可以繼續遊玩，享受酥脆的療癒時光。</p>`); }
 let invSel = null;
 function renderInv() { ui('inv'); } // 畫面改由 React 負責（components/stations/）
-const RENDER = { paper: () => ui('paper'), bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), arms: () => renderShop('arms'), eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause };
+const RENDER = { paper: () => ui('paper'), bench: renderBench, mach: () => renderShop('mach'), gear: () => renderShop('gear'), mall: () => renderShop('mall'), arms: () => renderShop('arms'), eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, riddle: renderRiddle, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, up: renderUp, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause, map: () => ui('map') }; // map：筆記本的手繪地圖（map.js、NoteMap.tsx）
 
 /* ---------- 開發者工具（管理員與管理後台設定的開發測試帳號）：一鍵解鎖全部地圖，方便測試各區 ---------- */
 const isDev = () => !!(window.SlimeCloud && SlimeCloud.user && (SlimeCloud.user.dev || SlimeCloud.user.admin));
@@ -5668,7 +5673,7 @@ function creditsHTML() { const L0 = MUS.list; if (!L0) return ''; const a = Obje
 function showHelp() {
   const keys = TOUCH
     ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span></div>'
-    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
+    : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>M</kbd><span>筆記本裡的手繪地圖（走過的地方才會畫上去）</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
   modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。捏一下之後約 0.3 秒，外圈會亮一圈，亮著的時候捏下一下就是「完美」；三下是 Do、Mi、Sol，三下都完美會響起和弦、多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。拿著捏捏對準網站貨架就能上架；站上直播舞台就開直播。多人時：巨型史萊姆要兩人一起捏、拿著凝膠對準朋友可以送給對方、朋友站在產線旁會幫你裹糖。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
 }
 
@@ -9647,7 +9652,7 @@ function loop(now) {
   webAcc += dt; if (webAcc >= 4) { webAcc = 0; const r = webTick(); if (r) { toast(`網站成交 +${fmt(r.price)}　${'★'.repeat(r.stars)}`); renderTop(); if (tab === 'web') renderWeb(); } }
   branchTick(dt); updateLive(dt);
   secAcc += dt; saveAcc += dt;
-  if (secAcc >= 1) { secAcc = 0; checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
+  if (secAcc >= 1) { secAcc = 0; nmStep(); checkBranch(); renderTop(); renderXP(); renderObjective(); renderHotbar(); renderNetChip(); if (tab === 'live' && NET.on) renderLiveOthersOnly(); const ae = document.activeElement; if (!(ae && ae.tagName === 'INPUT') && tab === 'branch') renderBranch(); if (PANEL[tab]) renderShop(tab); }
   if (saveAcc > 5) { saveAcc = 0; save(); }
   try {
     const g = GUI.kind;
@@ -9702,6 +9707,7 @@ window.SlimeGame = {
   unlockedSpecies, gradeOf, priceWhy, packPct, xpLevel, decoBonus,
   qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, pillarClues, pSp, pillarExtra, hintBlock, tideStepsHTML, cluesDone, mapImage, enter: ENTER,
   wareState, get ship() { return S.ship; }, // 商品狀態（城市與網購共用的規則）、還沒演的到貨（手帳的「宅配中」）
+  mapView: nmView, mapDraw: nmDraw, // 筆記本的手繪地圖（map.js、components/stations/NoteMap.tsx）
   eggs: eggList, // 月光谷的小秘密：[{ id, name, hint, found }]（手帳的探索日誌）
   // 手上的紙（components/stations/Paper.tsx）與手帳的剪貼區：papers() 新的在前；paperAt(i) 重讀第 i 張（i＝S.papers 的索引）
   paper: paperNow, papers: () => S.papers.map((r, i) => { const s = paperSpec(r); return s && { i, id: r.id, v: s.v, name: s.name, zone: s.zone || '', gift: !!s.gift, torn: !!s.torn, t: r.t, isNew: r.t > S.jrSeen }; }).filter(Boolean).reverse(),
@@ -9710,7 +9716,7 @@ window.SlimeGame = {
 
 /* ---------- 啟動 ---------- */
 offlineCatchUp(); trend.sp = pick(trendPool()).id; renderTop();
-if (initWorld()) { renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動'; }
+if (initWorld()) { nmWarm(); renderHotbar(true); renderXP(); renderObjective(); renderQuest(); $('#startHint').innerHTML = '<b>點擊畫面開始</b><br>WASD 移動 · 滑鼠環顧 · E 互動'; }
 window.dispatchEvent(new Event('slime:ready')); // 通知 React 收起載入畫面（components/LoginGate.tsx）
 addEventListener('beforeunload', save); addEventListener('pagehide', () => { save(); cloud('leave'); if (NET.on) netLeave(true); });
 let hiddenAt = 0;

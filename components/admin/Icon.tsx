@@ -32,6 +32,7 @@ const PATHS: Record<string, React.ReactNode> = {
   chevron: <path d="M9 18l6-6-6-6" />,
   keyboard: <><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></>,
   sparkle: <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />,
+  map: <><path d="M9 4L3 6.2v13.6L9 17.6l6 2.2 6-2.2V4l-6 2.2L9 4z" /><path d="M9 4v13.6M15 6.2v13.6" /></>,
   globe2: <><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /></>,
 };
 

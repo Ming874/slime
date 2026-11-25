@@ -39,6 +39,7 @@ export type Game = {
   AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string;
   tideStepsHTML: () => string; cluesDone: () => number; mapImage: () => string; enter: () => string;
   eggs?: () => Egg[];
+  mapView?: () => MapView; mapDraw?: (c: HTMLCanvasElement) => void; // 筆記本的手繪地圖（public/game/map.js）
   ship?: Ship[]; wareState?: (t: string, k: string) => WareState | null;
   paper?: () => PaperData | null; papers?: () => PaperRow[]; paperAt?: (i: number) => PaperData | null; paperOf?: (id: string) => PaperData | null; rcptView?: (d: Rcpt) => PaperData;
   clip?: () => number; hasPaper?: (id: string) => boolean; postcardImg?: (z: string) => string;
@@ -54,6 +55,15 @@ export type PaperRow = { i: number; id: string; v: string; name: string; zone: s
 // 付了錢、還沒演的到貨（氣球木箱）；商品狀態（城市與網購共用的規則）
 export type Ship = { k: string; via: 'city' | 'web'; at: number };
 export type WareState = { id: string; t: string; k: string; name: string; cost: number; can: boolean; why: '' | 'has' | 'max' | 'need' | 'poor'; d: number; lv: number; max: number; need: string; go: 'ship' | 'bag' | 'wear' };
+// 筆記本的手繪地圖（map.js 的 nmView）：x、y 是地圖寬高的百分比；w、h＝地圖範圍（基礎單位，決定長寬比）、cw、ch＝畫布像素；
+// seq＝第幾次翻到這一頁；me＝鉛筆圈（rot＝朝向，度）；gate＝谷口「往大城市」的箭頭；lb＝名字預設寫在貼紙哪一邊；labels[].c＝地名可以寫的位置（照順序，NoteMap.tsx 挑不碰到東西的那個）
+export type MapPt = { x: number; y: number };
+export type MapView = {
+  w: number; h: number; cw: number; ch: number; seq: number; pct: number; city: boolean; cave: boolean; touch: boolean;
+  me: (MapPt & { rot: number }) | null; gate: MapPt | null; labels: { id: string; t: string; c: MapPt[] }[];
+  stickers: (MapPt & { id: string; kind: string; name: string; lb: string })[]; eggs: (MapPt & { id: string; name: string; zone: string })[];
+  eggN: number; eggT: number; lmN: number; lmT: number;
+};
 // 月光谷的小秘密（彩蛋）：id 開頭是區域（forest_／coast_／volcano_／snow_／city_）
 export type Egg = { id: string; name: string; hint: string; found: boolean };
 

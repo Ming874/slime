@@ -2,7 +2,7 @@
 /* 沉浸式工作站：game.js 打開介面時會發出 slime:gui（哪一種道具）、切換分頁時發出 slime:tab。
    這裡把道具的外觀（書皮、書頁、螢幕邊框、手機瀏海、機器鉚釘、捲軸…）用 portal 放進介面視窗 #gwin，
    開關與翻頁的動畫在 app/stations.css。視窗裡的內容仍由 game.js 負責。 */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 type State = { open: boolean; kind: string; prop: string; tab: string; flip: number };
@@ -44,6 +44,7 @@ const clock = () => { const d = new Date(); return `${d.getHours()}:${String(d.g
 const stampDay = () => { const d = new Date(), g = window.SlimeGame, ph = g?.DN && g.DN_PHASE ? g.DN_PHASE[g.DN.phase] || '' : ''; return `${d.getMonth() + 1}/${d.getDate()} ${ph}`.trim(); };
 
 function Decor({ prop, tab, flip, kind }: State) {
+  const f0 = useRef(flip).current; // 換成這個道具時已經累積的翻頁數：筆記本只在打開之後換頁才翻（不在拿出來的那一刻翻）
   switch (prop) {
     case 'journal': // 背包＋圖鑑：工坊手帳，皮革書皮翻開，左頁是扉頁，右頁是內容；換分頁時翻頁
       return (
@@ -73,9 +74,10 @@ function Decor({ prop, tab, flip, kind }: State) {
           {flip > 0 && <div className="st-flip" key={flip} aria-hidden="true" />}
         </>
       );
-    case 'notebook': // 暫停選單：3D 的手把線圈筆記本拿到眼前翻開，這裡是接手後的線圈與邊線外的小塗鴉（12 個線圈和 game.js 的 3D 模型一致）
+    case 'notebook': // 暫停選單：3D 的手把線圈筆記本拿到眼前翻開，這裡是接手後的線圈與邊線外的小塗鴉（12 個線圈和 game.js 的 3D 模型一致）；換頁（選單 ⇄ 地圖）時上一頁往上翻過線圈
       return (
         <>
+          {flip > f0 && <div className="st-flip" key={flip} aria-hidden="true" />}
           <div className="st-rings" aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>
           <i className="st-star" aria-hidden="true">★</i>
           <i className="st-doodle" aria-hidden="true" />

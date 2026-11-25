@@ -191,6 +191,77 @@
 @media (prefers-reduced-motion:reduce){.rx-mascot,.rx-title-col,.rx-mp{animation:none}}
 
 /* =====================================================================
+   筆記本的地圖頁（components/stations/NoteMap.tsx、public/game/map.js）：畫在橫線紙上的手繪地圖。
+   淡彩與線稿是 canvas（透明的地方看得到紙的橫線）；地名、貼紙、鉛筆圈是 DOM，大小跟著地圖寬度（cqw），字的四周描一圈紙色，蓋在淡彩上也讀得清楚。
+   寬螢幕：地圖＋右邊的圖例，整頁不用捲動；矮螢幕（手機橫拿）：地圖照寬度放大、頁面上下捲動，翻到這頁時自己的位置會捲進畫面
+   ===================================================================== */
+.nm{--halo:0 0 2px #fffdf6,0 0 3px #fffdf6,0 0 5px #fffdf6,0 0 8px #fffdf6e6;display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:8px 22px;align-items:start;padding:8px 0 6px;
+  font-family:var(--hand,serif);color:var(--ink,#22314f);line-height:28px}
+.nm-map{position:relative;width:100%;justify-self:center;container-type:inline-size;border-radius:4px 7px 5px 8px;box-shadow:0 0 0 1.5px #5d688045;margin:6px 0}
+@media (min-height:521px){.nm-map{width:min(100%,calc((100dvh - 210px) * 1.3))}}
+/* 手機直拿：地圖像貼上去的一張紙，往左蓋過紅色邊線、往右伸到紙邊附近，寬度多六分之一（312 → 362 px），字也比較有地方放 */
+@media (max-width:600px) and (min-height:521px){.nm-map{justify-self:start;width:calc(100% + var(--nb-m,30px) + 14px - 8px + 14px);max-width:none;margin-left:calc(8px - var(--nb-m,30px) - 14px);
+  background:#fffdf6;box-shadow:0 0 0 1.5px #5d688045,0 2px 5px -2px #22315040}} /* 自己一張紙：底下的紅色邊線不透上來 */
+.nm-map canvas{display:block;width:100%;height:100%;animation:nm-wash .5s ease-out both}
+@keyframes nm-wash{from{opacity:0}}
+/* 下面的大小（--st 貼紙、--fn 貼紙的名字、--fl 地名、--fe 星星、--ft 標題、--fN 指北、--ga 往大城市的箭頭）都由 NoteMap.tsx 依地圖寬度算好放在 .nm-map 上，
+   排版（誰讓誰、地名寫在哪）也在那裡算，這裡只管長相 */
+/* 標題與指北 */
+.nm-title{position:absolute;left:2%;top:2.5%;font:700 var(--ft)/1 var(--hand,serif);letter-spacing:.32em;color:var(--ink);text-shadow:var(--halo);pointer-events:none}
+.nm-north{position:absolute;right:2%;top:2%;display:grid;justify-items:center;gap:1px;font:700 var(--fN)/1 var(--hand,serif);color:var(--ink);text-shadow:var(--halo);pointer-events:none}
+.nm-north svg{width:2cqw;min-width:10px;max-width:15px;height:auto;fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* 地名：鉛筆寫的大字，字距拉開（左邊補上和右邊一樣的字距，字才會在正中間） */
+.nm-lb{position:absolute;white-space:nowrap;transform:translate(-50%,-50%);padding-left:.3em;font:700 var(--fl)/1 var(--hand,serif);letter-spacing:.3em;color:#22314fcc;text-shadow:var(--halo);pointer-events:none}
+/* 貼紙：圓形的模切貼紙（白邊、一點陰影、每張歪一點），名字寫在哪一邊由 NoteMap.tsx 決定（inline style） */
+.nm-st{position:absolute;width:0;height:0}
+.nm-st svg{position:absolute;left:calc(var(--st) / -2);top:calc(var(--st) / -2);width:var(--st);height:var(--st);padding:calc(var(--st) * .1);border-radius:50%;background:#fffdf6;
+  box-shadow:0 0 0 2px #fff,0 1.5px 3px 1px #2231504d;transform:rotate(var(--r,0deg))}
+.nm-st b{position:absolute;white-space:nowrap;font:700 var(--fn)/1.1 var(--hand,serif);letter-spacing:.06em;color:var(--ink);text-shadow:var(--halo)}
+/* 小秘密：星星形的小貼紙（白邊），顏色是那一區的主色 */
+.nm-egg{position:absolute;width:var(--fe);aspect-ratio:1;transform:translate(-50%,-50%) rotate(var(--r,0deg));filter:drop-shadow(0 1px 1px #22315066)}
+.nm-egg svg{display:block;width:100%;height:100%;overflow:visible}
+.nm-egg path{stroke:#fff;stroke-width:2.4;stroke-linejoin:round;paint-order:stroke}
+.nm-egg{cursor:help;outline:none}
+.nm-egg::after{content:attr(data-n);position:absolute;left:115%;top:50%;transform:translateY(-50%) rotate(calc(var(--r,0deg) * -1));transform-origin:0 50%;white-space:nowrap;padding:1px 7px;border-radius:3px;background:#fff8c9;box-shadow:0 1px 3px #22315059;
+  font:700 clamp(12px,2.3cqw,15px)/1.5 var(--hand,serif);font-style:normal;color:var(--ink);opacity:0;pointer-events:none;transition:opacity .15s;z-index:2}
+.nm-egg.end::after{left:auto;right:115%;transform-origin:100% 50%}
+.nm-egg:is(:hover,:focus)::after{opacity:1}
+.nm-egg:is(:hover,:focus){z-index:3}
+/* 谷口往南的鉛筆箭頭，「往大城市」寫在箭頭左邊（右邊留給南山） */
+.nm-gate{position:absolute;width:0;height:0;pointer-events:none}
+.nm-gate svg{position:absolute;left:calc(var(--ga) / -2);top:0;width:var(--ga);height:auto;fill:none;stroke:#7c5a3a;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.nm-gate b{position:absolute;white-space:nowrap;font:700 var(--fn)/1 var(--hand,serif);color:#7c5a3a;text-shadow:var(--halo)}
+/* 我在這裡：鉛筆一筆畫出來的圈＋朝向的實心小三角（翻到這頁時重畫一次）；大小由 NoteMap.tsx 給（站在地標旁邊時圈住那張貼紙） */
+.nm-me{position:absolute;display:block;transform:translate(-50%,-50%);line-height:0;scroll-margin:40px;pointer-events:none}
+.nm-me svg{display:block;overflow:visible;fill:none;stroke:#2b2f3a;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
+.nm-me .o{stroke-dasharray:100 100;stroke-dashoffset:100;filter:drop-shadow(0 0 1.5px #fffdf6);animation:nm-draw .75s .3s cubic-bezier(.4,.1,.4,1) forwards}
+.nm-me .a{fill:#2b2f3a;stroke-width:1.2;opacity:0;animation:nm-show .3s 1s ease-out forwards}
+@keyframes nm-draw{to{stroke-dashoffset:0}}
+@keyframes nm-show{to{opacity:1}}
+/* 圖例 */
+.nm-side{display:grid;align-content:start;min-width:0;padding-top:2px}
+.nm-pct{margin:0;font-size:15px}
+.nm-pct b{font-size:26px;letter-spacing:1px;color:var(--pen)}
+.nm-pct span{white-space:nowrap} /* 「的月光谷」不拆開 */
+.nm-key{list-style:none;margin:0;padding:0;display:grid}
+.nm-key li{display:flex;align-items:center;gap:8px;min-height:28px;font-size:15px;line-height:1.2}
+.nm-key .k{flex:none;width:26px;height:20px}
+.nm-key svg.k circle{fill:none;stroke:#2b2f3a;stroke-width:2.6}
+.nm-key .k-me{overflow:visible}.nm-key .k-me path{fill:#2b2f3a}
+.nm-key .k-path{height:0;border-top:2.6px dashed #92623acc}
+.nm-key .k-cave{height:0;border-top:3px dotted #584a96d9}
+.nm-key .k-st{width:22px;height:22px;margin:0 2px;padding:2px;border-radius:50%;background:#fffdf6;box-shadow:0 0 0 1.5px #fff,0 1px 2px #22315059}
+.nm-key .k-egg{width:20px;height:20px;margin:0 3px;overflow:visible;filter:drop-shadow(0 1px 1px #22315059)}
+.nm-key .k-egg path{stroke:#fff;stroke-width:2.4;paint-order:stroke}
+.nm-tip{margin:2px 0 0;font-size:13.5px;line-height:1.6;color:var(--ink2)}
+.nm-tip kbd{padding:0 6px;border-radius:5px;border:1.5px solid #22314f5c;font:700 12px/1.5 var(--hand,serif);color:var(--ink)}
+@media (max-width:700px){.nm{grid-template-columns:minmax(0,1fr)}.nm-side{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));column-gap:16px}.nm-side>h3,.nm-side>.nm-pct,.nm-side>.nm-tip{grid-column:1/-1}}
+/* 手機橫拿：地圖上下捲動時，圖例留在原地——圖例要比看得到的高度矮，捲到底時才不會被推上去、標題躲到頁首底下，所以排緊一點 */
+@media (max-height:520px) and (min-width:701px){.nm{grid-template-columns:minmax(0,1fr) 158px;column-gap:16px}.nm-side{position:sticky;top:0}
+  .nm-side .nb-h{margin-top:0}.nm-pct{font-size:14px;line-height:24px}.nm-pct b{font-size:22px}.nm-key li{min-height:24px;font-size:14px}.nm-tip{font-size:12.5px;line-height:1.45}}
+@media (prefers-reduced-motion:reduce){.nm-map canvas,.nm-me .o,.nm-me .a{animation:none}.nm-me .o{stroke-dashoffset:0}.nm-me .a{opacity:1}}
+
+/* =====================================================================
    HUD：上方指南針與右上角按鈕（game/dom.html、game.js 的 renderCompass）
    ===================================================================== */
 #compass{width:clamp(200px,min(46vw,100vw - 650px),500px);height:38px;border-radius:999px;border:1px solid #ffffff24;
