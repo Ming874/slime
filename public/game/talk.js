@@ -446,7 +446,7 @@ function tkPose() { return TK.cards && (TK.st === 'ask' || TK.st === 'fly') ? 'f
 function bark(who, text, o = {}) {
   if (!who || !text || !W.ready || TITLE.on || GUI.kind || !tkInit()) return null; // 介面開著、主選單：直接丟掉
   const now = tkNow(), self = who.k === 'self'; while (BK.list.length >= 2) tkBkKill(BK.list[0]);
-  const el = document.createElement('div'); el.className = 'bkw' + (self ? ' self' : '');
+  const el = document.createElement('div'); el.className = 'bkw' + (self ? ' self' : '') + (o.cls ? ' ' + o.cls : ''); // o.cls：店員的一句話字大一點（app/game.css）
   el.innerHTML = '<div class="tki"><div class="tb ' + (self ? 'self' : 'bark') + '">' + tkRich(text) + '</div>' + (self ? '' : '<svg class="tkt" aria-hidden="true"><path/></svg>') + '</div>'; el.style.opacity = '0'; el.firstChild.style.transformOrigin = self ? '50% 100%' : '30% 100%';
   TK.bEl.appendChild(el);
   const n = tkLen(text), b = { who, el, ki: el.firstChild, tb: el.querySelector('.tb'), path: el.querySelector('path'), t0: now, egg: o.egg || '', pin: !!o.pin, pl: '', plBad: 0, placed: false, x: 0, y: 0, s: 1,
@@ -479,7 +479,7 @@ function barkStep(dt, now) {
       const s = b.s = clamp(2.6 / Math.max(.3, dist), .9, 1.06), bw = b.w * s, bh = b.h * s;
       if (off && b.pin) { const r = tkPin(PA, sf, bw, bh, obs); x = r[0]; y = r[1]; dir = [r[2], r[3]]; } else [x, y] = tkChoose(b, tkCand(PA, PM, bw, bh, s), sf, bw, bh, now, obs);
       if (!b.placed || Math.abs(x - b.x) > 160 || Math.abs(y - b.y) > 160) { b.x = x; b.y = y; b.placed = true; } else { const k = 1 - Math.exp(-18 * dt); b.x += (x - b.x) * k; b.y += (y - b.y) * k; }
-      x = b.x; y = b.y;
+      x = b.x; y = b.y; if (op > 0) obs.push({ x, y, w: bw, h: bh }); // 後面的一句話讓開這一句（兩個店員的泡泡、貼邊時不疊在一起）
       if (dir) { const cx = b.bx + b.bw / 2, cy = b.by + b.bh / 2, k = Math.min(b.bw / 2 / Math.max(1e-3, Math.abs(dir[0])), b.bh / 2 / Math.max(1e-3, Math.abs(dir[1]))), tl = tkTail(b, cx + dir[0] * (k + 30), cy + dir[1] * (k + 30), true); if (tl) d = tl.d; }
       else { const tl = tkTail(b, (PM.x - x) / s, (PM.y - y) / s, false, 110 * Math.max(1, vh / 800)); if (tl) d = tl.d; }
     }

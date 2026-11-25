@@ -567,3 +567,4 @@ body.ware #objective { display: none; }
 .hbtn.got { animation: wGot .5s cubic-bezier(.34,1.56,.64,1); }
 @keyframes wGot { 0% { transform: scale(1); } 40% { transform: scale(1.22); border-color: #86efac; } 100% { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #sMoney.pay, .hbtn.got { animation: none; } }
+#talk .bkw.kp .tb.bark { font-size: max(16px, calc(var(--tkfs) * .94)); } /* 店員的一句話（價格、差多少錢）：手機也至少 16px */

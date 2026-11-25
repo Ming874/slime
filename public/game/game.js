@@ -7182,7 +7182,7 @@ function kpSay(id, key, sub = {}) {
   const pool = key.startsWith('pick:') ? [L.pick[key.slice(5)]] : key.startsWith('pay:') ? [L.pay[key.slice(4)]] : L[key]; if (!pool || !pool[0]) return null;
   const said = n.kpSaid || (n.kpSaid = {}), now = performance.now(), fresh = pool.filter(x => !said[x] || now - said[x] > 6000); if (!fresh.length) return null;
   const raw = fresh[Math.floor(Math.random() * fresh.length)]; said[raw] = now; n.talk = Math.max(n.talk, 2.5); // 說話時轉過來看你
-  return bark(npcWho(n), raw.replace('{d}', sub.d != null ? Math.round(sub.d).toLocaleString('en-US') : '').replace('{n}', sub.n || ''), { pin: true }); // 店員在你背後回答：泡泡貼在畫面邊上
+  return bark(npcWho(n), raw.replace('{d}', sub.d != null ? Math.round(sub.d).toLocaleString('en-US') : '').replace('{n}', sub.n || ''), { pin: true, cls: 'kp' }); // 店員在你背後回答：泡泡貼在畫面邊上
 }
 // 空手對準櫃台或店員按 E：聊一句（錢夠了的「想買」先問）
 function kpTalk(id) { const w = Object.keys(S.wish).some(x => wareShop(x) === id && (wareState(...x.split(':')) || {}).can); kpSay(id, w ? 'wish' : 'hi'); const n = kpNpc(id); if (n) npcGest(n, 'nod'); }
@@ -8005,11 +8005,12 @@ function wareRect() {
   const vw = innerWidth, vh = innerHeight, port = vh > vw, w0 = port ? Math.min(vw - 32, 420) : clamp(.3 * vw, 320, 440);
   const obs = ['#compass', '#topbtns', '#stats', '#bottom', '#log', '#btnAct', '#btnJump', '#btnRun', '#btnSneak', '#warm'].map(s => $(s)).filter(e => e && e.offsetParent !== null).map(e => { const r = e.getBoundingClientRect(); return { x: r.left - 8, y: r.top - 8, w: r.width + 16, h: r.height + 16 }; }).filter(r => r.w > 16 && r.h > 16);
   const lg = $('#log'); if (lg) { const r = lg.getBoundingClientRect(); if (r.width) obs.push({ x: r.left - 8, y: r.top - 8, w: r.width + 16, h: Math.max(r.height, 90) + 16 }); } // 訊息列平常是空的：預留兩則的高度
+  let top = 44; ['#stats', '#compass', '#cmpDeg', '#topbtns'].forEach(q => { const e = $(q); if (e && e.offsetParent !== null) { const r = e.getBoundingClientRect(); if (r.height && r.bottom < vh * .4) top = Math.max(top, r.bottom + 10); } }); // 觸控：卡片放在上排 HUD 的下面
   const hit = (x, y, w, h) => x < 8 || y < 8 || x + w > vw - 8 || y + h > vh - 8 || obs.some(o => x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y);
   let last = null;
   for (let sc = 1; ; sc *= .85) {
     const w = Math.max(260, Math.round(w0 * sc)), h = Math.round(w * .62);
-    const C = TOUCH ? (port ? [[(vw - w) / 2, Math.max(56, vh / 2 - h - 64)], [(vw - w) / 2, vh / 2 + 64]] : [[12, 44], [(vw - w) / 2, 44]]) : [[vw / 2 + 150, vh / 2 - h * .4], [vw / 2 - 150 - w, vh / 2 - h * .4], [vw / 2 + 60, vh / 2 - h - 40]];
+    const C = TOUCH ? (port ? [[(vw - w) / 2, Math.max(top, vh / 2 - h - 64)], [(vw - w) / 2, vh / 2 + 64]] : [[12, top], [(vw - w) / 2, top], [vw - w - 12, top]]) : [[vw / 2 + 150, vh / 2 - h * .4], [vw / 2 - 150 - w, vh / 2 - h * .4], [vw / 2 + 60, vh / 2 - h - 40]];
     for (const [x, y] of C) { const r = { x: Math.round(x), y: Math.round(y), w, h }; if (!hit(r.x, r.y, w, h)) return r; if (!last) last = r; }
     if (w <= 260) { const [x, y] = C[0]; return { x: Math.round(x), y: Math.round(y), w, h }; }
   }
@@ -8024,7 +8025,7 @@ function wWorld(p, q, sw, R, out) { out.p.copy(p); W.cam.worldToLocal(out.p); ou
 function wLerp(a, b, up, uq, us, out) { out.p.lerpVectors(a.p, b.p, up); out.q.slerpQuaternions(a.q, b.q, uq); out.s = a.s + (b.s - a.s) * us; return out; }
 function wCopy(a, out) { out.p.copy(a.p); out.q.copy(a.q); out.s = a.s; return out; }
 // 縮小模型在卡片上的位置：左 36% 那一格（卡片的像素座標），慢慢轉
-function wMiniOn(c, R, spin, out) { out.p.set(-R.w / 2 + R.w * .18, -R.h * .04, 40).multiplyScalar(c.s).applyQuaternion(c.q).add(c.p); out.q.copy(c.q).multiply(wq1.setFromEuler(new THREE.Euler(.32, spin, 0))); out.s = R.h * .52 * c.s; return out; }
+function wMiniOn(c, R, spin, out) { out.p.set(-R.w / 2 + R.w * .18, -R.h * .04, 0).multiplyScalar(c.s).applyQuaternion(c.q).add(c.p); const f = Math.max(.5, 1 - 40 * c.s / Math.max(.05, -out.p.z)); out.p.multiplyScalar(f); out.q.copy(c.q).multiply(wq1.setFromEuler(new THREE.Euler(.32, spin, 0))); out.s = R.h * .52 * c.s * f; return out; } // 往鏡頭拉近一點（沿著視線，畫面上的位置不變）
 const WP = { a: wPose(), b: wPose(), c: wPose(), m: wPose(), n: wPose(), t: wPose() };
 /* ---------- 吊牌卡的畫布：名稱、價格、等級、兩行短說明、去向；結帳後重畫成送貨單 ---------- */
 function wareCard(h, mode) {
