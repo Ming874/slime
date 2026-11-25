@@ -1669,7 +1669,7 @@ function introEnd() {
 }
 // 標題第一格先把著色器編好（compileAsync：不擋住畫面）：現在的陰影狀態＋洞深處關掉陰影的狀態；LOW 沒有陰影只要一種
 function introPrewarm() {
-  const I = INTRO; if (I.warm || !W.r || !W.r.compileAsync) return; I.warm = 1; const cam = W.cam;
+  const I = INTRO; if (I.warm || !W.r || !W.r.compileAsync) return; I.warm = 1; const cam = W.cam; if (!VM.g) initViewModel(); // 手（蒙皮＋逐頂點粗糙度，只有它用的著色器）先建好一起編譯：開場結束手第一次出現時不卡
   const run = () => { const m0 = cam.layers.mask; try { cam.layers.mask = 7; return W.r.compileAsync(W.scene, cam); } catch (e) { return Promise.resolve(); } finally { cam.layers.mask = m0; } };
   run().then(() => { const sh = W.sun && W.sun.castShadow; if (LOW || !sh || INTRO.on) return; W.sun.castShadow = false; try { return run(); } finally { W.sun.castShadow = sh; } }).then(() => { I.warm = 2; }, () => { I.warm = 2; });
 }

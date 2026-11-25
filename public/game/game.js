@@ -8322,54 +8322,85 @@ const VM_POSE = {
   coins: { x: -.03, y: .05, z: -.04, rx: .35, ry: .2, rz: -.15, c: .45, t: .4, sp: .08 }, // 掌心朝上攤開零錢包（錢不夠）
   offer: { x: -.05, y: .06, z: -.1, rx: -.9, ry: .35, rz: -.6, c: .3, t: .3, sp: .05 }, // 手腕往前讓店員戴吸取器
 };
+/* 整隻手（袖子、袖口、手腕、手掌、四指、拇指、指甲、腕上的吸取器與燈、結帳用的零錢包）是「一個」蒙皮網格、一個材質：每格 1 次繪製呼叫（原本每個零件各一次，21～28 次，手機 LOW 的固定成本太重）。
+   骨頭就是原本那些 Group（VM.arm／hand／手指 k1、k2／拇指 tk、tk2／吸取器、每顆燈、零錢包），手勢、拿道具、結帳照舊轉它們、縮放它們；
+   每個零件的頂點寫在所屬骨頭的座標裡、權重全給那根骨頭（綁定矩陣＝單位矩陣），所以和原本各自一個網格掛在那根骨頭底下長得一模一樣。
+   零件原本的粗糙度、金屬度不同、指示燈不受光：改成逐頂點的屬性（vmPbr），著色器裡取代材質的常數。要藏起來的零件（沒有吸取器、沒亮的燈）把骨頭縮成 0：三角形縮成一點，畫不出任何像素。 */
+function vmGeo(parts) {
+  const gs = parts.map(([g0, c, b, m, r, mt, bs]) => { const g = g0.toNonIndexed(); g0.dispose(); if (m) g.applyMatrix4(m); return [g, new THREE.Color(c), b, r, mt, bs]; });
+  const n = gs.reduce((a, q) => a + q[0].attributes.position.count, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), pbr = new Float32Array(n * 3), si = new Uint16Array(n * 4), sw = new Float32Array(n * 4); let o = 0;
+  gs.forEach(([g, c, b, r, mt, bs]) => { const k = g.attributes.position.count; pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); for (let i = o; i < o + k; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; pbr[i * 3] = r; pbr[i * 3 + 1] = mt; pbr[i * 3 + 2] = bs; si[i * 4] = b; sw[i * 4] = 1; } o += k; g.dispose(); });
+  const geo = new THREE.BufferGeometry(), A = (k, a, d) => geo.setAttribute(k, new THREE.BufferAttribute(a, d)); A('position', pos, 3); A('normal', nor, 3); A('color', col, 3); A('vmPbr', pbr, 3); A('skinIndex', si, 4); A('skinWeight', sw, 4); return geo;
+}
+function vmMat() {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true });
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 vmPbr;\nvarying vec3 vPbr;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvPbr = vmPbr;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vPbr;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = vPbr.x;').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vPbr.y;')
+      .replace('#include <opaque_fragment>', 'outgoingLight = mix(outgoingLight, diffuseColor.rgb, vPbr.z);\n#include <opaque_fragment>'); // 指示燈（vPbr.z＝1）＝MeshBasicMaterial 的樣子：只有本身的顏色（中文註解不放進著色器字串：有些驅動不收非 ASCII 字元）
+  };
+  m.customProgramCacheKey = () => 'vmHand'; return m;
+}
 function initViewModel() {
   if (W.cam.parent !== W.scene) W.scene.add(W.cam);
   const g = VM.g = new THREE.Group(); W.cam.add(g);
-  const lp = o => new THREE.MeshStandardMaterial(Object.assign({ flatShading: true, roughness: .7 }, o));
-  const skin = lp({ color: '#f2c29b' }), skinD = lp({ color: '#e0a77e' }), sleeve = lp({ color: '#2f7f9e', roughness: .85 }), cuff = lp({ color: '#e9dcc0', roughness: .9 }), stitch = lp({ color: '#f59e0b' }), nail = lp({ color: '#fbe3d0', roughness: .4 });
-  const arm = VM.arm = new THREE.Group(); arm.rotation.set(-.3, .3, .12); g.add(arm);
+  // bone：有零件掛著的關節（進骨架）；part：零件＝[幾何, 顏色, 骨頭編號, 在骨頭裡的擺放, 粗糙度, 金屬度, 不受光]
+  const bones = [], parts = [], bone = (parent, x = 0, y = 0, z = 0) => { const b = new THREE.Group(); b.position.set(x, y, z); parent.add(b); bones.push(b); return b; };
+  const part = (geo, c, b, m, r = .7, mt = 0, bs = 0) => parts.push([geo, c, bones.indexOf(b), m, r, mt, bs]);
+  const SKIN = '#f2c29b', NAIL = '#fbe3d0';
+  const arm = VM.arm = bone(g); arm.rotation.set(-.3, .3, .12);
   // 前臂（工作服袖子）、袖口、手腕：沿著從手往畫面右下方延伸的方向
-  const fd = new THREE.Vector3(.3, -.55, .78).normalize(), up = new THREE.Vector3(0, 1, 0);
-  const along = (m, d) => { m.position.copy(fd).multiplyScalar(d); m.quaternion.setFromUnitVectors(up, fd); arm.add(m); return m; };
-  along(new THREE.Mesh(new THREE.CylinderGeometry(.072, .085, .9, 7), sleeve), .62);
-  along(new THREE.Mesh(new THREE.CylinderGeometry(.078, .078, .07, 7), cuff), .17);
-  along(new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, .012, 7), stitch), .145);
-  along(new THREE.Mesh(new THREE.CylinderGeometry(.043, .05, .1, 7), skin), .1);
-  // 手掌（以手腕為支點轉動）
-  const hand = VM.hand = new THREE.Group(); hand.scale.setScalar(1.2); arm.add(hand);
-  const palm = mesh(new THREE.BoxGeometry(.13, .045, .13), skin, 0, 0, -.035, hand); palm.scale.set(1, 1, 1);
-  mesh(new THREE.BoxGeometry(.12, .04, .05), skinD, 0, -.004, .035, hand); // 掌根
-  VM.palm = palm;
+  const fd = new THREE.Vector3(.3, -.55, .78).normalize(), up = new THREE.Vector3(0, 1, 0), qa = new THREE.Quaternion().setFromUnitVectors(up, fd), one = new THREE.Vector3(1, 1, 1);
+  const along = d => new THREE.Matrix4().compose(fd.clone().multiplyScalar(d), qa, one);
+  part(new THREE.CylinderGeometry(.072, .085, .9, 7), '#2f7f9e', arm, along(.62), .85);
+  part(new THREE.CylinderGeometry(.078, .078, .07, 7), '#e9dcc0', arm, along(.17), .9);
+  part(new THREE.CylinderGeometry(.08, .08, .012, 7), '#f59e0b', arm, along(.145));
+  part(new THREE.CylinderGeometry(.043, .05, .1, 7), SKIN, arm, along(.1));
+  // 手掌（以手腕為支點轉動）；VM.palm＝手掌中心（talk.js、propGrip、凝膠吸進來的位置用）
+  const hand = VM.hand = bone(arm); hand.scale.setScalar(1.2);
+  part(new THREE.BoxGeometry(.13, .045, .13), SKIN, hand, M4(0, 0, -.035));
+  part(new THREE.BoxGeometry(.12, .04, .05), '#e0a77e', hand, M4(0, -.004, .035)); // 掌根
+  VM.palm = new THREE.Group(); VM.palm.position.set(0, 0, -.035); hand.add(VM.palm);
   // 手指：每根兩節，指尖有指甲；彎曲角度由手勢決定
   const F = [[.046, .043, .036, .9], [.016, .05, .041, 1], [-.016, .047, .038, .96], [-.045, .038, .031, .85]]; // 右手掌心朝上：拇指在右、小指在左
   VM.fingers = F.map(([x, l1, l2, r]) => {
-    const k1 = new THREE.Group(); k1.position.set(x, .004, -.1); hand.add(k1);
-    const s1 = mesh(new THREE.CapsuleGeometry(.0165 * r, l1, 2, 6), skin, 0, 0, -l1 / 2, k1); s1.rotation.x = Math.PI / 2;
-    const k2 = new THREE.Group(); k2.position.z = -l1; k1.add(k2);
-    const s2 = mesh(new THREE.CapsuleGeometry(.015 * r, l2, 2, 6), skin, 0, 0, -l2 / 2, k2); s2.rotation.x = Math.PI / 2;
-    mesh(new THREE.BoxGeometry(.018 * r, .006, .016), nail, 0, -.013 * r, -l2 + .002, k2); // 指甲長在手背（掌心的另一面）
+    const k1 = bone(hand, x, .004, -.1), k2 = bone(k1, 0, 0, -l1);
+    part(new THREE.CapsuleGeometry(.0165 * r, l1, 2, 6), SKIN, k1, M4(0, 0, -l1 / 2, Math.PI / 2));
+    part(new THREE.CapsuleGeometry(.015 * r, l2, 2, 6), SKIN, k2, M4(0, 0, -l2 / 2, Math.PI / 2));
+    part(new THREE.BoxGeometry(.018 * r, .006, .016), NAIL, k2, M4(0, -.013 * r, -l2 + .002), .4); // 指甲長在手背（掌心的另一面）
     return { k1, k2, x };
   });
   // 拇指：從掌側伸出，往掌心內收
   const tb = new THREE.Group(); tb.position.set(.068, -.002, -.02); tb.rotation.y = -.9; hand.add(tb);
-  const tk = new THREE.Group(); tb.add(tk);
-  mesh(new THREE.CapsuleGeometry(.02, .04, 2, 6), skin, 0, 0, -.025, tk).rotation.x = Math.PI / 2;
-  const tk2 = new THREE.Group(); tk2.position.z = -.05; tk.add(tk2);
-  mesh(new THREE.CapsuleGeometry(.017, .032, 2, 6), skin, 0, 0, -.018, tk2).rotation.x = Math.PI / 2;
-  mesh(new THREE.BoxGeometry(.02, .006, .017), nail, 0, -.015, -.034, tk2);
+  const tk = bone(tb), tk2 = bone(tk, 0, 0, -.05);
+  part(new THREE.CapsuleGeometry(.02, .04, 2, 6), SKIN, tk, M4(0, 0, -.025, Math.PI / 2));
+  part(new THREE.CapsuleGeometry(.017, .032, 2, 6), SKIN, tk2, M4(0, 0, -.018, Math.PI / 2));
+  part(new THREE.BoxGeometry(.02, .006, .017), NAIL, tk2, M4(0, -.015, -.034), .4);
   VM.thumb = { tk, tk2 };
-  // 手上拿的東西放在掌心
+  // 手上拿的東西放在掌心（凝膠、捏捏是透明的物理材質，各自一個網格；只有拿著時才畫）
   VM.hold = new THREE.Group(); VM.hold.position.set(0, .05, -.075); hand.add(VM.hold);
   VM.J = makeJelly(6, true); VM.J.ov.visible = false; VM.J.group.scale.setScalar(.05); VM.J.group.position.y = -.005; VM.hold.add(VM.J.group);
   VM.gel = mesh(new THREE.SphereGeometry(.05, 20, 14), new THREE.MeshPhysicalMaterial({ color: '#6ee7a8', roughness: .1, clearcoat: 1, transparent: true, opacity: .9 }), 0, 0, 0, VM.hold); VM.gel.scale.set(1, .72, 1);
-  // 採集吸取器：裝在手腕上的小裝置，指示燈數量 = 等級
-  const gad = VM.gad = new THREE.Group(); gad.position.copy(fd).multiplyScalar(.27).add(new THREE.Vector3(0, .075, 0)); gad.quaternion.setFromUnitVectors(up, fd); gad.scale.setScalar(.6); arm.add(gad);
-  mesh(new THREE.BoxGeometry(.1, .06, .085), lp({ color: '#334155', metalness: .6, roughness: .35 }), 0, 0, 0, gad); mesh(new THREE.CylinderGeometry(.022, .03, .05, 8), lp({ color: '#94a3b8', metalness: .8 }), 0, .045, -.02, gad);
-  VM.gadL = [0, 1, 2, 3].map(i => mesh(new THREE.BoxGeometry(.014, .012, .014), new THREE.MeshBasicMaterial({ color: '#22d3ee' }), -.03 + i * .02, .032, .03, gad));
+  // 採集吸取器：裝在手腕上的小裝置，指示燈數量 = 等級（vmGad 用骨頭的縮放開關）
+  const gad = VM.gad = bone(arm); gad.position.copy(fd).multiplyScalar(.27).add(new THREE.Vector3(0, .075, 0)); gad.quaternion.copy(qa); gad.scale.setScalar(0);
+  part(new THREE.BoxGeometry(.1, .06, .085), '#334155', gad, null, .35, .6); part(new THREE.CylinderGeometry(.022, .03, .05, 8), '#94a3b8', gad, M4(0, .045, -.02), .7, .8);
+  VM.gadL = [0, 1, 2, 3].map(i => { const b = bone(gad, -.03 + i * .02, .032, .03); part(new THREE.BoxGeometry(.014, .012, .014), '#22d3ee', b, null, 1, 0, 1); return b; });
+  // 史萊姆零錢包（店裡結帳）：壓扁的綠色二十面體、兩顆黑眼睛、拉鍊畫成笑臉；平常縮到看不見（wareStep 縮放 VM.purse）
+  const pu = VM.purse = bone(hand, 0, .07, -.08); pu.scale.setScalar(.001);
+  [[new THREE.IcosahedronGeometry(.06, 1), '#4ade80', M4(0, 0, 0, 0, 0, 0, 1.15, .72, .95)], [new THREE.SphereGeometry(.009, 6, 4), '#111827', M4(-.02, .016, .052)], [new THREE.SphereGeometry(.009, 6, 4), '#111827', M4(.02, .016, .052)], [new THREE.TorusGeometry(.024, .005, 4, 10, Math.PI), '#166534', M4(0, -.004, .054, 0, 0, Math.PI)], [new THREE.BoxGeometry(.012, .016, .01), '#fbbf24', M4(.03, -.012, .05)]].forEach(([geo, c, m]) => part(geo, c, pu, m, .35));
+  const mat = vmMat();
+  if (W.r.capabilities.floatVertexTextures) {
+    // 骨頭矩陣算成「相對於 VM.g」：Skeleton 預設上傳世界矩陣，大城市在 x＝4000，float32 只剩約 0.25 mm 的精度，手的頂點會隨走路一格格抖；先在 JS（double）扣掉 VM.g，著色器裡只剩小數字（detached＋單位綁定矩陣）
+    const sk = VM.mesh = new THREE.SkinnedMesh(vmGeo(parts), mat), skel = new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4())), gi = new THREE.Matrix4(), bm = new THREE.Matrix4();
+    skel.update = function () { gi.copy(g.matrixWorld).invert(); this.bones.forEach((b, i) => bm.multiplyMatrices(gi, b.matrixWorld).toArray(this.boneMatrices, i * 16)); if (this.boneTexture) this.boneTexture.needsUpdate = true; };
+    sk.bindMode = 'detached'; g.add(sk); sk.bind(skel, new THREE.Matrix4());
+  } else bones.forEach((b, i) => { const ps = parts.filter(q => q[2] === i); if (ps.length) b.add(new THREE.Mesh(vmGeo(ps), mat)); }); // 沒有浮點頂點貼圖（只有 WebGL 1 的舊手機）不能蒙皮：退回每根骨頭一個網格（18 次，原本 27），一樣同一個材質
   VM.p = Object.assign({}, VM_POSE.empty); VM.sq = 0; VM.holdK = 0;
   g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
   g.visible = false;
 }
+// 吸取器與指示燈：n＝亮幾顆（0＝沒有吸取器）
+function vmGad(n) { VM.gad.scale.setScalar(n > 0 ? .6 : 0); VM.gadL.forEach((b, i) => b.scale.setScalar(i < n ? 1 : 0)); }
 function heldKey() { const it = held(); return it ? (it.t === 'prod' ? 'p' : 'g') + SPECIES.indexOf(SP[it.t === 'prod' ? it.p.sp : it.sp]) : ''; }
 function upgradeFx(dt) {
   // 跑鞋：奔跑時畫面邊緣出現速度線，等級越高越明顯
@@ -8391,6 +8422,12 @@ function vmPose(p) {
    面向鏡頭的那一面用不受光的材質畫成和 2D 一樣的顏色（拿到眼前的過程中從環境亮度漸漸亮到原色），交接時看不出接縫。 */
 const hv1 = new THREE.Vector3(), hv2 = new THREE.Vector3();
 const NBP = { head: 70, line0: 99, gap: 28, margin: 52 }; // 筆記本內頁：頁首線、第一條橫線、行距、紅色邊線（窄螢幕 30）；和 stations.css 的筆記本 .gwin 對齊
+// 多材質的盒子：BoxGeometry 每一面一組＝一次繪製呼叫；相鄰、同一個材質的面併成一組（四個書邊同材質 4→1，整個盒子 6→3）
+function boxM(w, h, d, mats, x, y, z, parent) {
+  const geo = new THREE.BoxGeometry(w, h, d), ms = [], gs = [];
+  geo.groups.forEach(q => { const m = mats[q.materialIndex], i = ms.includes(m) ? ms.indexOf(m) : ms.push(m) - 1, l = gs[gs.length - 1]; if (l && l[2] === i && l[0] + l[1] === q.start) l[1] += q.count; else gs.push([q.start, q.count, i]); });
+  geo.clearGroups(); gs.forEach(q => geo.addGroup(...q)); return mesh(geo, ms, x, y, z, parent);
+}
 function rrShape(w, h, r) { const s = new THREE.Shape(), x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); return s; }
 /* 手上那張紙的 3D 模型（heldModel 的 paper 分支，像素為單位，停好時投影剛好是 #gwin）：每片紙正反兩個平面（不用 6 材質的盒子，每片 2 次繪製）。
    fold3＝三折信：上片以 y＝+h/6、下片以 y＝−h/6 為軸往鏡頭這邊摺，闔著時看到上片外側的紅色封蠟；flip＝一張卡兩面，闔著時背面（明信片的風景）朝你；
@@ -8519,11 +8556,11 @@ function heldModel(kind, R) {
       g.save(); g.translate(w * .16, h * .09); g.rotate(-.32); g.fillStyle = 'rgba(251,191,36,.78)'; g.fillRect(-70, -15, 140, 30); g.restore(); // 紙膠帶
     });
     const edge = mat('#efe6cf'), cm = [mat('#1d6670'), face(cover, { transparent: true }), mat('#e9dfc6', { transparent: true })];
-    mesh(new THREE.BoxGeometry(w, h, 14), [edge, edge, edge, edge, face(page), mat('#c9b48a')], 0, 0, -7, root);
-    const ring = new THREE.TorusGeometry(8, 1.9, 6, 18), rm = new THREE.MeshBasicMaterial({ color: '#9aa3b2', fog: false, toneMapped: false }); // 線圈和 2D 的 .st-rings 同色
-    for (let i = 0; i < 12; i++) { const m = mesh(ring, rm, -w / 2 + 26.5 + i * (w - 53) / 11, h / 2 + 1, -5, root); m.rotation.y = Math.PI / 2; m.scale.set(1, 1.4, 1); }
+    boxM(w, h, 14, [edge, edge, edge, edge, face(page), mat('#c9b48a')], 0, 0, -7, root);
+    const ring = new THREE.TorusGeometry(8, 1.9, 6, 18), rm = new THREE.MeshBasicMaterial({ color: '#9aa3b2', fog: false, toneMapped: false }); // 線圈和 2D 的 .st-rings 同色；12 個合成一個網格（12 次繪製呼叫→1）
+    mesh(mergeParts(Array.from({ length: 12 }, (_, i) => [ring, '#fff', M4(-w / 2 + 26.5 + i * (w - 53) / 11, h / 2 + 1, -5, 0, Math.PI / 2, 0, 1, 1.4, 1)])), rm, 0, 0, 0, root); ring.dispose();
     const pv = new THREE.Group(); pv.position.set(0, h / 2 + 3, 3); root.add(pv);
-    mesh(new THREE.BoxGeometry(w + 6, h + 6, 3), [cm[0], cm[0], cm[0], cm[0], cm[1], cm[2]], 0, -(h + 6) / 2, -1.5, pv);
+    boxM(w + 6, h + 6, 3, [cm[0], cm[0], cm[0], cm[0], cm[1], cm[2]], 0, -(h + 6) / 2, -1.5, pv);
     fade.push(cm[1], cm[2]); cm[0].transparent = true; fade.push(cm[0]);
     pm.open = o => { pv.rotation.x = -o * Math.PI * 1.02; const a = 1 - smooth(.42, .78, o); fade.forEach(m => m.opacity = a); pv.visible = a > .01; }; // 封面翻過頭頂就淡掉
   } else if (kind === 'live') {
@@ -8544,7 +8581,7 @@ function heldModel(kind, R) {
     }, sw, sh) });
     mesh(sg, scr, 0, 0, .6, root);
     const bm = mat('#2d323c', { metalness: .6, roughness: .4 });
-    [[-1, 120, 34], [-1, 170, 58], [1, 150, 80]].forEach(([sd, t, l]) => mesh(new THREE.BoxGeometry(5, l, 8), bm, sd * (w / 2 + 6), h / 2 - t - l / 2, -8, root));
+    mesh(mergeParts([[-1, 120, 34], [-1, 170, 58], [1, 150, 80]].map(([sd, t, l]) => [new THREE.BoxGeometry(5, l, 8), '#fff', M4(sd * (w / 2 + 6), h / 2 - t - l / 2, -8)])), bm, 0, 0, 0, root); // 側邊三顆按鍵一個網格
     pm.open = o => scr.color.setScalar(o * o); // 螢幕亮起
   } else if (kind === 'paper') paperModel(pm, pp || {}, w, h, tex, face, root);
   else {
@@ -8565,11 +8602,11 @@ function heldModel(kind, R) {
     const innerT = tex((g, W2, H2) => { hide(g, W2, H2); g.save(); g.beginPath(); g.rect(12, 12, pw, h); g.clip(); g.translate(12, 12); spread(g); g.restore(); }, pw + 12, h + 24);
     const pageT = tex(g => { g.translate(two ? -pw : 0, 0); spread(g); }, pw, h), backT = tex(hide, pw + 12, h + 24);
     const leather = mat('#5e361b', { roughness: .7 }), edge = mat('#efe2c2'), inner = face(innerT, { transparent: !two }), outer = face(cov, { transparent: !two }), lth = two ? leather : mat('#5e361b', { roughness: .7, transparent: true });
-    mesh(new THREE.BoxGeometry(pw, h, 16), [edge, edge, edge, edge, face(pageT), leather], sp + pw / 2, 0, -8, root);
-    mesh(new THREE.BoxGeometry(pw + 12, h + 24, 4), [leather, leather, leather, leather, face(backT), leather], sp + pw / 2 + 6, 0, -3, root); // 封底（貼近頁面，透視縮小才不會吃掉皮革邊）
+    boxM(pw, h, 16, [edge, edge, edge, edge, face(pageT), leather], sp + pw / 2, 0, -8, root);
+    boxM(pw + 12, h + 24, 4, [leather, leather, leather, leather, face(backT), leather], sp + pw / 2 + 6, 0, -3, root); // 封底（貼近頁面，透視縮小才不會吃掉皮革邊）
     mesh(new THREE.BoxGeometry(14, 52, 1), new THREE.MeshBasicMaterial({ color: '#b91c1c', fog: false, toneMapped: false }), sp + 53, -h / 2 - 32, -21, root); // 書籤緞帶（同 2D 的 .st-ribbon）
     const pv = new THREE.Group(); pv.position.x = sp; root.add(pv);
-    mesh(new THREE.BoxGeometry(pw + 12, h + 24, 4), [lth, lth, lth, lth, outer, inner], pw / 2 + 6, 0, 0, pv);
+    boxM(pw + 12, h + 24, 4, [lth, lth, lth, lth, outer, inner], pw / 2 + 6, 0, 0, pv);
     pm.open = o => { pv.rotation.y = -o * Math.PI; pv.position.z = 2 - 4 * o; if (!two) { const a = 1 - smooth(.6, .95, o); [inner, outer, lth].forEach(m => m.opacity = a); pv.visible = a > .01; } };
   }
   root.traverse(o => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = o.receiveShadow = false; } });
@@ -8633,12 +8670,6 @@ function wareInit() {
   // 硬幣（金、銀）：世界座標，跳進收銀台的托盤
   const cg = new THREE.CylinderGeometry(.028, .028, .008, LOW ? 10 : 16); WARE.coins = new THREE.InstancedMesh(cg, new THREE.MeshStandardMaterial({ roughness: .3, metalness: .7 }), 6); WARE.coins.frustumCulled = false; WARE.coins.visible = false; WARE.coins.count = 6;
   for (let i = 0; i < 6; i++) WARE.coins.setColorAt(i, new THREE.Color(i % 3 === 1 ? '#cbd5e1' : '#fbbf24')); W.scene.add(WARE.coins);
-}
-// 史萊姆零錢包：壓扁的綠色二十面體、兩顆黑眼睛、拉鍊畫成笑臉（一個網格，平常縮到看不見）
-function purseInit() {
-  if (VM.purse) return;
-  const geo = mergeParts([[new THREE.IcosahedronGeometry(.06, 1), '#4ade80', M4(0, 0, 0, 0, 0, 0, 1.15, .72, .95)], [new THREE.SphereGeometry(.009, 6, 4), '#111827', M4(-.02, .016, .052)], [new THREE.SphereGeometry(.009, 6, 4), '#111827', M4(.02, .016, .052)], [new THREE.TorusGeometry(.024, .005, 4, 10, Math.PI), '#166534', M4(0, -.004, .054, 0, 0, Math.PI)], [new THREE.BoxGeometry(.012, .016, .01), '#fbbf24', M4(.03, -.012, .05)]]);
-  VM.purse = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .35, flatShading: true })); VM.purse.position.set(0, .07, -.08); VM.purse.scale.setScalar(.001); VM.purse.castShadow = false; VM.purse.frustumCulled = false; VM.hand.add(VM.purse);
 }
 /* 卡片在畫面上的矩形（CSS px）：桌機＝準心右側（再不行左側）；觸控直向＝準心上方（再不行下方）；觸控橫向＝左上（再不行正上方）。
    避開 HUD（各外擴 8 px），全部撞到就縮成 .85 再試，最小寬 260 */
@@ -8716,7 +8747,7 @@ function wareAct(t, tap) {
   kpSay(h.shop, 'far'); const n = kpNpc(h.shop); if (n) npcGest(n, 'wave'); // 離櫃台遠：店員招手，不結帳
 }
 function wareTake(it) {
-  if (WARE.h || GUI.kind || !inCity()) return; wareInit(); purseInit();
+  if (WARE.h || GUI.kind || !inCity()) return; wareInit();
   const st = wareState(it.t, it.k); if (!st) return; WARE.R = wareRect();
   WARE.h = { it, wid: it.wid, t: it.t, k: it.k, shop: it.shop, st, ph: 'take', t0: performance.now(), low: 0, mvT: 0, stT: 0, spin: 0, sig: '', sigT: 0, said: 0, from: wPose(), mf: wPose() };
   wareCard(WARE.h, 'card'); WARE.h.sig = wareSig(WARE.h); WARE.mini.geometry = wareMini(it.wid).geo; WARE.mode = '';
@@ -8883,6 +8914,7 @@ function warePoorStep(h, e, rm, R, B, C, Mn) {
 }
 function viewModelStep(dt) {
   if (!VM.g) initViewModel();
+  vmGad(WARE.gadN != null ? WARE.gadN : S.up.net); // 剛買吸取器：燈一顆顆亮到新等級（wareStep）；拿著道具、拿著吊牌卡時也照目前等級
   if (heldStep(dt)) return; // 正在拿起／收回手持道具：手跟著道具走
   if (wareStep(dt)) return; // 店裡拿起來看的吊牌卡：手拿著卡片（結帳、錢不夠時手改成掏零錢包，WARE.pose）
   const show = !GUI.kind && !TITLE.on && !W.camAway && !INTRO.on && !RIDE.on; VM.g.visible = show; if (!show) { VM.key = ''; return; } // 搭車中手先藏起來（下一輪放在膝上）
@@ -8896,7 +8928,6 @@ function viewModelStep(dt) {
   const keep = it && !tp && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
   VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
   vmPose(p);
-  const gn = WARE.gadN != null ? WARE.gadN : S.up.net; VM.gad.visible = gn > 0; VM.gadL.forEach((m, i) => m.visible = i < gn); // 剛買吸取器：燈一顆顆亮到新等級（wareStep）
   // 依畫面比例固定在右下角；直向手機放大並移到下方偏右
   const d = .78, hh = Math.tan(W.cam.fov * Math.PI / 360) * d, hw = hh * W.cam.aspect, port = W.cam.aspect < .9;
   const sc = port ? hh * 1.45 : hh * 1.32, ax = port ? hw * .36 : hw * .44, ay = port ? -hh * .56 : -hh * .5;
