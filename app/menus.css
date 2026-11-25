@@ -144,7 +144,8 @@
 .nb-list svg{width:20px;height:20px;color:var(--ink);justify-self:center}
 .nb-list b{font-size:18px;letter-spacing:1px}
 .nb-list small{justify-self:end;font-size:13.5px;color:var(--ink2);white-space:nowrap}
-:is(.nb-list>*,button.nb-row):is(:hover,:focus-visible){background:linear-gradient(transparent 18%,#fde04770 18% 86%,transparent 86%)}
+:is(.nb-list>*,button.nb-row):not(:disabled):is(:hover,:focus-visible){background:linear-gradient(transparent 18%,#fde04770 18% 86%,transparent 86%)}
+.nb-list>:disabled{opacity:.45;cursor:default} /* 做不到的事（例如搭車中回家）：鉛筆字變淡、滑過不畫螢光筆 */
 /* 設定：打勾的方框、三格靈敏度、鉛筆色的音量滑桿、畫質選項用紅筆圈起來 */
 .nb-set{display:grid}
 .nb-row{display:flex;align-items:center;gap:10px;min-height:42px;margin:0;padding:4px 8px 4px 4px;border:0;border-radius:6px;background:transparent;color:var(--ink);text-align:left;font:inherit;line-height:1.3}

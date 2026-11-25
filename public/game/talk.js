@@ -168,7 +168,7 @@ function tkPage(i, swap, b) {
   TK.tb.className = 'tb ' + (note ? 'note ' + (who.kraft ? 'kraft' : 'hand') : 'say'); TK.tb.innerHTML = h; TK.txs = TK.tb.firstChild.children;
   if (b.emo) { TK.emo.src = EMO_URL[b.emo] || (EMO_URL[b.emo] = emoTex(b.emo).image.toDataURL()); TK.emo.hidden = false; } else TK.emo.hidden = true;
   TK.el.classList.toggle('nm1', note || (TK.i === 0 && i === 0)); // 名牌：對話第一頁、每張紙每頁（貼邊時一定有）
-  const tip = who.k === 'say' && (S.tipTalk || 0) < 2; TK.el.classList.toggle('tip1', tip); TK.tip.hidden = !tip; if (tip) TK.tip.textContent = TOUCH ? '點畫面繼續・走開就結束' : 'E 繼續・走開就結束';
+  const tip = who.k === 'say' && (S.tipTalk || 0) < 2; TK.el.classList.toggle('tip1', tip); TK.tip.hidden = !tip; if (tip) TK.tip.textContent = TOUCH ? '點畫面繼續・走開就結束' : 'E 繼續・走開就結束'; TK.tipW = 0;
   tkMeasure();
   const o = swap ? TKT.swapType : TKT.type0; TK.tt = now + o; TK.sch = tkSched(a, who.vo ? who.vo[1] : 32, TKT.cap - o - 20); TK.ty = true; if (TK.st !== 'ask') TK.st = 'type'; // 從開口算起 1300ms 內一定打完
   if (swap) tkAnimStart('swap', TKT.swap);
@@ -260,7 +260,7 @@ function tkSafe() {
   let t = 12; for (const id of ['stats', 'compass', 'topbtns']) { const r = R(id); if (r && r.bottom < vh * .5) t = Math.max(t, r.bottom + 8); }
   const bt = R('bottom'), obs = [{ x: vw / 2 - 22, y: vh / 2 - 22, w: 44, h: 44 }], add = r => { if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height }); };
   const lg = document.getElementById('log'); if (lg && lg.children.length) add(R('log'));
-  add(R('coach')); add(R('warm')); { const r = R('cmpDeg'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 指南針下面的角度小牌：盡量不蓋到 if (!document.body.classList.contains('talk')) { const r = R('objective'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 目標面板（對話中會淡出）：最先讓步的障礙
+  if (!document.body.classList.contains('talk')) add(R('coach')); add(R('warm')); // 教學提示在對話中是淡出的（talk.css），不用讓 { const r = R('cmpDeg'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 指南針下面的角度小牌：盡量不蓋到 if (!document.body.classList.contains('talk')) { const r = R('objective'); if (r) obs.push({ x: r.left, y: r.top, w: r.width, h: r.height, soft: 2 }); } // 目標面板（對話中會淡出）：最先讓步的障礙
   if (TOUCH) { // 觸控：搖桿區與按鈕群是「軟」障礙（盡量讓開；橫向手機實在放不下時，只避開真正的按鈕）
     ['btnAct', 'btnJump', 'btnRun', 'btnSneak'].forEach(id => add(R(id)));
     const sl = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--slot')) || 40; obs.push({ x: 0, y: vh * .4, w: vw * .45, h: vh * .6, soft: 1 }, { x: vw - 200, y: vh - sl - 240, w: 200, h: sl + 240, soft: 1 }); }
@@ -344,8 +344,18 @@ function tkPlace(dt, now) {
     let tx, ty; if (off) { const cx = TK.bx + TK.bw / 2, cy = TK.by + TK.bh / 2, k = Math.min(TK.bw / 2 / Math.max(1e-3, Math.abs(dir[0])), TK.bh / 2 / Math.max(1e-3, Math.abs(dir[1]))); tx = cx + dir[0] * (k + 30); ty = cy + dir[1] * (k + 30); }
     else { tx = (PM.x - TK.x) / s; ty = (PM.y - TK.y) / s; }
     const tl = tkTail(TK, tx, ty, off, TK.hs && !TK.on ? 48 : 110 * Math.max(1, innerHeight / 800)); if (tl) { d = tl.d; TK.tbase = [tl.bx, tl.by]; } // 提示「…」的尾巴短一點，不要劃過說話的人的臉；大螢幕上人比較大，尾巴上限跟著放長
+    tkTipSide(tl, s);
   }
   if (d !== TK.pd2) { TK.pd2 = d; TK.path.setAttribute('d', d); }
+}
+// 泡泡底下的操作提示（前兩次對話）：尾巴從底邊往下伸時會劃過置中的字，改放到尾巴根部的另一側（尾巴往左斜就放右邊），夾在畫面內
+function tkTipSide(tl, s) {
+  const tp = TK.tip; if (!tp || tp.hidden) return; let lf = '';
+  if (tl && tl.down) {
+    const w = TK.tipW || (TK.tipW = tp.offsetWidth), right = tl.vx < -.2 || (tl.vx <= .2 && tl.bx < TK.bx + TK.bw / 2);
+    lf = clamp(right ? tl.bx + 16 : tl.bx - 16 - w, (6 - TK.x) / s, (innerWidth - 6 - TK.x) / s - w).toFixed(0) + 'px';
+  }
+  if (lf !== TK.tipL) { TK.tipL = lf; tp.style.left = lf; tp.classList.toggle('side', !!lf); }
 }
 // 尾巴：紙色＋墨線的彎尖角，底寬 20px、最長 110px、尖端離嘴 12px；底邊伸進泡泡裡，用紙色蓋住接縫。pin＝貼邊時的小楔形
 function tkTail(L, tx, ty, pin, max = 110) {
@@ -359,7 +369,7 @@ function tkTail(L, tx, ty, pin, max = 110) {
   let vx = tx - bx, vy = ty - by; const len = Math.hypot(vx, vy); if (len < 10) return null; vx /= len; vy /= len;
   const want = pin ? 24 : Math.min(max, len - 12); if (want < 8) return null;
   const ex = bx + vx * want, ey = by + vy * want, hw = pin ? 9 : 10, ax = bx - nx * hw, ay = by - ny * hw, cx = bx + nx * hw, cy = by + ny * hw, px = -vy * want * .16, py = vx * want * .16, f = v => v.toFixed(1);
-  return { d: 'M' + f(ax) + ' ' + f(ay) + 'Q' + f((ax + ex) / 2 + px) + ' ' + f((ay + ey) / 2 + py) + ' ' + f(ex) + ' ' + f(ey) + 'Q' + f((cx + ex) / 2 + px * .4) + ' ' + f((cy + ey) / 2 + py * .4) + ' ' + f(cx) + ' ' + f(cy), bx, by };
+  return { d: 'M' + f(ax) + ' ' + f(ay) + 'Q' + f((ax + ex) / 2 + px) + ' ' + f((ay + ey) / 2 + py) + ' ' + f(ex) + ' ' + f(ey) + 'Q' + f((cx + ex) / 2 + px * .4) + ' ' + f((cy + ey) / 2 + py * .4) + ' ' + f(cx) + ' ' + f(cy), bx, by, vx, down: ny === 0 && vy > 0 };
 }
 // 泡泡的彈出、換句、收起：套在內層 .tki，transform-origin 在尾巴根部（看起來是從嘴邊長出來）。用 tkNow 算，TK.fz 停得住
 function tkAnimStart(k, d) {

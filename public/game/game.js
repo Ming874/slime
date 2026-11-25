@@ -1980,9 +1980,10 @@ function buildParticles() {
   for (let i = 0; i < n; i++) { pos[i * 3] = rnd(-25, 25); pos[i * 3 + 1] = rnd(0, 14); pos[i * 3 + 2] = rnd(-25, 25); ph[i] = rnd(0, 6.28); }
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('ph', new THREE.BufferAttribute(ph, 1));
   // 每顆粒子自己的相位：螢火蟲一閃一閃（不是點光源，只是發亮的點）
-  const U = { map: { value: dotTex() }, col: { value: new THREE.Color('#fef08a') }, size: { value: .14 }, time: { value: 0 }, blink: { value: 0 }, op: { value: 1 }, scale: { value: 300 } };
+  const U = { map: { value: dotTex() }, col: { value: new THREE.Color('#fef08a') }, size: { value: .14 }, time: { value: 0 }, blink: { value: 0 }, op: { value: 1 }, scale: { value: 300 }, cabInv: { value: new THREE.Matrix4().makeTranslation(0, -1e5, 0) } };
+  // cabInv：月光谷計程車的反矩陣。花粉、螢火蟲跟著玩家飄，有幾顆會剛好落在車廂裡（坐在後座時浮在椅子、擋風玻璃前面）：車身範圍內的不畫
   const mat = new THREE.ShaderMaterial({ uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    vertexShader: 'attribute float ph; uniform float size; uniform float time; uniform float blink; uniform float scale; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float b = pow(max(0.0, sin(time * 1.7 + ph * 3.0)), 3.0); vA = mix(1.0, 0.08 + b, blink); gl_PointSize = size * scale / -mv.z * mix(1.0, 0.7 + b * 0.6, blink); gl_Position = projectionMatrix * mv; }',
+    vertexShader: 'attribute float ph; uniform float size; uniform float time; uniform float blink; uniform float scale; uniform mat4 cabInv; varying float vA; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float b = pow(max(0.0, sin(time * 1.7 + ph * 3.0)), 3.0); vA = mix(1.0, 0.08 + b, blink); vec3 cl = (cabInv * modelMatrix * vec4(position, 1.0)).xyz; float inCab = step(abs(cl.x), 2.0) * step(abs(cl.z), 0.92) * step(-0.1, cl.y) * step(cl.y, 1.8); gl_PointSize = size * scale / -mv.z * mix(1.0, 0.7 + b * 0.6, blink) * (1.0 - inCab); gl_Position = projectionMatrix * mv; }',
     fragmentShader: 'uniform sampler2D map; uniform vec3 col; uniform float op; varying float vA; void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(col, t.a * op * vA); }' });
   const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; W.scene.add(pts); W.parts = pts;
   // 種類：[動作, 顏色, 大小, 混合, 閃爍, 不透明度]
@@ -1993,7 +1994,7 @@ function buildParticles() {
     const b = domBiome(P.x, P.z), nite = DN.night > .3, key = inCity() ? '' : b === 'forest' ? (nite ? 'firefly' : 'pollen') : b === 'coast' ? (nite ? 'firefly' : 'coast') : b;
     pts.visible = !!key && !QL.noParts; if (!pts.visible) return;
     if (key !== cur) { cur = key; const k = K[key]; U.col.value.set(k[1]); U.size.value = k[2]; mat.blending = k[3]; U.blink.value = k[4]; U.op.value = k[5]; mat.needsUpdate = true; }
-    U.time.value = t; U.scale.value = innerHeight * .5;
+    U.time.value = t; U.scale.value = innerHeight * .5; if (W.taxiV) U.cabInv.value.copy(W.taxiV.matrixWorld).invert();
     const kind = K[key][0]; pts.position.set(Math.floor(P.x / 50) * 50, G(P.x, P.z), Math.floor(P.z / 50) * 50);
     for (let i = 0; i < n; i++) {
       const k = i * 3;
@@ -3855,9 +3856,11 @@ function slimeGround(x, z, zid) {
 function moveSlime(s, dx, dz) {
   if (s.cave) return caveSlimeMove(s, dx, dz); // 洞穴史萊姆只在洞裡走
   const nx = s.x + dx, nz = s.z + dz, nh = H(nx, nz);
-  if (nh > -.1 && Math.abs(nh - H(s.x, s.z)) < .5 && Math.hypot(nx, nz) > WS_R + 1 && (s.tut || s.giant || slimeGround(nx, nz, s.zid) || !slimeGround(s.x, s.z, s.zid))) { s.x = nx; s.z = nz; return true; }
+  if (nh > -.1 && Math.abs(nh - H(s.x, s.z)) < .5 && Math.hypot(nx, nz) > WS_R + 1 && (s.tut || s.giant || slimeGround(nx, nz, s.zid) || !slimeGround(s.x, s.z, s.zid)) && !slimeCab(nx, nz, .5 * s.sc)) { s.x = nx; s.z = nz; return true; }
   s.turn = 0; s.wa += Math.PI * rnd(.6, 1.4); s.hvx *= -.25; s.hvz *= -.25; return false;
 }
+// 史萊姆也不會鑽進計程車（車是空心的，坐在後座看得一清二楚）：只有月光谷那台會碰到史萊姆；在車身範圍內就回傳推出去的位置，不在就回傳 null
+function slimeCab(x, z, r) { const cab = W.taxiV; if (!cab) return null; const u = cab.userData; if (Math.abs(x - u.wx) > 2.3 + r || Math.abs(z - u.wz) > 2.3 + r) return null; const b = cabBlock(x, z, r); return b[0] !== x || b[1] !== z ? b : null; }
 const slPitch = s => clamp(1.25 - (s.sc - .66) * 1.6, .85, 1.3) * ({ lava: .82, obsid: .78, ice: 1.15, salt: 1.08, aurora: 1.1 }[s.sp.id] || 1);
 let boingT = 0;
 function slimeStep(dt, t) {
@@ -3936,6 +3939,7 @@ function slimeStep(dt, t) {
     // ---- 表情 ----
     s.sur = Math.max(0, s.sur - dt * 2); s.hap = Math.max(0, s.hap - dt); s.slp += ((cool ? 1 : 0) - s.slp) * Math.min(1, dt * 3);
     s.blink -= dt; const bl = s.blink < .13 ? 1 - Math.abs(s.blink - .065) / .065 : 0; if (s.blink < 0) s.blink = Math.random() < .2 ? .2 : rnd(1.8, 5);
+    if (!s.cave && !s.mirror) { const b = slimeCab(s.x, s.z, .5 * s.sc); if (b) { s.x = b[0]; s.z = b[1]; } } // 車開過來、停到牠身上：推到車身外（跳躍中撞到車由 moveSlime 擋）
     const c = Math.cos(s.yaw), sn = Math.sin(s.yaw), gy = s.cave ? caveSlimeY(s) : G(s.x, s.z), by = s.air / s.sc - .03;
     const vx = cam.x - s.x, vz = cam.z - s.z, vl = Math.hypot(vx, vz) || 1, lxL = c * vx - sn * vz;
     s.lookT -= dt;
@@ -4647,6 +4651,7 @@ function quadCSS(R, Q) {
   return `matrix3d(${[a / W_, d / W_, 0, g / W_, b / H_, e / H_, 0, h / H_, 0, 0, 1, 0, x0, y0, 0, 1].map(n => +n.toFixed(6)).join(',')})`;
 }
 function openGui(kind, sec) {
+  if (RIDE.on && HELD[kind] && RIDE.ph !== 'drive' && RIDE.ph !== 'wait') { RIDE.pend = [kind, sec]; return; } // 上下車（鏡頭正穿過車門）：拿出來的筆記本／手帳會穿過門框，坐好（或下車站好）才拿出來
   if (WARE.h) wareBack(true); // 拿著商品打開任何介面：先立刻放回
   const g = GUIS[kind]; if (!g) return; if (GUI.kind && GUI.kind !== kind) guiLeave(); // 從別的介面直接切過來：手上的紙、手作台的便條、手機的收據先收進手帳
   if (kind !== 'paper') unlockMouse(); GUI.kind = kind; kind === 'paper' ? sfx.paper('lift') : sfx.open(); save(); if (kind === 'pause') S.savedAt = Date.now(); // 拿紙不放開滑鼠：讀完直接走
@@ -5477,7 +5482,7 @@ document.addEventListener('click', e => {
     case 'quality': if (['auto', 'high', 'low'].includes(k)) { S.quality = k; applyQuality(true); save(); ui('pause'); toast('畫質：' + { auto: '自動', high: '高', low: '低' }[k]); } break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
     case 'help': showHelp(); break;
-    case 'home': if (RIDE.on) break; if (inCity()) { closeGui(); setTimeout(() => rideStart('c2v', { seated: true }), HC.fade + 30); } else homeStamp(); break; // 城市：直接坐進招呼站的車走回程；月光谷：筆記本擋著時換位置，不跳 toast
+    case 'home': if (RIDE.on) break; if (inCity()) { closeGui(); const rm = RM(); setTimeout(() => rideStart('c2v', rm ? { seated: true } : { fly: true }), HC.fade + 30); } else homeGlide(); break; // 城市：從原地滑翔到招呼站那台車的右門外、坐進去走回程（減少動態：筆記本擋著時直接坐進去）；月光谷：滑翔回中央平地
     case 'paperFlip': if (GUI.kind === 'paper' && PAPER.cur && PAPER.cur.v === 'postcard') { PAPER.flip ^= 1; sfx.paper('flip'); ui('paper'); } break;
     case 'clipOpen': if (S.papers[+k]) { CLIP.i = +k; CLIP.flip = 0; sfx.paper('lift'); ui('inv'); } break;
     case 'clipClose': if (CLIP.i >= 0) sfx.paper('fold'); CLIP.i = -1; CLIP.flip = 0; ui('inv'); break; // 一定重繪：萬一畫面上還留著一張（CLIP 已歸零），點它也要能收掉
@@ -6163,7 +6168,9 @@ function refreshBase() {
 /* ---------- 計程車：兩頭各一台（月光谷花島西側、城市醫院門口），車內與司機全遊戲一份（INNER），掛在玩家那一頭的車上、換邊時跟著搬 ----------
    本地座標：+x 車頭、+z 右側、y＝0 地面。座艙（x −1.25～.85）不是實心的：底板、腰線以下的門板、A／B／C 柱與車頂，車窗是真的開口；
    兩扇後門是以前緣鉸鏈（x＝−.1）為原點的群組，往外往後開 70°；後窗搖下來了，所以玻璃只有前擋、後擋與前門的窗（一個網格）。
-   所有網格在第 0＋3 層：鏡頭鑽進隧道深處只畫第 3 層時，車子、車內、司機照樣看得到。繪製：近 11（車身、燈、燈箱、玻璃、兩扇門＋車內＋司機 4）、遠 6 */
+   所有網格在第 0＋3 層：鏡頭鑽進隧道深處只畫第 3 層時，車子、車內、司機照樣看得到。
+   停著、門關好的時候用合併好的車身（cabLod）：近處＝車身連兩扇門一個網格＋玻璃，遠處（18 m、手機 12 m 外，看不到車內）＝連車窗（不透明的深藍）也併進去。
+   繪製：叫車／搭車中 11（車身、燈、燈箱、玻璃、兩扇門＋車內＋司機 4），停著近處 9（手機 7），遠處 3 */
 const INNER = { g: null, fu: null, lam: null, who: null, mir: 0 };
 let CAB_M = null;
 const CAB_W = [[1.25, .82], [1.25, -.82], [-1.25, .82], [-1.25, -.82]]; // 四個輪子（右前、左前、右後、左後）
@@ -6175,7 +6182,7 @@ function makeCab(city) {
     const tt = new THREE.CanvasTexture(c); tt.colorSpace = THREE.SRGBColorSpace;
     CAB_M = { body: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .38, metalness: .25 }), lamp: new THREE.MeshBasicMaterial({ vertexColors: true }), tt };
   }
-  const g = new THREE.Group(), BP = [], LP = [], GP = [], Y = '#facc15', DK = '#1f2937', B = cabBox;
+  const g = new THREE.Group(), BP = [], LP = [], GP = [], DC = [], Y = '#facc15', DK = '#1f2937', B = cabBox;
   // 引擎蓋、行李箱、底板、前後隔板（座艙是空的）
   B(BP, 1.1, .62, 1.7, Y, 1.4, .72, 0); B(BP, .7, .62, 1.7, Y, -1.6, .72, 0); B(BP, 2.1, .1, 1.7, DK, -.2, .3, 0); B(BP, .06, .68, 1.6, DK, .85, .69, 0); B(BP, .06, .68, 1.6, Y, -1.25, .69, 0);
   [-1, 1].forEach(s => {
@@ -6199,13 +6206,20 @@ function makeCab(city) {
     const D = [], dg = new THREE.Group(); dg.position.set(-.1, 0, s * .85);
     B(D, .95, .62, .05, Y, -.475, .72, -s * .025); B(D, .9, .55, .03, '#e7dcc6', -.475, .7, -s * .065); B(D, .5, .05, .07, '#cbbf9f', -.5, .78, -s * .1); B(D, .95, .1, .02, DK, -.475, .92, s * .005);
     B(D, .85, .04, .04, DK, -.48, 1.62, -s * .03); B(D, .04, .6, .04, DK, -.92, 1.33, -s * .03); B(D, .12, .03, .03, '#cbd5e1', -.25, .95, s * .02);
-    const m = new THREE.Mesh(mergeParts(D), CAB_M.body); m.castShadow = !LOW; dg.add(m); g.add(dg); return { g: dg, s, a: 0, a0: 0, a1: 0, t0: 0, d: 350 };
+    const m = new THREE.Mesh(mergeParts(D), CAB_M.body); m.castShadow = !LOW; dg.add(m); g.add(dg); D.forEach(([geo, c, mm]) => DC.push([geo, c, M4(-.1, 0, s * .85).multiply(mm)])); return { g: dg, s, a: 0, a0: 0, a1: 0, t0: 0, d: 350 };
   });
+  // 停著時的合併車身：門關好的兩扇門併進車身（closed）；遠處再把車窗當成不透明的深藍色併進去（far，前門的窗是單面的，正反各一片）
+  const flip = q => { const a = q.attributes.position.array; for (let i = 0; i < a.length; i += 9) for (let k = 0; k < 3; k++) { const t = a[i + 3 + k]; a[i + 3 + k] = a[i + 6 + k]; a[i + 6 + k] = t; } return q; };
+  const GF = GP.flatMap(([geo, , mm]) => geo.type === 'BoxGeometry' ? [[geo, '#2a4566', mm]] : [[geo, '#2a4566', mm], [flip(geo.clone()), '#2a4566', mm]]);
+  const closed = new THREE.Mesh(mergeParts([...BP, ...DC]), CAB_M.body), far = new THREE.Mesh(mergeParts([...BP, ...DC, ...GF]), CAB_M.body);
+  [closed, far].forEach(o => { o.castShadow = !LOW; o.receiveShadow = true; o.visible = false; g.add(o); });
   const it = addInter(hitBox(4.2, 2.2, 2, 0, 1, 0, g), 'station', 'taxi', '計程車');
   g.traverse(o => { o.layers.mask = 9; });
-  g.userData = { city, st: 'park', doors, signM, glassM, glass, it, wx: 0, wz: 0, c: 1, s: 0, lt: 0, leg: null, p: {}, at: 0, next: '', blink: -1e9, hail: false, wave: -1e9 };
+  g.userData = { city, st: 'park', doors, signM, glassM, glass, body, closed, far, lod: 'open', it, wx: 0, wz: 0, c: 1, s: 0, lt: 0, leg: null, p: {}, at: 0, next: '', blink: -1e9, hail: false, wave: -1e9 };
   return g;
 }
+// 車身用哪一份：open＝分開的車身與兩扇門（叫車、搭車、門在動）、closed＝停著門關好（車身連門一個網格）、far＝遠處（連車窗一起）
+function cabLod(cab, lod) { const u = cab.userData; if (lod === u.lod) return; u.lod = lod; u.body.visible = u.doors[0].g.visible = u.doors[1].g.visible = lod === 'open'; u.closed.visible = lod === 'closed'; u.far.visible = lod === 'far'; }
 // 車內（米色座椅、儀表板、方向盤、紅色計費表、後照鏡、內飾）與司機福伯：MeshLambert，不受環境貼圖影響（換邊時亮度不會跳）
 function buildCabInner() {
   const A = [], B = (w, h, d, c, x, y, z, rx, ry, rz) => cabBox(A, w, h, d, c, x, y, z, rx, ry, rz), SEAT = '#efe3c4', DK = '#3b3f46', TRIM = '#ddd3bb', MAT = '#2f343b';
@@ -6258,7 +6272,7 @@ function cabBlock(nx, nz, r) {
 function cabSide(cab, x = P.x, z = P.z) { const u = cab.userData, dx = x - u.wx, dz = z - u.wz; return dx * u.s + dz * u.c < 0 ? -1 : 1; }
 // 開關門：a 從目前的角度用 out3 追到目標（delay 毫秒後才開始動）
 function cabDoor(cab, s, open, dur = 350, delay = 0) { const d = cab.userData.doors[s < 0 ? 0 : 1]; d.a0 = d.a; d.a1 = open ? 1 : 0; d.t0 = performance.now() + delay; d.d = dur; }
-// 月光谷的計程車招呼站：出生點左邊一座小花島（石頭邊、矮樹籬圍著一圈小花），西側一塊木牌「計程車招呼站 → 大城市」，畫著一台小計程車
+// 月光谷的計程車招呼站：出生點左邊一座小花島（石頭邊、矮樹籬圍著一圈小花），島的北端立一塊木牌「計程車招呼站 → 大城市」，畫著一台小計程車
 function taxiIsland() {
   const P0 = [], cx = -14.1, cz = 21.5, R = 2.9, hz = 3.6, rd = seeded(19), per = 4 * hz + PI2 * R;
   const at = (s, k = 0) => { s = ((s % per) + per) % per; let x, z, nx, nz; // 跑道形：右邊直線 → 北端半圓 → 左邊直線 → 南端半圓；k＝往內縮幾公尺
@@ -6272,9 +6286,10 @@ function taxiIsland() {
   for (let s = 0, i = 0; s < per; s += .55, i++) { const [x, z] = at(s, .38); P0.push([blobG(.3, i % 5), ['#3f7d3a', '#4a8a40', '#37713a'][i % 3], M4(x, top + .2, z, 0, i, 0, 1, .75, 1)]); } // 矮樹籬
   const FL = ['#f9a8d4', '#fde047', '#ffffff', '#c4b5fd', '#fb7185'];
   for (let s = 0, i = 0; s < per; s += .42, i++) { const [x, z] = at(s, 1.0 + rd() * .25); P0.push([sphG(.09, 6, 4), FL[i % 5], M4(x, top + .18 + rd() * .06, z)], [sphG(.07, 5, 3), '#4c8f45', M4(x + .08, top + .08, z - .06)]); } // 一圈小花
-  // 木牌（朝東，車子停在它和花島之間）：兩根柱子＋木板，字畫在另一個貼圖網格
-  const sx = -22.4, sz = 19.6, sy = H(sx, sz);
-  [-.66, .66].forEach(dz => P0.push([new THREE.BoxGeometry(.1, 2.3, .1), '#6b4d33', M4(sx, sy + 1.15, sz + dz)])); P0.push([new THREE.BoxGeometry(.06, .98, 1.62), '#7d5c3a', M4(sx - .01, sy + 1.72, sz)], [new THREE.BoxGeometry(.16, .06, 1.7), '#5b4330', M4(sx, sy + 2.24, sz)]);
+  // 木牌：立在島的北端、面向出生點（朝東偏北 .1 rad）。車停在花島西側，從出生點、工坊、大路看過來車子都在木牌後面，字不會被車身或 TAXI 燈箱擋住
+  // （原本立在車的西邊，車就停在木牌正前方，從東邊看只剩上半行）。兩根柱子＋木板，字畫在另一個貼圖網格；板子底緣離島面 1.4 m，矮樹籬與花擋不到
+  const fa = .1, nx = Math.cos(fa), nz = -Math.sin(fa), tx = Math.sin(fa), tz = Math.cos(fa), sx = cx, sz = cz - hz - .4, sy = top;
+  [-.66, .66].forEach(d => P0.push([new THREE.BoxGeometry(.1, 2.42, .1), '#6b4d33', M4(sx + tx * d, sy + 1.21, sz + tz * d, 0, fa, 0)])); P0.push([new THREE.BoxGeometry(.06, .98, 1.62), '#7d5c3a', M4(sx - nx * .01, sy + 1.84, sz - nz * .01, 0, fa, 0)], [new THREE.BoxGeometry(.16, .06, 1.7), '#5b4330', M4(sx, sy + 2.36, sz, 0, fa, 0)]);
   const m = new THREE.Mesh(mergeParts(P0), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0 })); m.castShadow = !LOW; m.receiveShadow = true; W.scene.add(m);
   const tex = artTex(512, 290, (g, w, h) => {
     woodBoard(g, w, h); artText(g, '計程車招呼站', w / 2, 92, 60, '#fef3c7', w - 44); artText(g, '→ 大城市', w / 2 + 64, 188, 50, '#fde047', 290);
@@ -6282,8 +6297,8 @@ function taxiIsland() {
     r(70, 172, 80, 30, '#facc15'); r(40, 196, 140, 40, '#facc15'); r(84, 178, 24, 18, '#bfdbfe'); r(114, 178, 24, 18, '#bfdbfe'); r(98, 160, 26, 12, '#fef08a'); // 小計程車
     g.fillStyle = '#1f2937'; [72, 148].forEach(x => { g.beginPath(); g.arc(x, 238, 14, 0, PI2); g.fill(); g.stroke(); });
   });
-  const pl = mesh(new THREE.PlaneGeometry(1.52, .86), new THREE.MeshStandardMaterial({ map: tex, roughness: .85, metalness: 0 }), sx + .03, sy + 1.72, sz); pl.rotation.y = Math.PI / 2; W.scene.add(pl);
-  addCol({ box: [cx - R, cz - hz, cx + R, cz + hz] }); addCol({ x: cx, z: cz - hz, r: R }); addCol({ x: cx, z: cz + hz, r: R }); addCol({ x: sx, z: sz, r: .8 }); // 跑道形：中間一個方塊、兩端圓形（回程的車從南端圓角外 1 m 多經過）
+  const pl = mesh(new THREE.PlaneGeometry(1.52, .86), new THREE.MeshStandardMaterial({ map: tex, roughness: .85, metalness: 0 }), sx + nx * .03, sy + 1.84, sz + nz * .03); pl.rotation.y = Math.PI / 2 + fa; W.scene.add(pl);
+  addCol({ box: [cx - R, cz - hz, cx + R, cz + hz] }); addCol({ x: cx, z: cz - hz, r: R }); addCol({ x: cx, z: cz + hz, r: R }); // 跑道形：中間一個方塊、兩端圓形（回程的車從南端圓角外 1 m 多經過）；木牌在島上，島的碰撞就擋住了
 }
 /* ---------- 大城市 ---------- */
 function drawShopSign(c, name, accent, locked) {
@@ -7002,7 +7017,7 @@ function buildStreet(g, rd) {
   [-45.5, -32.5, -19.5, 19.5, 32.5, 45.5].forEach((x, i) => [-10.5, 10.5].forEach((z, j) => { if (x === -45.5 && z > 0) return; const nx = z < 0 ? { '-19.5': -26.2, '19.5': 26.8, '32.5': null }[x] : undefined; if (nx === null) return; cityTree(Math.abs(x) > 45 && z < 0 ? Math.sign(x) * 41.2 : nx != null ? nx : x, z, 1, i + j * 3); })); // 北側兩端那兩棵讓開，不擋店招；擋在店門口的三棵移到店與店之間（32.5 那棵跟 26.8 太近，不種）
   [[-12.6, 22.4], [12.6, 22.4], [-12.5, 29.8], [12.5, 29.8]].forEach(([x, z], i) => cityTree(x, z, 1.15, i + 7, true)); // 廣場四棵樹（晚上有串燈）
   [[-6.4, 25.2, Math.PI / 2], [6.4, 25.2, -Math.PI / 2], [-3.6, 20.6, 0], [3.6, 20.6, 0]].forEach(([x, z, r]) => cityBench(x, z, r));
-  cityPlanter(-5.8, 13.4, 2.2, 1, 1); // 廣場入口的花台（東邊是計程車招呼站）
+  cityPlanter(-5.8, 13.4, 2.2, 1, 1); // 廣場入口的花台
   [[-7.6, 22.4], [7.6, 22.4], [-7.6, 29.6], [7.6, 29.6]].forEach(([x, z]) => { const T = cAt(x, z); T.P(cylG(.16, .2, .3, 8), '#2f3b46', M4(0, .15, 0)); T.P(cylG(.045, .055, 3, 6), '#2f3b46', M4(0, 1.6, 0)); T.P(cylG(.12, .08, .12, 8), '#c8a24a', M4(0, 3.1, 0)); T.P(sphG(.24, 10, 8), '#fff3c4', M4(0, 3.38, 0), 'glow'); CZ.pool.push([x, z, 4]); addCol({ x: CITY.x + x, z: CITY.z + z, r: .2 }); }); // 廣場的小圓燈
   cityBusStop(-45, 9.2);
   const scoot = (x0, n, z, ry) => { for (let i = 0; i < n; i++) if (!LOW || i % 2 === 0) cityScooter(x0 + i * .8, z, ry + (rd() - .5) * .12, rpk(rd, ['#99f6e4', '#f1f5f9', '#fbcfe8', '#bae6fd', '#fef3c7', '#334155', '#ef4444', '#cbd5e1', '#fde047']), rd() < .18 ? rpk(rd, ['#ef4444', '#f97316', '#16a34a']) : null); };
@@ -7842,7 +7857,7 @@ function mktBuy(o) {
    - 下車（alight）：靠邊停、右門打開、鏡頭側身挪出去站起來，操作交還；空車自己開回招呼站（taxiStep 的 return）
    ============================================================ */
 const TAXI_LEGS = []; // 路段編號（網路與存檔用）：1 V_OUT、2 C_IN、3 C_INF（凍僵）、4 C_OUT、5 V_IN、6 V_PARK、7 C_PARK（空車開回站位）
-const TUN_FOG = new THREE.Color('#1b1712'), TUN_HS = new THREE.Color('#ffd9a0'), TUN_HG = new THREE.Color('#2a2420'), CARD_C = new THREE.Color(), RP = {}, RQ = new THREE.Quaternion(), RQ2 = new THREE.Quaternion(), RE = new THREE.Euler(0, 0, 0, 'YXZ'), RO = { y: 0, p: 0 }, RV = new THREE.Vector3(), RV2 = new THREE.Vector3(), AX_Z = new THREE.Vector3(0, 0, 1);
+const TUN_FOG = new THREE.Color('#1b1712'), TUN_HS = new THREE.Color('#ffd9a0'), TUN_HG = new THREE.Color('#2a2420'), CARD_C = new THREE.Color(), RP = {}, RQ = new THREE.Quaternion(), RQ2 = new THREE.Quaternion(), RE = new THREE.Euler(0, 0, 0, 'YXZ'), RO = { y: 0, p: 0 }, RV = new THREE.Vector3(), RV2 = new THREE.Vector3(), AX_Z = new THREE.Vector3(0, 0, 1), RM4 = new THREE.Matrix4();
 const Q_SEAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2); // 鏡頭（往 −z 看）轉成朝車頭（+x）
 let TUBES = [];
 // 路段：控制點 → Catmull–Rom（每段 14 點）→ 重新取樣（約 0.5 m，最後一點剛好是終點）；速度三遍法：曲率限速 √(aLat/κ) → 加速 → 減速；時間表 T（毫秒）給 legS 反查
@@ -7968,6 +7983,7 @@ function cityTunnel(g) {
 }
 // 開機時把隧道與車內的著色器先編譯好（載入畫面蓋住卡頓）：鏡頭暫時看全部圖層、亮光卡打開
 function taxiWarm() {
+  try { citySky(); } catch (e) { console.warn(e); } // 城市的天際線（滑翔回招呼站時決定飛多高）
   const m0 = W.cam.layers.mask; try { W.cam.layers.mask = 15; TUBES.forEach(T => { T.card.visible = true; }); W.r.compile(W.scene, W.cam); } catch (e) { } TUBES.forEach(T => { T.card.visible = false; }); W.cam.layers.mask = m0;
   // 陰影的深度著色器（雙面的樹叢、會隨風擺的植物）只在第一次畫進陰影貼圖時才編譯：從城市出發的話，第一次在月光谷出洞那一格會卡一下。
   // 開機時在兩頭的洞口與下車處各畫一格（compile 不會編譯陰影用的材質；shadowMap.render 不能單獨呼叫），載入畫面蓋著看不到
@@ -7988,16 +8004,18 @@ function taxiStep(dt, t) {
   if (!W.taxiV || !W.taxiC || !INNER.g || !P) return; const now = performance.now(), cp = W.cam.position, cityP = inCity(TITLE.on || INTRO.on ? cp.x : P.x);
   if (W.taxiWarmQ && W.taxiWarmQ.length) { try { W.r.initTexture(W.taxiWarmQ.shift()); } catch (e) { } }
   for (const cab of [W.taxiV, W.taxiC]) {
-    const u = cab.userData, ride = RIDE.on && RIDE.cab === cab, mine = ride || (!RIDE.on && u.city === cityP);
+    const u = cab.userData, ride = RIDE.on && RIDE.cab === cab, mine = ride || (!(RIDE.on && RIDE.cab) && u.city === cityP); // 滑翔回中央平地（RIDE.cab 是空的）：車照樣看人在哪一頭
     if (mine && INNER.g.parent !== cab) cab.add(INNER.g);
     if (u.next && now >= u.at) { const k = u.next; u.next = ''; // 下車之後：門在身後關上、0.7 秒後空車開回站位（凍僵時已經停在醫院門口）
       if (k === 'close') { u.doors.forEach(d => { if (d.a1) cabDoor(cab, d.s, false, 250); }); rideSnd.door(false); u.next = 'go'; u.at = now + 700; }
       else { const st = u.city ? TAXI.cStand : TAXI.vStand; if (Math.hypot(cab.position.x - st[0], cab.position.z - st[1]) < .5) cabPark(cab); else { u.st = 'return'; u.leg = TAXI_LEGS[u.city ? 7 : 6]; u.lt = 0; u.it.off = true; } } }
     if (u.st === 'return' && u.leg) { const dx = P.x - u.wx, dz = P.z - u.wz, lx = dx * u.c - dz * u.s, lz = dx * u.s + dz * u.c; // 擋在車頭前 3 m 內：等你走開
       if (!(lx > 1.6 && lx < 4.95 && Math.abs(lz) < 1.2)) u.lt += dt * 1000; if (u.lt >= u.leg.dur) cabPark(cab); else placeCab(cab, legAt(u.leg, legS(u.leg, u.lt), u.p), null); }
-    const d = Math.hypot(u.wx - cp.x, u.wz - cp.z); if (!mine || (d > 60 && !ride)) continue;
-    const near = ride || d < (LOW ? 12 : 18); INNER.g.visible = near; // 遠了：車內與司機整組藏起來、玻璃不透明
-    u.glass.visible = !(ride && RIDE.inside); u.glassM.opacity = LOW || !near ? .85 : .35 + .5 * smooth(14, 18, d);
+    const d = Math.hypot(u.wx - cp.x, u.wz - cp.z), near = ride || d < (LOW ? 12 : 18);
+    cabLod(cab, ride || u.hail || u.doors.some(x => x.a || x.a1) ? 'open' : near ? 'closed' : 'far'); u.glass.visible = u.lod !== 'far' && !(ride && RIDE.inside); // 合併的車身；遠處的車窗已經併進車身
+    if (!mine || (d > 60 && !ride)) continue;
+    INNER.g.visible = near; // 遠了：車內與司機整組藏起來、玻璃不透明
+    u.glassM.opacity = LOW || !near ? .85 : .35 + .5 * smooth(14, 18, d);
     const bk = now - u.blink, bl = bk < 400 ? (Math.sin(bk / 400 * Math.PI * 4) > 0 ? .9 : -.6) : 0; u.signM.emissiveIntensity = Math.max(.05, ((ride ? .25 : .9) + bl) * (1 + DN.night)); // 空車亮、有人暗；叫車時閃兩下
     u.doors.forEach(dr => { if (dr.a !== dr.a1 && now >= dr.t0) { const q = clamp((now - dr.t0) / dr.d, 0, 1); dr.a = dr.a0 + (dr.a1 - dr.a0) * out3(q); dr.g.rotation.y = dr.s * dr.a * 1.2217; } });
     if (near) taxiDriver(cab, dt, t, now);
@@ -8076,30 +8094,43 @@ function rideOutPt(cab) {
 }
 // 從選單直接坐進車裡時的「安全站位」：招呼站那台車右門外
 function rideSafe(cab) { const u = cab.userData, lz = u.city ? 2.15 : 1.85; return { x: u.wx - .75 * u.c + lz * u.s, z: u.wz + .75 * u.s + lz * u.c, yaw: P.yaw }; }
+// o.seated：直接坐在右座、門已關（減少動態時的「搭計程車回月光谷」，換位置藏在筆記本後面）；o.fly：從鏡頭的位置滑翔到右門外，再照一般的上車走（暫停選單的回家）
 function rideStart(dir, o = {}) {
-  if (RIDE.on || !W.ready || !P || TITLE.on || INTRO.on) return false; const LG = taxiLegs(), R = RIDE, v2c = dir === 'v2c', cab = v2c ? W.taxiV : W.taxiC, u = cab.userData, rm = RM(), seated = !!o.seated, now = performance.now();
+  if (RIDE.on || !W.ready || !P || TITLE.on || INTRO.on) return false; const LG = taxiLegs(), R = RIDE, v2c = dir === 'v2c', cab = v2c ? W.taxiV : W.taxiC, u = cab.userData, rm = RM(), seated = !!o.seated, fly = !seated && !!o.fly, now = performance.now();
   if (u.st !== 'park') cabPark(cab); // 空車還在開回站位：直接放回站位（從選單回家時，人在筆記本後面看不到）
   if (TK.on) tkEnd('ride', true); if (L.on) L.on = false; // 直播中走去搭車：保險再關一次
-  const s = seated ? 1 : cabSide(cab), st = u.city ? TAXI.cStand : TAXI.vStand; cab.add(INNER.g); INNER.g.visible = true; u.st = 'ride'; u.hail = false; u.it.off = true; u.it.wp = null;
+  const s = seated || fly ? 1 : cabSide(cab), st = u.city ? TAXI.cStand : TAXI.vStand; cab.add(INNER.g); INNER.g.visible = true; u.st = 'ride'; u.hail = false; u.it.off = true; u.it.wp = null; cabLod(cab, 'open');
   u.doors.forEach(d => { if (d.s !== s && d.a1) cabDoor(cab, d.s, false); }); W.sun.layers.enable(3); W.hemi.layers.enable(3); // 山洞組若重設光源圖層也不會壞
-  Object.assign(R, { on: true, dir, ph: 'board', t: 0, t0: now, ei: 0, legs: v2c ? [LG[1], S.frozen ? LG[3] : LG[2]] : [LG[4], LG[5]], li: 0, rate: rm ? 1.5 : 1, cab, side: s, ly: .1, lp: -.05, k: 0, u: -99, ue: -99, f0: null, frozen: !!S.frozen, tq: [], said: {}, out: false, snap: 0, held: false, shut: seated, inside: seated, ffT: 0, wt: 0, bnc: -1e9, talkT: 0, v: 0, a: 0, alat: 0, s: 0, jn: -1, jt: -1e9, npcN: 0,
+  Object.assign(R, { on: true, dir, ph: fly ? 'fly' : 'board', t: 0, t0: now, ei: 0, legs: v2c ? [LG[1], S.frozen ? LG[3] : LG[2]] : [LG[4], LG[5]], li: 0, rate: rm ? 1.5 : 1, cab, side: s, ly: .1, lp: -.05, k: 0, u: -99, ue: -99, f0: null, frozen: !!S.frozen, tq: [], said: {}, out: false, snap: 0, held: false, shut: seated, inside: seated, ffT: 0, wt: 0, pend: null, bnc: -1e9, talkT: 0, v: 0, a: 0, alat: 0, s: 0, jn: -1, jt: -1e9, npcN: 0,
     park: { x: st[0], z: st[1], hd: st[2] + Math.PI / 2 }, sus: { y: cab.position.y, vy: 0, p: cab.rotation.z, vp: 0, r: cab.rotation.x, vr: 0 }, head: { x: 0, vx: 0, z: 0, vz: 0, p: 0, vp: 0, r: 0, vr: 0 },
-    safe: seated ? rideSafe(cab) : { x: P.x, z: P.z, yaw: P.yaw }, log: R.logOn ? [] : null, lpos: new THREE.Vector3(...TAXI.E), lquat: rideQ(-.05, .1) });
-  R.hk.clear(); KEYS.clear(); IN.hold = IN.holdE = false; IN.jx = IN.jy = 0; if (IN.joy) { IN.joy = null; $('#joyKnob').style.transform = ''; $('#joyBase').classList.remove('on'); }
-  P.vx = P.vz = 0; P.running = P.sneak = false; P.eye = 1.62; R.lastYaw = P.yaw; document.body.classList.add('riding'); rideUI(true);
-  const e = []; if (seated) { R.cv = null; R.tb = 1450; R.t = 1440; e.push([1440, () => { rideSnd.start(); rideSnd.blink(1); rideSay(R.frozen ? 'sitF' : 'sit'); }]); }
-  else {
-    const c = rideBoardCurve(cab, s, rm), dl = c.dl, Lf = s < 0, tm = x => rm ? x * 900 / ((Lf ? 1900 : 1450) + dl) : x; R.cv = c; R.tb = c.end; R.cy = c.o0.y; R.cp = c.o0.p; R.lquat.setFromEuler(RE.set(R.cp, R.cy, 0, 'YXZ'));
-    if (!u.doors[s < 0 ? 0 : 1].a1) e.push([0, () => { cabDoor(cab, s, true, rm ? 200 : 300); rideSnd.door(true); }]); // 叫車時沒開門（例如對話系統沒載入）：現在開
-    e.push([tm(1150 + dl), () => cabDoor(cab, s, false, rm ? 150 : 290)], [tm(1420 + dl), () => { rideSnd.door(false); R.shut = true; }], [tm(1250 + dl), () => { rideSnd.seat(false); rideSnd.start(); if (!Lf && !rm) R.bnc = performance.now(); }]);
-    if (Lf) e.push([tm(1300 + dl), () => rideSnd.seat(true)], [tm(1650 + dl), () => { if (!rm) R.bnc = performance.now(); }]);
-    e.push([tm((Lf ? 1500 : 1300) + dl), () => rideSay(R.frozen ? 'sitF' : 'sit')], [tm((Lf ? 1700 : 1250) + dl), () => rideSnd.blink(2)]);
-  }
-  R.evs = e.sort((a, b) => a[0] - b[0]); save(); return true;
+    safe: seated || fly ? rideSafe(cab) : { x: P.x, z: P.z, yaw: P.yaw }, log: R.logOn ? [] : null, lpos: new THREE.Vector3(...TAXI.E), lquat: rideQ(-.05, .1), fly: null });
+  rideBegin();
+  if (seated) { R.cv = null; R.tb = 1450; R.t = 1440; R.evs = [[1440, () => { rideSnd.start(); rideSnd.blink(1); rideSay(R.frozen ? 'sitF' : 'sit'); }]]; }
+  else if (fly) { // 落在右門外 2.4 m、看著後座；降落前 0.38 秒門先打開（福伯已經轉頭看著你飛過來）
+    const E = cab.localToWorld(new THREE.Vector3(-.95, 1.62, 2.4)), tg = cab.localToWorld(new THREE.Vector3(-.62, 1.1, .36)); R.fly = glidePlan(E, new THREE.Quaternion().setFromRotationMatrix(RM4.lookAt(E, tg, UP)), glideRoof(P.x, P.z));
+    R.evs = [[R.fly.T - 380, () => { cabDoor(cab, 1, true, 300); rideSnd.door(true); }]];
+  } else R.evs = rideBoardSetup(cab, s, rm);
+  save(); return true;
 }
+// 開始搭車（或滑翔）的共同準備：清掉按鍵與搖桿（下車那一刻不會暴衝）、停下腳步、HUD 讓位
+function rideBegin() {
+  RIDE.hk.clear(); KEYS.clear(); IN.hold = IN.holdE = false; IN.jx = IN.jy = 0; if (IN.joy) { IN.joy = null; $('#joyKnob').style.transform = ''; $('#joyBase').classList.remove('on'); }
+  P.vx = P.vz = 0; P.running = P.sneak = false; P.eye = 1.62; RIDE.lastYaw = P.yaw; document.body.classList.add('riding'); rideUI(true);
+}
+// 上車的曲線與事件（叫車上車、滑翔到門口之後都走這裡）：門沒開就先開、關門、坐下、（左門）挪座、福伯說坐穩、方向燈
+function rideBoardSetup(cab, s, rm) {
+  const R = RIDE, u = cab.userData, c = rideBoardCurve(cab, s, rm), dl = c.dl, Lf = s < 0, tm = x => rm ? x * 900 / ((Lf ? 1900 : 1450) + dl) : x, e = [];
+  R.cv = c; R.tb = c.end; R.cy = c.o0.y; R.cp = c.o0.p; R.lquat.setFromEuler(RE.set(R.cp, R.cy, 0, 'YXZ'));
+  if (!u.doors[s < 0 ? 0 : 1].a1) e.push([0, () => { cabDoor(cab, s, true, rm ? 200 : 300); rideSnd.door(true); }]); // 叫車時沒開門（例如對話系統沒載入）：現在開
+  e.push([tm(1150 + dl), () => cabDoor(cab, s, false, rm ? 150 : 290)], [tm(1420 + dl), () => { rideSnd.door(false); R.shut = true; }], [tm(1250 + dl), () => { rideSnd.seat(false); rideSnd.start(); if (!Lf && !rm) R.bnc = performance.now(); }]);
+  if (Lf) e.push([tm(1300 + dl), () => rideSnd.seat(true)], [tm(1650 + dl), () => { if (!rm) R.bnc = performance.now(); }]);
+  e.push([tm((Lf ? 1500 : 1300) + dl), () => rideSay(R.frozen ? 'sitF' : 'sit')], [tm((Lf ? 1700 : 1250) + dl), () => rideSnd.blink(2)]);
+  return e.sort((a, b) => a[0] - b[0]);
+}
+const rideArrK = () => RIDE.dir === 'c2v' ? 'home' : RIDE.frozen ? 'hosp' : 'city'; // 到站時福伯說哪一句
 function rideDriveEv() {
   const R = RIDE, T = R.legs[0].dur + R.legs[1].dur;
-  return [[0, rideHint], [T - 1700, () => rideSnd.blink(2)], [T - 1300, () => rideSay(R.dir === 'c2v' ? 'home' : R.frozen ? 'hosp' : 'city')]];
+  return [[0, rideHint], [T - 1700, () => rideSnd.blink(2)], [T - 1300, () => { if (!GUI.kind && !mOpen) rideSay(rideArrK()); }]]; // 介面開著：泡泡會躲在筆記本後面，留到闔上時說「到囉，慢慢來～」
 }
 function rideEv() { const R = RIDE; while (R.on && R.evs && R.ei < R.evs.length && R.t >= R.evs[R.ei][0]) { const f = R.evs[R.ei++][1]; try { f(); } catch (e) { console.error(e); } } }
 function rideStep(dt) {
@@ -8110,11 +8141,12 @@ function rideStep(dt) {
   if (GUI.kind || mOpen) held = false; if (held && !R.held && R.ph === 'drive') rideSay('fast'); R.held = held;
   const tgt = held ? (R.k > .5 ? 2 : 3) : rm ? 1.5 : 1; R.rate += (tgt - R.rate) * (1 - Math.exp(-(tgt > R.rate ? 14 : 12) * Math.min(dt, .1)));
   const stop = R.ph === 'drive' && rideNpcAhead(); // 保險：車前 6 m 內有居民就停（路線不交叉，應該永遠不會發生）
-  if (R.fz != null) R.t = R.fz; else if (!stop) R.t += dt * 1000 * (R.ph === 'drive' ? R.rate : clamp(R.rate / (rm ? 1.5 : 1), 1, 2)); // 上下車：沒按住就是原速（減少動態的 1.5 倍只給開車），按住最多 2 倍
+  if (R.fz != null) R.t = R.fz; else if (!stop) R.t += dt * 1000 * (R.ph === 'drive' ? R.rate : clamp(R.rate / (rm ? 1.5 : 1), 1, 2)); // 上下車、滑翔：沒按住就是原速（減少動態的 1.5 倍只給開車），按住最多 2 倍
+  if (R.ph === 'fly') { rideEv(); rideFly(dt); if (R.t >= R.fly.T) rideLand(); if (R.log) R.log.push([+now.toFixed(1), 'fly', 0, +R.t.toFixed(1), +W.cam.position.x.toFixed(4), +W.cam.position.y.toFixed(4), +W.cam.position.z.toFixed(4), +P.yaw.toFixed(5), 0, W.cam.layers.mask, +R.rate.toFixed(3), W.r.info.programs.length]); return; }
   let swapped = false;
-  if (R.ph === 'board') { rideEv(); if (R.t >= R.tb) { R.ph = 'drive'; R.t = R.fz != null ? R.t : R.t - R.tb; R.ei = 0; R.evs = rideDriveEv(); } }
+  if (R.ph === 'board') { rideEv(); if (R.t >= R.tb) { R.ph = 'drive'; R.t = R.fz != null ? R.t : R.t - R.tb; R.ei = 0; R.evs = rideDriveEv(); ridePend(); } }
   if (R.ph === 'drive') { const T1 = R.legs[0].dur, T2 = R.legs[1].dur; if (R.li === 0 && R.t >= T1) { rideSwap(); swapped = true; } rideEv(); if (R.t >= T1 + T2) { R.t = T1 + T2; R.park = legAt(R.legs[1], R.legs[1].L, {}); if (GUI.kind || mOpen) { R.ph = 'wait'; R.wt = 0; } else rideAlight(); } }
-  if (R.ph === 'wait' && !GUI.kind && !mOpen) { if (!R.wt) { R.wt = now; rideSay('wait'); } else if (now - R.wt > 120) rideAlight(); } // 到站時介面開著：停好怠速等你闔上，闔上後福伯說一句再開門（1.3 秒內交還操作）
+  if (R.ph === 'wait' && !GUI.kind && !mOpen) { if (!R.wt) { R.wt = now; rideSay('wait'); } else if (now - R.wt > 120 && !(GX.mode === 'held' && gxE() < HC.end - 330)) rideAlight(); } // 到站時介面開著：停好怠速等你闔上，福伯說一句；手上的筆記本放到一半才開門（鏡頭在開門後 250 ms 才往門口移，道具已經離開畫面，不會穿過門框；闔上到交還操作 1.3 秒）
   if (R.ph === 'alight') { rideEv(); if (!R.on) return; }
   const cab = R.cab;
   if (R.ph === 'drive') { const T1 = R.legs[0].dur, l = R.legs[R.li], p = legAt(l, legS(l, R.li ? R.t - T1 : R.t), RP), v = p.v * R.rate; R.v = v; R.a = rm ? 0 : v * p.dv * R.rate; R.alat = rm ? 0 : -v * v * p.k; R.s = p.s; placeCab(cab, p, R.sus, dt, R.a, R.alat); }
@@ -8128,13 +8160,14 @@ function rideStep(dt) {
 // 換邊（同一格內做完再畫）：出發那台放回站位、車內與司機搬到目的地那台、人換到另一根管子的 u＝15（鏡頭只畫第 3 層、兩頭點對稱，看不出來）
 function rideSwap() {
   const R = RIDE, from = R.cab, to = from === W.taxiV ? W.taxiC : W.taxiV, tu = to.userData;
-  cabPark(from); if (tu.st !== 'park') cabPark(to); tu.st = 'ride'; tu.hail = false; tu.it.off = true; tu.glass.visible = false; // 目的地那台的玻璃這一格就藏起來
+  cabPark(from); if (tu.st !== 'park') cabPark(to); tu.st = 'ride'; tu.hail = false; tu.it.off = true; tu.glass.visible = false; cabLod(to, 'open'); // 目的地那台的玻璃這一格就藏起來；車身換回分開的（遠處那份的車窗是不透明的）
   to.add(INNER.g); R.cab = to; R.li = 1; R.jn = -1; R.sus.y += (tu.city ? TAXI.C.y : TAXI.V.y) - (tu.city ? TAXI.V.y : TAXI.C.y); // 管子地板高度不同：彈簧只保留相對的起伏
   R.safe = rideOutPt(to); R.snap = 2;
 }
 function rideAlight() {
   const R = RIDE, cab = R.cab, rm = RM(); R.ph = 'alight'; R.t = 0; R.ei = 0; R.cy = R.ly - Math.PI / 2; R.cp = R.lp + R.head.p; R.park = legAt(R.legs[1], R.legs[1].L, {}); R.stand = rideOutPt(cab); R.cv = rideAlightCurve(cab, R.stand, rm); cab.userData.wave = performance.now();
   R.evs = [[0, () => rideSnd.lock()], [rm ? 80 : 150, () => { cabDoor(cab, 1, true, rm ? 200 : 300); rideSnd.door(true); R.shut = false; }], [rm ? 650 : 1050, rideEnd]];
+  if (!R.said.wait) rideSay(rideArrK()); // 到站那句在介面開著時跳過了、到站前剛好闔上：開門時補說（rideSay 每句每趟只說一次）
 }
 // 鏡頭：座位（頭部延遲＋路面震動）或上下車的曲線；轉頭的輸入收進相對車身的 ly、lp，P 一直跟著鏡頭（陰影、網路、存檔都直接能用）
 function rideCam(dt) {
@@ -8193,11 +8226,14 @@ function rideEnd() {
   if (R.f0) { W.scene.fog.near = R.f0[0]; R.f0 = null; applyQuality(); }
   rideSnd.stop(); S.rideN = (S.rideN || 0) + 1; u.st = 'stop'; u.next = 'close'; u.at = performance.now() + 50; save();
   R.tq.splice(0).forEach((m, i) => setTimeout(() => toast(m), 500 + i * 600)); // 搭車中排隊的訊息：下車後每 600 ms 補一則
+  ridePend();
 }
+// 上下車時按了 Esc／I：坐好（或下車站好）的那一格才拿出來
+function ridePend() { const p = RIDE.pend; RIDE.pend = null; if (p && !GUI.kind && !TITLE.on) openGui(p[0], p[1]); }
 // 搭車中回主選單、切換存檔：人放回安全的站位、兩台車回站位、霧光曝光圖層還原
 function rideAbort() {
   const R = RIDE; if (!R.on) return; const sf = R.safe || { x: 0, z: 16, yaw: 0 };
-  R.on = false; R.ph = ''; document.body.classList.remove('riding'); rideSnd.stop(); rideUI(false); [W.taxiV, W.taxiC].forEach(c => { if (c) cabPark(c); });
+  R.on = false; R.pend = null; R.fly = null; R.ph = ''; document.body.classList.remove('riding'); rideSnd.stop(); rideUI(false); [W.taxiV, W.taxiC].forEach(c => { if (c) cabPark(c); });
   P.x = sf.x; P.z = sf.z; P.yaw = sf.yaw; P.y = G(P.x, P.z); P.camY = P.y; P.vx = P.vz = 0; P.pitch = -.05; W.camAway = false; R.tq = [];
   W.cam.layers.mask = 1; if (R.f0) { W.scene.fog.near = R.f0[0]; R.f0 = null; applyQuality(); } W.r.toneMappingExposure = 1; W.r.shadowMap.autoUpdate = true; W.r.shadowMap.needsUpdate = true; CAB_M.body.envMapIntensity = 1; W.envT = 0; TUBES.forEach(T => { T.card.visible = false; });
   KEYS.clear(); R.hk.clear(); if (W.cam.fov !== W.fov0) { W.cam.fov = W.fov0; W.cam.updateProjectionMatrix(); }
@@ -8233,7 +8269,90 @@ const rideSnd = {
   lock() { this.fx((ac, t) => noise(ac, t, .03, 2400, 2, .04, 'bandpass')); },
   whoosh() { this.fx((ac, t) => { noise(ac, t, .7, 600, .8, .05, 'bandpass', .8); noise(ac, t + .1, .6, 1800, 1.2, .025, 'bandpass', 1.3); }); },
 };
-// 月光谷、山洞的「回到中央平地」：筆記本還擋在眼前的那一刻換位置（不跳 toast），模糊多留一下（下一輪改成穿越機式的低空滑翔）
+/* ---------- 滑翔（暫停選單的回家）：鏡頭從眼睛的位置往上爬、平飛、降落到終點，一路連續，沒有黑幕、沒有瞬移 ----------
+   城市：落在招呼站那台車的右門外，接著照一般的上車坐進去（rideStart 的 fly）；月光谷：落在中央平地 (0, 16)、面向北（homeGlide）。
+   搭車的狀態機多一個 fly 階段（RIDE.on：輸入、toast、HUD、存檔、多人頭像都跟搭車一樣處理）；山洞裡與減少動態維持筆記本擋著時換位置（homeStamp） */
+const VROOF = [[-6.4, 4.4, 6.4, 9.6, 5, [10.6]], [-8.8, -11.4, 10.3, -6.6, 6.3, [-12.4, -5.6]]]; // 月光谷的屋頂：工坊小屋（南面開著）、產線的工棚——[x0, z0, x1, z1, 屋頂高, 走出來的 z（北、南）]
+// 起點在屋簷下：先水平走出來再往上（城市的店頭往街上走、月光谷的小屋往南、工棚往近的那一側）
+function glideRoof(x, z) {
+  if (inCity(x)) return SHOP_IDS.some(id => inShop(id, .3)) ? [x, CITY.z - 10.4] : null;
+  for (const [x0, z0, x1, z1, , ez] of VROOF) if (x > x0 && x < x1 && z > z0 && z < z1) return [clamp(x, x0 + .8, x1 - .8), ez.length > 1 && z < (z0 + z1) / 2 ? ez[0] : ez[ez.length - 1]];
+  return null;
+}
+// 這一點至少要飛多高（世界座標的 y）：城市查天際線＋2.2 m；月光谷＝地面（或水面）＋2.4 m，樹、石頭、房子旁 2.6 m 內＋10.5 m，屋頂上＋2 m
+function glideReq(x, z) {
+  if (inCity(x)) return skyH(x, z) + 2.2;
+  let h = 2.4; for (const c of colsNear(x, z)) { const d = c.box ? Math.max(c.box[0] - x, x - c.box[2], c.box[1] - z, z - c.box[3]) : Math.hypot(x - c.x, z - c.z) - c.r; if (d < 2.6) { h = 10.5; break; } }
+  let y = Math.max(H(x, z), -.9 * K) + h; for (const [x0, z0, x1, z1, rh] of VROOF) if (x > x0 - 1 && x < x1 + 1 && z > z0 - 1 && z < z1 + 1) y = Math.max(y, G(x, z) + rh + 2); return y;
+}
+// 路徑：每 .5 m 一點；高度＝max(梯形（兩端以 1.6 的坡度爬到巡航高度＝全程最低安全高度的最大值）, 每一點的最低安全高度往兩側以同樣坡度展開)，再平滑兩遍。
+// 起點附近 0.6 m、終點附近 1 m 不算（鏡頭本來就在那裡）；屋簷下那一段維持眼睛高度。時間依路長 2～7 秒（30 m 內每格移動 ≤ .4 m），進出都慢、中段快
+function glidePlan(E, q1, exit) {
+  const cam = W.cam, S = cam.position.clone(), pts = [[S.x, S.z]], xs = [], zs = [], ds = []; let D = 0; if (exit) pts.push(exit); pts.push([E.x, E.z]);
+  for (let k = 0; k < pts.length - 1; k++) { const [ax, az] = pts[k], [bx, bz] = pts[k + 1], L = Math.hypot(bx - ax, bz - az), m = Math.max(1, Math.ceil(L / .5)); for (let i = k ? 1 : 0; i <= m; i++) { xs.push(ax + (bx - ax) * i / m); zs.push(az + (bz - az) * i / m); ds.push(D + L * i / m); } D += L; }
+  const n = xs.length, dIn = exit ? Math.hypot(exit[0] - S.x, exit[1] - S.z) : 0, GS = 1.6, req = new Float32Array(n), ys = new Float32Array(n); let Yc = Math.max(S.y, E.y);
+  for (let i = 0; i < n; i++) { req[i] = ds[i] < dIn + .6 || D - ds[i] < 1 ? -1e9 : glideReq(xs[i], zs[i]); Yc = Math.max(Yc, req[i]); }
+  const env = Float32Array.from(req); for (let i = 1; i < n; i++) env[i] = Math.max(env[i], env[i - 1] - GS * (ds[i] - ds[i - 1])); for (let i = n - 2; i >= 0; i--) env[i] = Math.max(env[i], env[i + 1] - GS * (ds[i + 1] - ds[i]));
+  for (let i = 0; i < n; i++) ys[i] = ds[i] <= dIn ? S.y : Math.max(env[i], Math.min(Yc, S.y + GS * (ds[i] - dIn), E.y + GS * (D - ds[i])));
+  for (let pass = 0; pass < 2; pass++) { const y0 = ys.slice(); for (let i = 1; i < n - 1; i++) { if (ds[i] <= dIn) continue; let a = 0, c = 0; for (let j = Math.max(0, i - 6); j <= Math.min(n - 1, i + 6); j++) { a += y0[j]; c++; } ys[i] = Math.max(a / c, env[i]); } } // 轉角變圓，再補回最低安全高度
+  ys[0] = S.y; ys[n - 1] = E.y; const cl = new Float32Array(n); for (let i = 1; i < n; i++) cl[i] = cl[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1], zs[i] - zs[i - 1]);
+  const L = cl[n - 1], T = clamp(1200 + L * 26, 2000, 7000), e1 = new THREE.Euler().setFromQuaternion(q1, 'YXZ');
+  return { xs, ys: Array.from(ys), zs, cl, L, T, n, E: E.clone(), q0: cam.quaternion.clone(), q1: q1.clone(), yaw1: e1.y, pitch1: e1.x, yw: D > .5 ? Math.atan2(-(E.x - S.x), -(E.z - S.z)) : e1.y, pc: -.16, wc: smooth(10, 30, D) };
+}
+// 路徑上走了 k（0～1，依 3D 長度）的位置
+function glideAt(F, k, out) {
+  const s = clamp(k, 0, 1) * F.L, cl = F.cl; let a = 0, b = F.n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (cl[m] <= s) a = m; else b = m; }
+  const t = cl[b] > cl[a] ? (s - cl[a]) / (cl[b] - cl[a]) : 0; return out.set(F.xs[a] + (F.xs[b] - F.xs[a]) * t, F.ys[a] + (F.ys[b] - F.ys[a]) * t, F.zs[a] + (F.zs[b] - F.zs[a]) * t);
+}
+// 每格：位置照路徑（ease3）。朝向：原本的視線慢慢轉到終點的視線；飛得遠（水平 10～30 m 以上）時中段改看前進方向（往前 1.5% 路長的水平方向，爬升、降落那幾公尺水平位移很小就維持上一個方向；俯仰隨坡度）。
+// 短短一段（例如從小屋裡走到門口）不轉過去看前面再轉回來，免得一兩秒內轉兩次頭
+function rideFly(dt) {
+  const R = RIDE, F = R.fly, cam = W.cam, tau = clamp(R.t / F.T, 0, 1), k = ease3(tau), kd = 1 - Math.exp(-dt * 5);
+  glideAt(F, k, cam.position); glideAt(F, k + .015, RV2); const hx = RV2.x - cam.position.x, hz = RV2.z - cam.position.z, hd = Math.hypot(hx, hz);
+  if (hd > .05) F.yw = lerpAng(F.yw, Math.atan2(-hx, -hz), kd); F.pc += (clamp(-.16 + .4 * Math.atan2(RV2.y - cam.position.y, Math.max(hd, .3)), -.55, .15) - F.pc) * kd;
+  RQ.setFromEuler(RE.set(F.pc, F.yw, 0, 'YXZ')); cam.quaternion.copy(F.q0).slerp(F.q1, smooth(.15, .95, tau)).slerp(RQ, F.wc * smooth(0, .3, tau) * (1 - smooth(.6, 1, tau)));
+  RV2.set(0, 0, -1).applyQuaternion(cam.quaternion); P.x = cam.position.x; P.z = cam.position.z; P.y = cam.position.y - P.eye; P.camY = P.y; P.yaw = R.lastYaw = Math.atan2(-RV2.x, -RV2.z); P.pitch = Math.asin(clamp(RV2.y, -1, 1)); P.vx = P.vz = P.vy = 0; P.ground = true;
+  W.quietZone = true; // 飛過別區的上空：不跳「進入○○」
+}
+// 落地：城市接著上車（鏡頭已經在右門外、看著後座，門開著）；月光谷就站在中央平地，操作交還
+function rideLand() {
+  const R = RIDE, F = R.fly, rm = RM(); W.cam.position.copy(F.E); W.cam.quaternion.copy(F.q1);
+  if (R.cab) { R.ph = 'board'; R.t = 0; R.ei = 0; R.fly = null; R.evs = rideBoardSetup(R.cab, 1, rm); return; }
+  R.on = false; R.ph = ''; R.fly = null; document.body.classList.remove('riding'); document.body.classList.add('ride-done'); setTimeout(() => document.body.classList.remove('ride-done'), 450); rideUI(false);
+  P.x = F.E.x; P.z = F.E.z; P.y = G(P.x, P.z); P.camY = P.y; P.eye = 1.62; P.vx = P.vz = P.vy = 0; P.yaw = F.yaw1; P.pitch = F.pitch1; P.roll = 0; P.dip = P.dipV = 0; P.ground = true; W.camAway = true; CV.scanNow = 1;
+  KEYS.clear(); R.hk.clear(); IN.hold = IN.holdE = false; save(); R.tq.splice(0).forEach((m, i) => setTimeout(() => toast(m), 500 + i * 600)); ridePend();
+}
+// 月光谷的「回到中央平地」：筆記本放下的同時往上飛、飛回中央平地，落地時面向北（工坊）。山洞裡、減少動態、已經在旁邊：照舊（homeStamp）
+function homeGlide() {
+  if (CV.c || RM() || !P || Math.hypot(P.x, P.z - 16) < 1.5) return homeStamp();
+  closeGui(); setTimeout(() => {
+    const R = RIDE; if (R.on || !W.ready || TITLE.on || INTRO.on || GUI.kind || CV.c) return; const E = new THREE.Vector3(0, G(0, 16) + 1.62, 16);
+    Object.assign(R, { on: true, dir: 'home', ph: 'fly', t: 0, t0: performance.now(), ei: 0, cab: null, legs: null, li: 0, rate: 1, held: false, k: 0, u: -99, f0: null, frozen: !!S.frozen, tq: [], said: {}, shut: false, inside: false, ffT: 0, wt: 0, pend: null,
+      safe: { x: 0, z: 16, yaw: 0 }, log: R.logOn ? [] : null, fly: glidePlan(E, new THREE.Quaternion().setFromEuler(new THREE.Euler(-.05, 0, 0, 'YXZ')), glideRoof(P.x, P.z)), evs: [] });
+    rideBegin(); save();
+  }, HC.fade + 30);
+}
+/* 城市的天際線（滑翔用）：開機時從正上方用正交相機把城市畫一次，每格記下最高的東西有多高（樓、騎樓、路燈、樹、招牌、停著的車），再往外擴 1 m。
+   0.5 m 一格、264×168 m；R 通道＝高度 ÷ 64 m（0.25 m 一階）。只畫城市群組（其他東西暫時藏起來）；畫不出來時 skyH 一律回答 40 m（飛高一點而已） */
+const SKY = { d: null, x0: -132, z0: -84, w: 528, h: 336, k: .5 };
+function citySky() {
+  if (SKY.d || !W.city || !W.r) return; const { w, h, k, x0, z0 } = SKY, r = W.r, sc = W.scene, hid = [], rt = new THREE.WebGLRenderTarget(w, h), cam = new THREE.OrthographicCamera(x0, x0 + w * k, -z0, -(z0 + h * k), 1, 600);
+  const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide, vertexShader: 'varying float vy;\nvoid main(){ vec4 p = vec4(position, 1.0);\n#ifdef USE_INSTANCING\np = instanceMatrix * p;\n#endif\nvec4 w = modelMatrix * p; vy = w.y; gl_Position = projectionMatrix * viewMatrix * w; }', fragmentShader: 'varying float vy;\nvoid main(){ gl_FragColor = vec4(clamp(vy / 64.0, 0.0, 1.0), 0.0, 0.0, 1.0); }' });
+  const cv = W.city.visible, au = r.shadowMap.autoUpdate, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha(), bg = sc.background, buf = new Uint8Array(w * h * 4);
+  try { // 光源與相機不藏（光源數量一變，所有材質都要重新配對著色器）；背景色會蓋掉清除色，先拿掉
+    sc.children.forEach(o => { if (o !== W.city && o.visible && !o.isLight && !o.isCamera) { o.visible = false; hid.push(o); } }); W.city.visible = true; r.shadowMap.autoUpdate = false; sc.background = null;
+    cam.position.set(CITY.x, 400, CITY.z); cam.up.set(0, 0, -1); cam.lookAt(CITY.x, 0, CITY.z); cam.updateMatrixWorld(); sc.overrideMaterial = mat;
+    r.setRenderTarget(rt); r.setClearColor(0, 1); r.clear(); r.render(sc, cam); r.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+    const a = new Uint8Array(w * h), b = new Uint8Array(w * h), R2 = 2; // 讀回來的第 0 列在最南（z 最大）：翻成第 j 列＝z0 + (j + .5)k
+    for (let row = 0; row < h; row++) for (let i = 0; i < w; i++) a[(h - 1 - row) * w + i] = buf[(row * w + i) * 4];
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { let m = 0; for (let q = Math.max(0, i - R2); q <= Math.min(w - 1, i + R2); q++) m = Math.max(m, a[j * w + q]); b[j * w + i] = m; } // 往外擴 1 m：先橫向
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) { let m = 0; for (let q = Math.max(0, j - R2); q <= Math.min(h - 1, j + R2); q++) m = Math.max(m, b[q * w + i]); a[j * w + i] = m; } // 再縱向
+    SKY.d = a;
+  } catch (e) { console.warn(e); }
+  sc.overrideMaterial = null; sc.background = bg; r.setRenderTarget(null); r.setClearColor(cc, ca); r.shadowMap.autoUpdate = au; W.city.visible = cv; hid.forEach(o => { o.visible = true; }); rt.dispose(); mat.dispose();
+}
+function skyH(x, z) { if (!SKY.d) return 40; const i = Math.floor((x - CITY.x - SKY.x0) / SKY.k), j = Math.floor((z - CITY.z - SKY.z0) / SKY.k); return i < 0 || j < 0 || i >= SKY.w || j >= SKY.h ? 0 : (SKY.d[j * SKY.w + i] + 1) * 64 / 255; }
+// 山洞裡、減少動態的「回到中央平地」：筆記本還擋在眼前的那一刻換位置（不跳 toast），模糊多留一下
 function homeStamp() {
   closeGui(); const gm = $('#game'); if (!LOW) gm.classList.add('gblur');
   setTimeout(() => { P.x = 0; P.z = 16; P.yaw = 0; P.pitch = -.05; P.y = G(0, 16); P.camY = P.y; P.vx = P.vz = P.vy = 0; CV.scanNow = 1; W.camAway = false; }, HC.fade + 30);
@@ -9117,7 +9236,7 @@ function ui(name) { window.dispatchEvent(new CustomEvent('slime:ui', { detail: n
 window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
-  get title() { return TITLE; }, get inCity() { return !!P && inCity(); }, get riding() { return RIDE.on; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
+  get title() { return TITLE; }, get inCity() { return !!P && inCity(); }, get riding() { return RIDE.on; }, get rideDir() { return RIDE.on ? RIDE.dir : ''; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
   MG, STEPS, MKEY, ownAny, TOUCH,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,

@@ -35,7 +35,8 @@ body.touch #talk{--tkfs:17px}
 #talk .emo{position:absolute;right:-12px;top:-2px;z-index:2;width:34px;height:34px;transform:rotate(8deg);filter:drop-shadow(0 2px 0 #22314f33)}
 #talk .tkt{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;z-index:1;pointer-events:none;fill:none;stroke:none}
 #talk .tkt path{fill:var(--pp);stroke:var(--ink);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
-#talk .tip{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);white-space:nowrap;font:13px/1.4 var(--tkf);color:#fff;text-shadow:0 1px 3px #000d,0 0 2px #000b}
+#talk .tip{position:absolute;left:50%;bottom:2px;z-index:2;transform:translateX(-50%);white-space:nowrap;font:13px/1.4 var(--tkf);color:#fff;text-shadow:0 1px 3px #000d,0 0 2px #000b}
+#talk .tip.side{transform:none} /* 尾巴從泡泡底下往下伸時：提示字讓到尾巴旁邊（left 由 talk.js 寫），不被尾巴切掉 */
 
 /* 說話的人跑到畫面外：貼在邊上、外框變虛線、尾巴變成指向他的小三角、名牌加箭頭 */
 #talk .tkw.off .tb{border-style:dashed}
@@ -96,7 +97,8 @@ body.touch #talk .tcard .k{display:none}
 .tk-bump{animation:tkBump .36s ease-out}
 @keyframes tkBump{0%{transform:scale(1)}35%{transform:scale(1.18)}100%{transform:scale(1)}}
 
-/* 對話中 HUD 讓位：目標面板與目標星標淡出、準心變淡（畫面中央的提示文字由 tkLabel 清空） */
-#objective,#wp{transition:opacity .25s}
-body.talk #objective,body.talk #wp{opacity:0!important}
+/* 對話中 HUD 讓位：目標面板、目標星標與新手教學的提示淡出、準心變淡（畫面中央的提示文字由 tkLabel 清空）。
+   教學提示在準心正下方，回話卡舉在手上會蓋到它的字——對話時用不到它，先收起來，聊完再出現 */
+#objective,#wp,#coach{transition:opacity .25s}
+body.talk #objective,body.talk #wp,body.talk #coach{opacity:0!important}
 body.talk #cross{opacity:.35}

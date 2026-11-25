@@ -25,7 +25,7 @@ export default function Pause() {
         <div className="nb-list">
           <button type="button" data-act="saveNow"><Icon name="save" /><b>儲存遊戲</b><small>上次 {g.fmtTime(S.last)}</small></button>
           <button type="button" data-act="help"><Icon name="keyboard" /><b>操作說明</b><small>鍵盤與觸控</small></button>
-          <button type="button" data-act="home" disabled={!!g.riding}><Icon name="home" /><b>{g.inCity ? '搭計程車回月光谷' : '回到中央平地'}</b><small>{g.riding ? '已經在車上了' : g.inCity ? '直接坐進招呼站的車' : '回到入口'}</small></button>
+          <button type="button" data-act="home" disabled={!!g.riding}><Icon name="home" /><b>{(g.riding ? g.rideDir === 'c2v' : g.inCity) ? '搭計程車回月光谷' : '回到中央平地'}</b><small>{g.riding ? '已經在車上了' : g.inCity ? '直接坐進招呼站的車' : '回到入口'}</small></button>
           {user?.admin && <a href="/admin" target="_blank" rel="noopener"><Icon name="shield" /><b>管理後台</b><small>允許名單與玩家</small></a>}
         </div>
 
