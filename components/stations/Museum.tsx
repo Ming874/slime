@@ -2,7 +2,7 @@
 /* 展示場：四座展台，作品在聚光燈下輕輕浮動，底下有黃銅名牌；參觀朋友：房間裡其他玩家的展示場。 */
 import { G, pct, prodName } from './game';
 import { SlimeArt } from './Art';
-import { Empty, ProdTile } from './Items';
+import { Empty, GradeStamp, ProdTile } from './Items';
 
 export function Museum() {
   const g = G(), S = g.S, fpm = S.show.reduce((a, p) => a + g.effCrisp(p), 0) * 0.004 * 60;
@@ -22,7 +22,8 @@ export function Museum() {
               <span className="rx-spot" />
               <span className="rx-float"><SlimeArt kind="prod" color={sp.color} color2={sp.color2} cut={p.cut} size={74} /></span>
               <span className="rx-stand" />
-              <span className="rx-plaque"><b>{prodName(g, p)}{cut ? `・${cut.n}` : ''}</b><small>酥脆 {pct(g.effCrisp(p))}{p.deco.length ? `・裝飾 ${p.deco.length}` : ''}</small></span>
+              <span className="rx-plaque"><b>{prodName(g, p)}{cut ? `・${cut.n}` : ''}</b><small>酥脆 {pct(g.effCrisp(p))}{p.deco.length ? `・裝飾 ${p.deco.length}` : ''}</small><small>估價 {g.fmt(g.priceOf(p, 'live'))}</small></span>
+              <GradeStamp p={p} />
             </button>
           );
         })}

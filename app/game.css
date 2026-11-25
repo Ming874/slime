@@ -72,11 +72,19 @@ svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 #vig.on{opacity:1}
 #prompt{position:absolute;left:50%;top:calc(50% + 24px);transform:translateX(-50%);background:#0b0f17c0;border:1px solid #ffffff22;border-radius:8px;padding:5px 12px;font-size:13px;white-space:nowrap}
 #prompt:empty{display:none}
+/* 「按住 E：在手上捏一捏」（第 7.2 節）：貼在自己的袖子上（game.js 的 knTipStep 每格對準前臂），只蓋到手臂、不會擋到世界裡的招牌 */
+#knTip{position:absolute;left:0;top:0;transform:translate(-50%,-50%) rotate(-4deg);background:#0b0f17cc;border:1px solid #ffffff2e;border-radius:8px;padding:3px 9px;font-size:12.5px;white-space:nowrap;pointer-events:none;transition:opacity .25s}
+#knTip kbd{display:inline-block;background:#fff;color:#000;border-radius:4px;padding:0 5px;font:700 11px/16px Inter,sans-serif;margin:0 2px}
+#knTip[hidden]{display:block;opacity:0}
+body.titleon #knTip{display:none}
 #prompt kbd{display:inline-block;background:#fff;color:#000;border-radius:4px;padding:0 6px;font:700 12px/18px Inter,sans-serif;margin-right:6px}
 
 #fxl{position:absolute;inset:0;overflow:hidden}
 .fx{position:absolute;transform:translate(-50%,-50%);font-weight:800;font-size:16px;text-shadow:0 1px 4px #000,0 0 2px #000;animation:fxup 1.1s forwards;white-space:nowrap}
 @keyframes fxup{to{transform:translate(-50%,-190%);opacity:0}}
+/* 在手上捏的「喀滋」（第 7.2 節）：疊在手上的捏捏上，小一號、只往上飄一點，不會飄到後面的招牌上 */
+.fx.kn{font-size:14px;animation:fxkn .8s forwards}
+@keyframes fxkn{from{transform:translate(-50%,-30%) scale(.8)}20%{transform:translate(-50%,-55%) scale(1.08)}to{transform:translate(-50%,-95%);opacity:0}}
 
 /* 訊息紀錄（聊天欄） */
 #log{position:absolute;left:12px;bottom:calc(var(--slot) + 52px + env(safe-area-inset-bottom));width:min(420px,70vw);display:flex;flex-direction:column;gap:3px}
@@ -96,6 +104,9 @@ svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .slot .n{position:absolute;right:4px;bottom:1px;font-size:13px;font-weight:800;text-shadow:1px 1px 0 #000,0 0 3px #000}
 .slot .dur{position:absolute;left:6px;right:6px;bottom:4px;height:3px;background:#000;border-radius:2px}
 .slot .dur i{display:block;height:100%;border-radius:2px}
+/* 捏捏的等級章（S～C，第 7.1 節），顏色同 .rx-gr */
+.slot .gr{position:absolute;right:3px;top:1px;font:900 10px/1.2 Inter,sans-serif;color:#fb7185;text-shadow:0 0 3px #000,1px 1px 0 #000}
+.slot .gr.gS{color:#f0abfc}.slot .gr.gA{color:#34d399}.slot .gr.gB{color:#fbbf24}
 .ico{width:60%;height:60%;border-radius:50% 50% 45% 45%/60% 60% 40% 40%;box-shadow:inset -3px -4px 6px #0005,inset 3px 3px 5px #fff8}
 .ico.prod{border-radius:22%;transform:rotate(-8deg)}
 
@@ -205,10 +216,6 @@ h3{margin:14px 0 8px;font-size:12px;color:var(--sub);letter-spacing:1px}
 .steps span.on{border-color:var(--warn);color:var(--warn)}
 .steps span.done{border-color:var(--good);color:var(--good)}
 
-.prow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
-.prow .nm{flex:1;min-width:0}
-.prow input{width:84px;background:var(--bg);border:1px solid var(--line);color:var(--tx);border-radius:8px;padding:8px;font:inherit;font-size:16px}
-.dem{width:46px;text-align:center;font-size:12px}
 .up{display:flex;gap:10px;align-items:center}
 .up .info{flex:1;min-width:0}
 .up .info b{font-size:15px}
@@ -455,15 +462,6 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 /* 跑鞋的速度線 */
 #speedl{position:absolute;inset:0;opacity:0;transition:opacity .25s;pointer-events:none;background:repeating-conic-gradient(from 0deg at 50% 50%,#ffffff00 0deg,#ffffff00 5deg,#ffffff55 5.6deg,#ffffff00 6.4deg,#ffffff00 11deg);-webkit-mask:radial-gradient(ellipse at center,transparent 45%,#000 90%);mask:radial-gradient(ellipse at center,transparent 45%,#000 90%);animation:spdl .18s steps(2) infinite}
 @keyframes spdl{50%{transform:rotate(2.5deg)}}
-/* 定價三選一 */
-.prow2{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.prow2 .nm{flex:1 1 120px;font-size:13px}
-.seg{display:flex;gap:4px;flex:2 1 240px}
-.seg button{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 4px;line-height:1.3;text-align:center}
-.seg button b{display:block;font-size:13px}
-.seg button small{font-size:11px;color:var(--sub)}
-.seg button.on{border-color:var(--acc);background:#22d3ee1a}
-.seg button.on b{color:var(--acc)}
 .chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
 /* 雙人產線：幫朋友裹糖 */
 #coop{position:absolute;left:50%;bottom:calc(120px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(420px,90vw);background:#10161ff2;border:1px solid var(--warn);border-radius:14px;padding:10px 12px;pointer-events:auto;z-index:60;text-align:center}

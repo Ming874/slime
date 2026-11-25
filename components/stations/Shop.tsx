@@ -84,7 +84,7 @@ export default function Shop() {
           {packs.map((k) => {
             const pk = g.PACKS[k], has = S.packs.includes(k), poor = S.money < pk.cost, items = Object.values(g.DECO).filter((d) => d.pack === k);
             return <Card key={k} k={k} art={<ShopArt k={k} packColors={items.map((d) => d.c)} />} name={pk.name}
-              desc={<span className="rx-decos">{items.map((d) => <span key={d.n}><i className="rx-dot" style={{ background: d.c }} />{d.n}</span>)}</span>}
+              desc={<span className="rx-decos">{items.map((d) => <span key={d.n}><i className="rx-dot" style={{ background: d.c }} />{d.n}</span>)}<small>每個零件讓售價 {g.packPct(k)}</small></span>}
               price={has ? null : pk.cost} act="buyPack" label={has ? '已擁有' : poor ? '錢不夠' : buy} disabled={has || poor}
               stamp={has ? '已購買' : undefined} state={has ? 'owned' : poor ? 'poor' : ''} />;
           })}

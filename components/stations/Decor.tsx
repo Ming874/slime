@@ -22,7 +22,7 @@ export function DecoTools() {
       <div className="rx-deco-hd">
         <b>零件 {p.deco.length}/6</b>
         <span className="rx-deco-meter" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <i key={i} className={i < p.deco.length ? 'on' : ''} />)}</span>
-        <em>售價與人氣 +{bonus}%</em>
+        <em>售價與人氣 +{bonus}%・直播 {g.fmt(g.priceOf(p, 'live'))}</em>
       </div>
       <div className="rx-palette">
         {Object.entries(g.DECO).map(([k, dc]) => {
@@ -30,7 +30,7 @@ export function DecoTools() {
           const cave = dc.pack === 'cave', moss = (S as { cave?: { mossN?: number } }).cave?.mossN || 0, has = cave ? moss > 0 : S.packs.includes(dc.pack);
           return (
             <button key={k} type="button" className={`rx-part${has ? '' : ' locked'}`} data-act="addDeco" data-k={k} disabled={!has || p.deco.length >= 6}
-              title={cave ? (has ? `加上${dc.n}（還有 ${moss} 份）` : '到山洞裡摘發光苔蘚，就能做成苔光') : has ? `加上${dc.n}` : `需要${packName(dc.pack)}（工作電腦的網購／器材行）`} style={{ '--pc': dc.c } as React.CSSProperties}>
+              title={cave ? (has ? `加上${dc.n}（還有 ${moss} 份）` : '到山洞裡摘發光苔蘚，就能做成苔光') : has ? `加上${dc.n}（售價 +${Math.round(dc.v * 100)}%）` : `需要${packName(dc.pack)}（工作電腦的網購／器材行）`} style={{ '--pc': dc.c } as React.CSSProperties}>
               <i aria-hidden="true" /><span>{dc.n}{cave ? ` ×${moss}` : ''}</span>
             </button>
           );

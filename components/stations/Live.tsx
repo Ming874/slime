@@ -1,8 +1,8 @@
 'use client';
-/* 直播台（手機）：其他玩家正在直播、選上台的捏捏、直播定價。
+/* 直播台（手機）：其他玩家正在直播、選上台的捏捏、直播價目表。
    舞台畫布、LIVE 標誌、觀眾數、人氣條、彈幕、斗內、聊天仍由 game.js 每格畫面更新（game/dom.html 的 #liveWrap、#chat）。 */
 import { G } from './game';
-import { Empty, PriceTiers, ProdTile } from './Items';
+import { Empty, PriceList, ProdTile } from './Items';
 import { PaperView } from './Paper';
 import type { Rcpt } from './game';
 
@@ -37,7 +37,7 @@ export function LiveStock() {
     <div className="rx-livestock">
       <div className="rx-livestock-hd"><b>上台的捏捏</b><small>點一下換一個上台</small></div>
       {S.stock.length
-        ? <div className="rx-strip">{S.stock.map((p) => <ProdTile key={p.id} p={p} act="stageSel" sel={L.stageId === p.id} extra={`直播售價 ${g.fmt(g.priceOf(p, 'live'))}`} />)}</div>
+        ? <div className="rx-strip">{S.stock.map((p) => <ProdTile key={p.id} p={p} act="stageSel" sel={L.stageId === p.id} />)}</div>
         : <Empty>背包裡沒有捏捏，先到加工產線做一個。</Empty>}
     </div>
   );
@@ -57,5 +57,5 @@ export function LiveRcpt() {
 }
 
 export function LivePrice() {
-  return <PriceTiers ch="live" />;
+  return <PriceList ch="live" />;
 }

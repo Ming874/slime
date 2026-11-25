@@ -4,6 +4,8 @@
 export type Species = { id: string; name: string; zone: string; color: string; color2?: string; rar: number; price: number; night?: boolean };
 export type Deco = { k: string };
 export type Product = { id: number; sp: string; crisp: number; dur: number; deco: Deco[]; cut?: string; cq?: number; wonky?: boolean; crude?: boolean; played?: boolean };
+// 成品的等級章（game.js 的 GRADES）：看做好時的酥脆（p.crisp，捏過也不變），m＝售價倍率
+export type Grade = { g: 'S' | 'A' | 'B' | 'C'; min: number; m: number };
 export type InvItem = { t: 'gel'; sp: string; n: number } | { t: 'prod'; p: Product };
 export type Order = { id: number; sp: string; cut: string | null; n: number; min: number; reward: number; fans: number };
 export type Review = { s: number; who: string; t: string; sp: string };
@@ -22,14 +24,14 @@ export type Game = {
   title: { on: boolean; mp?: boolean }; inCity?: boolean; riding?: boolean; rideDir?: string; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
   SP: Record<string, Species>; SPECIES: Species[]; ZONES: { id: string; name: string; acc: string }[]; RAR: ({ n: string; c: string } | null)[];
   UPS: Record<string, Up>; OWN: Record<string, Own>; PACKS: Record<string, { name: string; cost: number }>;
-  DECO: Record<string, { n: string; c: string; pack: string }>; CUTS: Record<string, { n: string; col: string; desc: string }>;
-  TIER: { n: string; m: number }[]; GOAL: { species: number; fans: number; earned: number }; SHOP_UPS: Record<string, string[]>;
+  DECO: Record<string, { n: string; c: string; pack: string; v: number }>; CUTS: Record<string, { n: string; col: string; desc: string; pm: number }>;
+  TOUCH: boolean; GRADES: Grade[]; GOAL: { species: number; fans: number; earned: number }; SHOP_UPS: Record<string, string[]>;
   QUEST: Record<string, { title: string; hint: string; from: string; need: number }>; PILLAR: string[]; TABLET_TXT: string; WEEK_MS: number;
   fmt: (n: number) => string; cap: () => number; slots: () => number; upCost: (k: string) => number; effCrisp: (p: Product) => number;
   fair: (p: Partial<Product> & { sp: string }, ch: string) => number; rating: () => number; priceOf: (p: Product, ch: string) => number;
   weeklyOrders: () => Order[]; wkItems: (o: Order) => Product[]; weekNo: () => number; invItems: () => InvItem[]; short: (id: string) => string;
-  farmLeft: () => number; fmtSec: (s: number) => string; unlockedSpecies: () => Species[]; tierOf: (ch: string, sp: string) => number;
-  defPrice: (sp: string, ch: string) => number; demand: (price: number, f: number) => number; speedTxt: (d: number) => string;
+  farmLeft: () => number; fmtSec: (s: number) => string; unlockedSpecies: () => Species[];
+  gradeOf: (p: Partial<Product> & { sp: string }) => Grade; priceWhy: (p: Product, ch: string) => string; packPct: (k: string) => string;
   qState: () => { pil: number[]; map: number[]; frags: number[]; notes: number[]; tide: number[]; read: Record<string, boolean> };
   nextQuest: () => string | null; questReady: (k: string) => boolean; madeIn: (zone: string) => number;
   pillarClues: (pil: number[]) => { ok: boolean }[]; pSp: (v: number) => Species; pillarExtra: () => string; hintBlock: (k: string) => string;

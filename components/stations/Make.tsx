@@ -77,18 +77,19 @@ function Idle() {
   );
 }
 
-// 上一個成品：評等印章、酥脆度、切面
+// 上一個成品：等級章（S～C，game.js 的 gradeOf：和售價用同一條規則）、酥脆度、切面、蓋了章以後的售價
 function Result({ p }: { p: Product }) {
-  const g = G(), sp = g.SP[p.sp], c = Math.round(p.crisp * 100), cut = p.cut ? g.CUTS[p.cut] : null, rank = c >= 90 ? 'S' : c >= 70 ? 'A' : c >= 45 ? 'B' : 'C';
+  const g = G(), sp = g.SP[p.sp], c = Math.round(p.crisp * 100), cut = p.cut ? g.CUTS[p.cut] : null, gr = g.gradeOf(p), rank = gr.g;
   return (
     <div className={`rx-result r${rank}`}>
       <div className="rx-result-art"><SlimeArt kind="prod" color={sp.color} color2={sp.color2} cut={p.cut} size={70} /></div>
       <div className="rx-result-body">
         <b>{prodName(g, p)}・{cut ? `${cut.n}切` : '酥脆'}捏捏</b>
         <div className="rx-result-bar"><span className="rx-bar"><i style={{ width: `${c}%` }} /></span><em>酥脆 {c}%</em></div>
-        <small>{p.cut ? `切面${(p.cq || 0) > 0.85 ? '平整發亮' : (p.cq || 0) > 0.5 ? '還算平整' : '有點歪'}・` : ''}已放入背包，可拿到裝飾桌加工或直播販售。</small>
+        <small className="rx-result-pr"><b>{rank} 級・售價 ×{gr.m}</b>　直播 {g.fmt(g.priceOf(p, 'live'))}・網站 {g.fmt(g.priceOf(p, 'web'))}</small>
+        <small>{p.cut ? `切面${(p.cq || 0) > 0.85 ? '平整發亮' : (p.cq || 0) > 0.5 ? '還算平整' : '有點歪'}・` : ''}已放入背包，可拿到裝飾桌加上零件（售價再提高），或直播、上架販售。</small>
       </div>
-      <span className="rx-rank" aria-label={`評等 ${rank}`}>{rank}</span>
+      <span className="rx-rank" aria-label={`等級 ${rank}，售價 ×${gr.m}`}>{rank}</span>
     </div>
   );
 }

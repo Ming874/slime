@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { G, pct, prodName, type InvItem } from './game';
 import { SlimeArt } from './Art';
 import { PaperView } from './Paper';
+import { GradeStamp } from './Items';
 
 export default function Inventory() {
   const g = G(), S = g.S, items = g.invItems(), n = Math.max(27, Math.ceil(items.length / 9) * 9);
@@ -38,6 +39,7 @@ function Slot({ it, i, sel, hb }: { it?: InvItem; i: number; sel: boolean; hb: b
       {i < 9 && <span className="rx-k">{i + 1}</span>}
       {it && sp && <SlimeArt kind={it.t === 'gel' ? 'gel' : 'prod'} color={sp.color} color2={sp.color2} cut={it.t === 'prod' ? it.p.cut : undefined} />}
       {it?.t === 'gel' && <span className="rx-n">{it.n}</span>}
+      {it?.t === 'prod' && !it.p.crude && <span className={`rx-sgr g${g.gradeOf(it.p).g}`}>{g.gradeOf(it.p).g}</span>}
       {it?.t === 'prod' && <span className="rx-dur"><i style={{ width: `${it.p.dur}%`, background: it.p.dur > 50 ? '#34d399' : it.p.dur > 20 ? '#fbbf24' : '#fb7185' }} /></span>}
     </button>
   );
@@ -79,7 +81,8 @@ function Detail({ it, hb }: { it?: InvItem; hb: number }) {
       </div>
       <Meter label="酥脆" v={g.effCrisp(p)} color="#f59e0b" />
       <Meter label="耐久" v={p.dur / 100} color={p.dur > 50 ? '#34d399' : p.dur > 20 ? '#fbbf24' : '#fb7185'} />
-      <p>合理價約 <b>{g.fmt(g.fair(p, 'live'))}</b>。可到裝飾桌加上零件，或到直播台／工作電腦販售。</p>
+      <p className="rx-detail-pr"><GradeStamp p={p} big /><span><span>直播 <b>{g.fmt(g.priceOf(p, 'live'))}</b>{p.played || p.dur < 100 ? '・捏過了，網站不收' : <>・網站 <b>{g.fmt(g.priceOf(p, 'web'))}</b></>}</span><small>{g.priceWhy(p, 'live')}{p.dur < 100 && !p.crude ? `（等級看做好時的酥脆 ${pct(p.crisp)}）` : ''}</small></span></p>
+      <p>可到裝飾桌加上零件（售價再提高），或到直播台／工作電腦販售。拿在手上{g.TOUCH ? '長按手掌' : '按住 E '}可以捏一捏：捏過會變軟（耐久掉了賣得比較慢），也不能上架網站了；等級章看做好時的酥脆，不會變。</p>
       <p className="rx-dim">點擊格子可放到快捷列第 {hb + 1} 格選取。</p>
     </div>
   );

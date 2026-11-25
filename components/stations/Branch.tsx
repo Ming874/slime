@@ -67,7 +67,7 @@ function Corp() {
   const g = G(), S = g.S as typeof g.S & BranchState, x = g as unknown as BranchGame;
   return (
     <div className="rx-branch">
-      <div className="rx-branch-hd"><b>🏢 企業合作</b><small>大公司定期釋出訂單，報酬約為合理價 ×1.5，但要在期限內交付夠酥脆的商品。逾期會損失信譽。</small></div>
+      <div className="rx-branch-hd"><b>🏢 企業合作</b><small>大公司定期釋出訂單，報酬約為行情價 ×1.5，但要在期限內交付夠酥脆的商品。逾期會損失信譽。</small></div>
       <div className="rx-kpis">
         <div className="rx-kpi"><small>企業信譽</small><b>{S.rep}</b></div>
         <div className="rx-kpi"><small>承接中</small><b>{S.contracts.length}<span className="rx-dim"> / 3</span></b></div>

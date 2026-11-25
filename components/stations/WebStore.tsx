@@ -2,7 +2,7 @@
 /* 工作電腦裡的「網路商店」後台與「本週限定」訂單頁。 */
 import { G, stars } from './game';
 import { SlimeArt } from './Art';
-import { Empty, PriceTiers, ProdTile } from './Items';
+import { Empty, PriceList, ProdTile } from './Items';
 
 const hue = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 11);
 
@@ -20,15 +20,15 @@ export function WebStore() {
 
       <h3>架上商品 <small>點一下下架</small></h3>
       <div className="rx-tiles">
-        {S.web.length ? S.web.map((p) => <ProdTile key={p.id} p={p} act="unlist" extra={`售價 ${g.fmt(g.priceOf(p, 'web'))}`} />) : <Empty>貨架空空如也，從下方上架商品。</Empty>}
+        {S.web.length ? S.web.map((p) => <ProdTile key={p.id} p={p} act="unlist" ch="web" />) : <Empty>貨架空空如也，從下方上架商品。</Empty>}
       </div>
 
       <h3>庫存 <small>點一下上架</small></h3>
       <div className="rx-tiles">
-        {S.stock.length ? S.stock.map((p) => <ProdTile key={p.id} p={p} act="list" extra={p.played || p.dur < 100 ? '已玩過，不能上架' : undefined} />) : <Empty>背包裡沒有捏捏。</Empty>}
+        {S.stock.length ? S.stock.map((p) => <ProdTile key={p.id} p={p} act="list" ch="web" extra={p.played || p.dur < 100 ? '捏過了，不能上架' : undefined} />) : <Empty>背包裡沒有捏捏。</Empty>}
       </div>
 
-      <details className="rx-fold"><summary>網站定價</summary><PriceTiers ch="web" /></details>
+      <details className="rx-fold"><summary>網站價目表</summary><PriceList ch="web" /></details>
 
       <h3>最新評價</h3>
       <div className="rx-reviews">
