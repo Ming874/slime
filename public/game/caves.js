@@ -15,7 +15,7 @@
 const CAVE_L0 = 6; // 洞口直段（公尺）：地形在這段挖洞
 const CAVE_IN = 15; // 走進洞口幾公尺之後只畫山洞
 const CAVE_STEP = .5; // 曲線取樣間距（公尺）
-const CAVE_UA = Array.from({ length: 8 }, () => new THREE.Vector4()), CAVE_UB = Array.from({ length: 8 }, () => new THREE.Vector4());
+const CAVE_UA = Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)), CAVE_UB = Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, 0, 0)); // 沒用到的格子 w＝0（terrainMat 直接跳過；Vector4 預設 w＝1 會被當成原點的一個洞口去檢查）
 // 每個洞的主題：岩石底色、洞裡的霧、環境光、發光痕跡（＝那一區的主色，4.4）、粒子、環境音
 // ak＝烘焙時環境光的倍率、exp＝洞裡多加的曝光：熔岩隧道和月光洞窟的岩石很暗，不補光的話整條通道幾乎全黑、看不出牆的形狀
 // trail2／trailA＝地上發光痕跡的顏色與不透明度（冰洞的地面很亮，痕跡用飽和一點的藍、淡一點，才看得出是光而不是白漆）

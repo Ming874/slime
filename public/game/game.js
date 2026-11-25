@@ -975,7 +975,9 @@ const RIDE = { on: false, dir: '', ph: '', t: 0, t0: 0, legs: null, li: 0, rate:
 function taxiShape(x, z, h) {
   if (TNL.raw) return h; const V = TAXI.V, xw = x * K - V.x, zw = z * K - V.z, u = xw * V.dx + zw * V.dz, v = Math.abs(xw * V.dz - zw * V.dx);
   if (u < -21 || u > 47 || v > 18) return h;
-  h += (V.y / K - h) * smooth(-20, -16, u) * (1 - smooth(0, 1.5, u)) * (1 - smooth(7, 11, v));
+  // 頭牆寬度內（|v| < 7）整平到洞口裡 2.6 m（比一格地形還深）：原本洞口面一過就開始爬升，跨過洞口面的那一格三角形把山坡內插到洞口前，
+  // 路面上隆起一道 0.8 m 的碎石坎擋住洞口下緣（車子直接穿過去）；洞口裡面被頭牆蓋住、再往裡由下面的墊土接上山坡
+  h += (V.y / K - h) * smooth(-20, -16, u) * Math.max(1 - smooth(0, 1.5, u), (1 - smooth(2.6, 4, u)) * (1 - smooth(5.5, 7.5, v))) * (1 - smooth(7, 11, v));
   const top = (V.y + TAXI.TOP + 2.4) / K, wt = (1 - smooth(5.6, 10.9, v)) * smooth(1.9, 3.6, u) * (1 - smooth(40, 46, u)); if (h < top) h += (top - h) * wt;
   return h;
 }
@@ -1079,7 +1081,7 @@ function initWorld() {
     vertexShader: 'varying vec3 vd; void main(){ vd = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform float night; varying vec3 vd; float h3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); } void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); vec3 sc = mix(vec3(1.0, 0.93, 0.78), vec3(0.78, 0.84, 1.0), night); c += sc * (pow(s, 700.0) * 3.5 * (1.0 - night * 0.3) + pow(s, 48.0) * 0.28 * (1.0 - night * 0.5) + pow(s, 6.0) * 0.07 * (1.0 - night)) * smoothstep(-0.05, 0.05, d.y); float st = step(0.9965, h3(floor(d * 230.0))) * night * smoothstep(0.03, 0.3, d.y); c += vec3(0.85, 0.9, 1.0) * st; c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
-  buildTerrain(); buildCaves(); buildWater(); buildProps(); buildLandmarks(); buildRegions(); buildFauna(); buildWorkshop(); buildCity(); buildTunnel(); buildVolcanoFx(); buildGates(); buildPuzzles(); restoreCards(); buildParticles(); buildClouds();
+  buildTerrain(); buildCaves(); terrainCuts(); buildWater(); buildProps(); buildLandmarks(); buildRegions(); buildFauna(); buildWorkshop(); buildCity(); buildTunnel(); buildVolcanoFx(); buildGates(); buildPuzzles(); restoreCards(); buildParticles(); buildClouds();
   W.goo = makeGoo(sc); skyEnv(true);
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); taxiWarm(); W.ready = true; return true;
 }
@@ -1104,18 +1106,23 @@ function crPts(pts, n = 6) {
   }
   out.push(pts[pts.length - 1]); return out;
 }
+/* 小徑貼圖（RGBA 半精度浮點，可以線性內插）：R＝小徑遮罩；G＝離路中線的橫向距離（公尺，有正負，夾在 ±4）；B＝沿著路走了多遠，折成 0～7.92 m 來回的三角波
+   （一個步距 0.36 m 的整數倍，折返點剛好落在一個腳印上，左右腳照樣交錯；用三角波而不是鋸齒波，線性內插才不會在接縫出錯）。
+   雪地的腳印用 G、B 排成順著路的一行行（原本是方向亂轉的藍色橢圓、均勻撒滿整條路，看起來像圓點花紋）；8 位元的貼圖一格 3 公分，腳印邊緣會是鋸齒 */
+const PATH_FOLD = 7.92;
 function bakePaths() {
-  if (PATH_TEX) return; const cell = MAP_SIZE / PMR, half = MAP_SIZE / 2;
-  const seg = (ax, az, bx, bz, w) => {
+  if (PATH_TEX) return; const cell = MAP_SIZE / PMR, half = MAP_SIZE / 2, PLAT = new Float32Array(PMR * PMR), PARC = new Float32Array(PMR * PMR);
+  const seg = (ax, az, bx, bz, w, s0) => {
     const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - w - 1 + half) / cell)), i1 = Math.min(PMR - 1, Math.ceil((Math.max(ax, bx) + w + 1 + half) / cell));
     const j0 = Math.max(0, Math.floor((Math.min(az, bz) - w - 1 + half) / cell)), j1 = Math.min(PMR - 1, Math.ceil((Math.max(az, bz) + w + 1 + half) / cell));
-    const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+    const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1, L = Math.sqrt(L2);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const px = (i + .5) * cell - half, pz = (j + .5) * cell - half, t = clamp(((px - ax) * dx + (pz - az) * dz) / L2, 0, 1), d = Math.hypot(px - ax - dx * t, pz - az - dz * t);
-      const ww = w * (.8 + vnoise(px * .2, pz * .2, 47) * .45), v = 1 - smooth(ww * .5, ww, d), k = j * PMR + i; if (v > PMASK[k]) PMASK[k] = v;
+      const px = (i + .5) * cell - half, pz = (j + .5) * cell - half, tu = ((px - ax) * dx + (pz - az) * dz) / L2, t = clamp(tu, 0, 1), d = Math.hypot(px - ax - dx * t, pz - az - dz * t);
+      const ww = w * (.8 + vnoise(px * .2, pz * .2, 47) * .45), v = 1 - smooth(ww * .5, ww, d), k = j * PMR + i;
+      if (v > PMASK[k]) { PMASK[k] = v; PLAT[k] = ((px - ax) * dz - (pz - az) * dx) / L; PARC[k] = s0 + tu * L; } // 沿線距離用沒夾住的 tu：線段頭尾外面接著延伸，和下一段接得上
     }
   };
-  const line = (pts, w) => { for (let i = 0; i < pts.length - 1; i++) seg(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], w); };
+  const line = (pts, w) => { let s0 = 0; for (let i = 0; i < pts.length - 1; i++) { seg(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], w, s0); s0 += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); } };
   PATH_LINES.forEach(l => line(crPts(l), 1.35));
   line(Array.from({ length: 73 }, (_, i) => [Math.cos(i / 72 * PI2) * 18.5, Math.sin(i / 72 * PI2) * 18.5]), 1.4);
   line(crPts([[-3, 16.5], [-5.6, 18.6], [-7.6, 20.2]]), 1); line([[0, 15], [0, 18.5]], 1.1); // 出生點到計程車下車處的小支線
@@ -1123,8 +1130,9 @@ function bakePaths() {
   { const L = taxiLegs(), pts = (l, ok) => { const a = []; for (let i = 0; i < l.n; i += 4) if (ok(l.Z[i])) a.push([l.X[i], l.Z[i]]); a.push([l.X[l.n - 1], l.Z[l.n - 1]]); return a; }, out = z => z < TAXI.V.z + 2;
     line(pts(L[1], out).filter(p => out(p[1])), 3.4); line(pts(L[5], out).filter(p => out(p[1])), 3.4); line(pts(L[6], () => true), 2.8); }
   line(crPts([[GIANT[0] - 22, GIANT[1] - 30], [GIANT[0] - 8, GIANT[1] - 12], [GIANT[0] - 2, GIANT[1] - 3]].map(([x, z]) => [x, z])), .9);
-  const u8 = new Uint8Array(PMR * PMR); for (let i = 0; i < u8.length; i++) u8[i] = Math.round(PMASK[i] * 255);
-  PATH_TEX = new THREE.DataTexture(u8, PMR, PMR, THREE.RedFormat, THREE.UnsignedByteType); PATH_TEX.magFilter = PATH_TEX.minFilter = THREE.LinearFilter; PATH_TEX.needsUpdate = true;
+  const hf = new Uint16Array(PMR * PMR * 4), F2 = PATH_FOLD * 2, h = THREE.DataUtils.toHalfFloat, one = h(1);
+  for (let i = 0; i < PMR * PMR; i++) { const a = ((PARC[i] % F2) + F2) % F2, k = i * 4; hf[k + 3] = one; if (!PMASK[i]) continue; hf[k] = h(PMASK[i]); hf[k + 1] = h(clamp(PLAT[i], -4, 4)); hf[k + 2] = h(a < PATH_FOLD ? a : F2 - a); } // 不在路上的格子只填 A（其餘是 0）
+  PATH_TEX = new THREE.DataTexture(hf, PMR, PMR, THREE.RGBAFormat, THREE.HalfFloatType); PATH_TEX.magFilter = PATH_TEX.minFilter = THREE.LinearFilter; PATH_TEX.needsUpdate = true;
 }
 function onPath(x, z) {
   const half = MAP_SIZE / 2, fx = (x + half) / MAP_SIZE * PMR - .5, fz = (z + half) / MAP_SIZE * PMR - .5, i = Math.floor(fx), j = Math.floor(fz);
@@ -1143,15 +1151,16 @@ const WATER_Y = -.9 * K;
 /* 地表材質（第 4 堂：各區地面的質感與交界）：
    - 生態區權重、凹凸度（凹地／稜線）、岩層的起伏都在 buildTerrain 逐頂點算好（屬性 gw、gly），像素只做細節；
      各區的細節只在該區權重 > 0 的地方計算（相鄰像素走同一個分支），比原本每個像素把四區全部算一遍省
-   - 草地：叢生的深色草、曬淡的黃綠斑塊、三葉草叢、緩坡的苔；森林裡一片片落葉堆（積在凹地，走近才看得到一片片葉子）、一小片一小片的野花
+   - 草地：叢生的深色草、曬淡的黃綠斑塊、三葉草叢、緩坡的苔；森林裡一片片落葉堆（積在凹地，走近才看得到一片片葉子）、一叢叢同色的五瓣小花
    - 陡坡：岩層厚薄不一、隨地點起伏傾斜，每層顏色依區域不同（森林灰褐、海岸砂岩、火山玄武岩、雪原藍灰），
-     從層頂往下流的水痕打斷橫條紋，層頂一塊塊積著苔／沙／火山灰；雪原的岩壁大多被雪蓋住；草和岩石的交界不規則
-   - 小徑：邊緣不規則、中間踩得較淺，石子依區域不同（森林碎石、海岸碎貝殼、火山紅黑火山渣；雪地是踩實的雪與腳印）
+     從層頂往下流的水痕打斷橫條紋，層頂一塊塊積著苔／沙／火山灰（森林每層的苔量不同）；雪原的岩壁整片積雪、只剩淡淡的層線；草和岩石的交界不規則
+   - 小徑：邊緣不規則、中間踩得較淺，石子依區域不同（森林碎石、海岸碎貝殼、火山紅黑火山渣；雪地是踩實的雪與順著路的兩行腳印）
    - 海岸：一片片迎風緩、背風陡的沙紋，浪打濕的深色沙灘（只在海邊），來回的浪花線、漲潮線上的海草團與碎貝殼，水下的焦散光紋
    - 火山：玄武岩地面、灰原與風吹的灰痕、鐵鏽色斑塊、從火山口放射狀流下的黑色舊熔岩流；火山錐上沿坡的溝紋與 9 道岩漿河（夜裡也看得到火山）；
      火山口周圍與幾片熔岩原冷卻成一塊塊岩殼、縫隙透出一明一暗的岩漿光（小徑上沒有）
    - 雪原：沿風向拉長的風紋、凹地偏藍、低窪平地偶爾一片光滑的冰面、會隨視角閃爍的冰晶
-   - LOW（沒有 T_HQ）：只留顏色（不做凹凸），省掉一片片的落葉、野花、岩殼（改成簡單的裂縫）、碎貝殼、浪花線、冰晶與焦散；岩漿河照樣有 */
+   - LOW（沒有 T_HQ；桌機畫質「低」也是）：只留顏色（不做凹凸），省掉一片片的落葉、野花、岩殼（改成扭歪的六角格）、碎貝殼、浪花線、冰晶與焦散；岩漿河照樣有
+   - 挖洞（山洞口、隧道谷口的 discard）只在 T_CUT 版本，見 terrainCuts */
 /* 火山地面的兩種「岩漿光」在某些地方要關掉（各區檔案在建世界時填，region-volcano.js）：
    - crust：熔岩原岩殼縫（下面的 field）只看雜訊，一大片剛好蓋在熔岩丘、灰原、岩柱丘、台地頂上，這些地方要的是安靜的灰殼（熔岩丘只有頂上一道裂縫）。
      每個 (x, z, 內半徑, 外半徑)（世界座標）：內半徑以內沒有縫、外半徑以外照常；外半徑 0＝沒用到
@@ -1166,6 +1175,8 @@ function terrainMat() {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 dirt;\nattribute vec4 gw;\nattribute float gly;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt; vGW = gw; vLy = gly; vWP = position; vWN = normal;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nuniform vec4 uTnA;\nuniform vec4 uTnB;\nuniform vec4 uNoCr[12];\nuniform vec4 uNoLv;\nvarying vec3 vDirt;\nvarying vec4 vGW;\nvarying float vLy;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        #ifdef T_CUT
+        // 只有碰到洞口的地形塊用這個版本（terrainCuts）：著色器裡只要有 discard，GPU 就不能先做深度測試，被擋住的地形也整個算一遍
         // 山洞口：在洞口直段的斷面裡不畫地形（uCvA＝洞口地面中心＋直段長度、uCvB＝往洞裡的方向＋半寬＋高度；斷面形狀同 caves.js 的 caveProfile）
         for (int ci = 0; ci < 8; ci++) { vec4 ca = uCvA[ci]; if (ca.w <= 0.0) continue; vec4 cb = uCvB[ci]; vec2 cr = vWP.xz - ca.xz; float ct = dot(cr, cb.xy); if (ct < 0.0 || ct > ca.w) continue;
           float cl = abs(dot(cr, vec2(-cb.y, cb.x))), cy = (vWP.y - ca.y) / cb.w; if (cy < -0.03 || cy > 0.985) continue;
@@ -1173,6 +1184,7 @@ function terrainMat() {
         // 月光隧道的谷口：同一種挖法（斷面同 tubeGeo：直牆到 0.45、上面橢圓拱；uTnA＝洞口地面中心＋挖多深、uTnB＝往山裡的方向＋半寬＋高度）
         { vec2 tr = vWP.xz - uTnA.xz; float tt = dot(tr, uTnB.xy); if (tt >= 0.0 && tt <= uTnA.w) { float tl = abs(dot(tr, vec2(-uTnB.y, uTnB.x))), ty = (vWP.y - uTnA.y) / uTnB.w;
           if (ty > -0.03 && ty < 0.985) { float tf = ty < 0.45 ? 1.0 : sqrt(max(0.0, 1.0 - pow((ty - 0.45) / 0.55, 2.0))); if (tl < uTnB.z * tf) discard; } } }
+        #endif
         vec2 wp = vWP.xz; float n1 = tN(wp * 0.85), n2 = tN(wp * 3.3), n3 = tN(wp * 0.11 + 7.0);
         float tDist = distance(vWP, cameraPosition), tNear = 1.0 - smoothstep(28.0, 70.0, tDist), tMid = 1.0 - smoothstep(55.0, 110.0, tDist), tPx = length(fwidth(wp)); // tPx：這個像素涵蓋幾公尺（在分支外算，導數才可靠）
         // 生態區權重與凹凸度來自頂點（交界沿山脊稜線彎曲，和頂點色一致；tCv：＋凹地、－稜線）
@@ -1185,7 +1197,7 @@ function terrainMat() {
         #endif
         diffuseColor.rgb *= 0.9 + 0.13 * n1 + 0.06 * n2 + 0.05 * (n4 - 0.5) * tNear;
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.04, 0.86), smoothstep(0.58, 0.8, n3) * 0.35);
-        float pm = texture2D(uPath, wp / ${MAP_SIZE.toFixed(2)} + 0.5).r;
+        vec4 pth = texture2D(uPath, wp / ${MAP_SIZE.toFixed(2)} + 0.5); float pm = pth.r;
         // 草地（森林與海岸的草坡：用頂點色的綠度判斷，沙、雪、岩石、火山灰都不會被當成草）
         float grassK = smoothstep(0.025, 0.1, diffuseColor.g - max(diffuseColor.r, diffuseColor.b)) * soil;
         if (grassK > 0.01) {
@@ -1209,14 +1221,23 @@ function terrainMat() {
             #endif
           }
           #ifdef T_HQ
-            // 野花：草地上一小片一小片的白（黃花心）、淡黃、粉紅、淡紫小花，約 20 公尺內才畫；落葉堆、陡坡、小徑上沒有
-            float fz = smoothstep(0.62, 0.74, tN(wp * 0.08 + 60.0)) * (1.0 - lp) * (1.0 - smoothstep(14.0, 20.0, tDist)) * (1.0 - smoothstep(0.08, 0.2, tSl)) * (1.0 - smoothstep(0.1, 0.4, pm));
-            if (fz > 0.0) {
-              vec2 fc = floor(wp * 3.4); float fh = tH(fc + 19.1); vec2 ff = fract(wp * 3.4) - 0.5 - (vec2(tH(fc + 3.7), tH(fc + 6.1)) - 0.5) * 0.55;
-              float fd = length(ff), ffw = tPx * 5.0 + 0.004, fl = step(1.0 - 0.38 * fz, tH(fc + 27.3)) * (1.0 - smoothstep(0.13 - ffw, 0.13 + ffw, fd));
-              vec3 fcol = fh < 0.45 ? vec3(0.96, 0.95, 0.9) : fh < 0.7 ? vec3(0.98, 0.86, 0.42) : fh < 0.88 ? vec3(0.97, 0.7, 0.78) : vec3(0.78, 0.7, 0.95);
-              fcol = mix(fcol, vec3(1.0, 0.8, 0.25), (1.0 - smoothstep(0.035, 0.05, fd)) * step(fh, 0.45));
-              tG = mix(tG, fcol, fl * 0.92);
+            // 野花：草地上一叢一叢（每叢約 1 公尺、同一種花：白花黃心、黃、粉紅、淡紫），叢與叢之間是空的草地；落葉堆、陡坡、小徑上沒有。
+            // 約 13 公尺內一朵朵畫出來，再遠只剩花叢的平均色（亮度一樣，走動時看不出換手），40 公尺外淡掉。
+            // 原本十幾公尺一整片均勻的淡色小點（每平方公尺 4～5 朵），站著看像碎紙花或雪，而且 14～20 公尺之間整圈消失，那一圈跟著人走
+            float fz = smoothstep(0.6, 0.72, tN(wp * 0.08 + 60.0)) * (1.0 - lp) * (1.0 - smoothstep(0.08, 0.2, tSl)) * (1.0 - smoothstep(0.1, 0.4, pm)), ffar = 1.0 - smoothstep(28.0, 42.0, tDist);
+            if (fz * ffar > 0.0) {
+              vec2 bc = floor(wp * 0.55), bo = (bc + 0.5 + (vec2(tH(bc + 4.7), tH(bc + 9.2)) - 0.5) * 0.35) / 0.55; float bh = tH(bc + 41.3), br = 0.4 + 0.3 * tH(bc + 7.9); // 每 1.8 公尺一格最多一叢（半徑 0.4～0.7 公尺，橢圓）
+              if (bh > 1.0 - 0.55 * fz) {
+                float fh = fract(bh * 13.7), fa = (1.0 - smoothstep(0.7, 1.0, length((wp - bo) * vec2(1.0, 1.3)) / br)) * 0.12, fn = 1.0 - smoothstep(9.0, 13.0, tDist); // fa：遠處只剩花叢的平均色（花約佔叢的一成多）
+                vec3 fcol = fh < 0.3 ? vec3(0.96, 0.95, 0.9) : fh < 0.55 ? vec3(1.0, 0.72, 0.12) : fh < 0.8 ? vec3(0.95, 0.42, 0.6) : vec3(0.62, 0.5, 0.98), fcc = fh < 0.3 ? vec3(1.0, 0.7, 0.1) : fh < 0.55 ? vec3(0.75, 0.35, 0.05) : vec3(1.0, 0.82, 0.35);
+                if (fn > 0.0) { // 近處一朵朵：五片花瓣＋花心，大小與轉角不同；這一朵的中心在叢裡才畫（叢的邊上不會有半朵），叢的中間比邊上密
+                  vec2 fc = floor(wp * 5.0), fo = (fc + 0.5 + (vec2(tH(fc + 3.7), tH(fc + 6.1)) - 0.5) * 0.45) / 5.0, fv = (wp - fo) * 5.0;
+                  float fd = length(fv), ffw = tPx * 5.0 + 0.02, fsz = 0.19 + 0.08 * tH(fc + 13.1), fr = fsz * (0.74 + 0.26 * cos(5.0 * atan(fv.y, fv.x) + tH(fc + 1.9) * 6.28));
+                  float fl = step(0.25 + 0.5 * length((fo - bo) * vec2(1.0, 1.3)) / br, tH(fc + 27.3)) * (1.0 - smoothstep(fr - ffw, fr + ffw, fd));
+                  fcol = mix(fcol, fcc, (1.0 - smoothstep(fsz * 0.28, fsz * 0.28 + ffw, fd)) * fn); fa = mix(fa, fl * 0.95, fn);
+                }
+                tG = mix(tG, fcol, fa * ffar);
+              }
             }
           #endif
           diffuseColor.rgb = mix(diffuseColor.rgb, tG, grassK); tHt += (clump - 0.5) * 0.08 * grassK;
@@ -1226,7 +1247,7 @@ function terrainMat() {
         if (rockK > 0.001) {
           float rn = tN(vec2(wp.x + wp.y, vWP.y * 1.4) * 0.8) * 0.5 + tN(vec2(wp.x - wp.y, vWP.y * 1.4) * 0.8 + 9.0) * 0.5;
           float yy = vWP.y + vLy, lyr = yy / 2.6 + 0.5 * sin(yy * 0.17) + 0.25 * sin(yy * 0.37 + 1.3) + rn * 0.3, lyf = fract(lyr), lyi = floor(lyr);
-          float bh = fract(sin(lyi * 12.9898 + 4.1) * 43758.5453), bh0 = fract(sin((lyi - 1.0) * 12.9898 + 4.1) * 43758.5453), strK = (0.3 + 0.7 * smoothstep(0.3, 0.7, tN(wp * 0.03 + 40.0))) * (1.0 - tB.w * 0.5) * (1.0 - tCone * 0.9); // 火山錐是一層層熔岩往下流堆成的，不是水平沉積：改畫溝紋（見火山段）
+          float bh = fract(sin(lyi * 12.9898 + 4.1) * 43758.5453), bh0 = fract(sin((lyi - 1.0) * 12.9898 + 4.1) * 43758.5453), strK = (0.3 + 0.7 * smoothstep(0.3, 0.7, tN(wp * 0.03 + 40.0))) * (1.0 - tB.w * 0.5) * (1.0 - tCone * 0.9) * (1.0 - tB.x * 0.7 * step(fract(bh * 3.7), 0.4)); // 火山錐是一層層熔岩往下流堆成的，不是水平沉積：改畫溝紋（見火山段）
           vec3 bA = tB.x * vec3(1.0, 0.97, 0.92) + tB.y * vec3(1.04, 0.95, 0.84) + tB.z * vec3(0.92, 0.9, 0.95) + tB.w * vec3(0.95, 0.98, 1.05);
           vec3 bB = tB.x * vec3(0.84, 0.83, 0.8) + tB.y * vec3(1.2, 1.1, 0.95) + tB.z * vec3(0.72, 0.68, 0.74) + tB.w * vec3(0.82, 0.86, 0.95);
           vec3 bC = tB.x * vec3(0.9, 0.98, 0.76) + tB.y * vec3(1.12, 0.86, 0.7) + tB.z * vec3(1.3, 0.78, 0.6) + tB.w * vec3(0.68, 0.72, 0.84); // 偶爾一層：苔綠／杏色／鐵鏽／深色
@@ -1238,21 +1259,28 @@ function terrainMat() {
           float tStk = smoothstep(0.6, 0.8, tN(vec2(ru * 1.3, lyi * 7.13))) * smoothstep(0.1, 0.9, lyf);
           tR *= mix(vec3(1.0), tB.x * vec3(0.78, 0.88, 0.72) + tB.y * vec3(0.8, 0.72, 0.64) + tB.z * vec3(1.15, 0.82, 0.7) + tB.w * vec3(1.12, 1.14, 1.18), tStk * 0.6);
           float cg = tN(vec2(ru * 0.3, lyi * 3.7)) * 0.7 + rn * 0.3, tCov = smoothstep(0.78 - 0.08 * tB.x, 0.9, lyf) * smoothstep(0.44 - 0.05 * tB.x, 0.6, cg); // 森林的岩壁苔長得多一點（山谷看起來比較綠意）
-          tCov = mix(tCov, max(smoothstep(0.2, 0.42, cg * 0.72 + lyf * 0.28), smoothstep(30.0, 110.0, tDist) * 0.85), tB.w); // 雪原：大多被雪蓋住，只露出零星的岩塊；中遠處幾乎全白（原本露出的岩塊連成一層層深藍灰的橫紋，佔掉大半個畫面、搶走岩柱與雪丘的戲）
+          // 雪原：岩壁整片被雪蓋住，只在少數層的雪簷下露出一小段淺灰藍的岩石（近處才有），層與層之間只剩一道淡淡的藍影（像原版平靜的等高線）。
+          // 原本每一層都露出一排深藍灰的岩塊，雪原很多視角大半個畫面是一塊塊深色斑點，傍晚、夜裡更暗更髒
+          tCov = mix(tCov, 1.0 - (1.0 - smoothstep(0.1, 0.34, lyf + (n2 - 0.5) * 0.2)) * smoothstep(0.6, 0.8, cg + (n2 - 0.5) * 0.16) * (1.0 - smoothstep(30.0, 70.0, tDist)), tB.w); // 邊緣用細雜訊打散（不是一塊塊方形）
+          tR = mix(tR, vec3(0.5, 0.55, 0.66) * (0.9 + 0.2 * rn), 0.7 * tB.w);
           vec3 covC = tB.x * vec3(0.09, 0.23, 0.055) + tB.y * vec3(0.62, 0.45, 0.22) + tB.z * vec3(0.11, 0.09, 0.08) + tB.w * vec3(0.9, 0.93, 0.98);
           #ifdef T_HQ
             float rf = tFbm(vec2(wp.x + wp.y, vWP.y * 1.2) * 1.7);
             tR *= 0.94 + 0.12 * rf;
-            tHt += rockK * ((rn - 0.5) * 0.22 + (rf - 0.5) * 0.1 + (smoothstep(0.0, 0.12, lyf) * (1.0 - smoothstep(0.88, 1.0, lyf)) - 1.0) * 0.06 * strK); // 凹凸在層的交界連續（只是一道凹槽），不然導數會在交界畫出亮暗虛線
+            tHt += rockK * (((rn - 0.5) * 0.22 + (rf - 0.5) * 0.1) * (1.0 - 0.75 * tB.w * tCov) + (smoothstep(0.0, 0.12, lyf) * (1.0 - smoothstep(0.88, 1.0, lyf)) - 1.0) * 0.06 * strK); // 凹凸在層的交界連續（只是一道凹槽），不然導數會在交界畫出亮暗虛線；雪蓋住的地方平順
           #endif
           // 森林的山壁：幾十公尺一片的色調變化（偏暖的土黃、偏冷的灰），苔帶有的層長滿、有的層幾乎沒有，幾處整片爬滿苔——
           // 原本一整圈同一個灰褐色、苔帶間距一樣，從平地中間或空中看像一座採石場
           if (tB.x > 0.01) {
             float rv = tN(vec2(ru * 0.021 + 3.0, vWP.y * 0.025 - 1.0)), rw = tN(vec2(ru * 0.045 - 7.0, lyi * 0.83)), rg = tN(vec2(ru * 0.028 + 11.0, vWP.y * 0.045 + 5.0));
             tR *= mix(vec3(1.0), mix(vec3(1.12, 1.0, 0.82), vec3(0.85, 0.92, 1.0), smoothstep(0.28, 0.72, rv)), tB.x);
-            tCov = mix(tCov, max(clamp(tCov * smoothstep(0.2, 0.7, rw) * 1.7, 0.0, 1.0), smoothstep(0.6, 0.8, rg) * smoothstep(0.25, 0.55, cg) * 0.6), tB.x);
+            // 每一層的苔量不同（有的層頂一條細線、有的層長滿半層、有的層沒有），約四成的層界幾乎看不出來（上面的 strK），加上幾片從上往下整片爬滿的苔——
+            // 原本每一層層頂都是一樣粗的苔帶、間距一樣，從平地或空中看是一圈圈等距的綠線（像梯田、採石場）
+            float lm = fract(bh * 7.31), fCov = smoothstep(0.93 - 0.42 * lm, 0.98, lyf) * smoothstep(0.38, 0.6, cg) * smoothstep(0.2, 0.6, rw) * step(0.3, lm);
+            tCov = mix(tCov, max(fCov, smoothstep(0.55, 0.78, rg) * smoothstep(0.2, 0.5, cg) * 0.8), tB.x);
           }
-          tR = mix(tR, covC * (0.85 + 0.3 * n2), tCov * 0.85);
+          tR = mix(tR, covC * (0.85 + 0.3 * n2 + tB.w * (0.1 - 0.2 * n2)), tCov * (0.85 + 0.15 * tB.w)); // 雪的明暗起伏小一點（不要一塊塊）
+          tR *= mix(vec3(1.0), vec3(0.84, 0.89, 1.0), min(1.0, under * 2.6) * tB.w); // 雪原：層與層之間一道淡淡的藍影
           diffuseColor.rgb = mix(diffuseColor.rgb, tR, rockK);
         }
         // 海岸：沙紋、浪打濕的沙灘、浪花線、漲潮線（只在海邊，內陸的低窪處不會出現）、水下的焦散
@@ -1317,7 +1345,7 @@ function terrainMat() {
           }
           float hot = 1.0 - smoothstep(14.0, 32.0, cvl); // 火山口周圍的上半山坡：還很燙的岩殼
           float field = max(smoothstep(0.64, 0.74, tN(wp * 0.03 + 11.0)) * smoothstep(55.0, 65.0, cvl) * soil * (1.0 - ash * 0.8), hot) * npm;
-          if (field > 0.01) for (int mi = 0; mi < 12; mi++) { vec4 q = uNoCr[mi]; if (q.w > 0.0) field *= smoothstep(q.z, q.w, distance(wp, q.xy)); } // 熔岩丘、灰原、台地這些地方不要縫（見 TMASK.crust）
+          if (field > 0.01) for (int mi = 0; mi < 12; mi++) { vec4 q = uNoCr[mi]; if (q.w > 0.0) field *= smoothstep(q.z, q.w, distance(wp, q.xy) + (n3 - 0.5) * (q.w - q.z) * 1.6); } // 熔岩丘、灰原、台地這些地方不要縫（見 TMASK.crust）；邊界用大尺度雜訊扭彎（幾個圓排在一起時不會拼成一條直邊）
           if (field > 0.01) {
             #ifdef T_HQ
               vec2 vg = wp * 0.48, vi = floor(vg), vf = fract(vg), vid = vi; float d1 = 9.0, d2 = 9.0;
@@ -1331,9 +1359,15 @@ function terrainMat() {
               tGlow += vec3(1.0, 0.33, 0.06) * seam * max(step(0.4, tH(vid + 9.1)), hot) * (0.42 + 0.32 * sin(uTime * 1.3 + tH(vid) * 6.28)) * tB.z; // 約六成的縫還在發光
               tHt += (smoothstep(0.0, 0.35, ve) * 0.04 - seam * 0.05) * field;
             #else
-              float seam = (1.0 - smoothstep(0.0, 0.03, abs(tN(wp * 0.33 + 3.0) - 0.5))) * field;
+              // 手機：六角格（不用 9 格的 Voronoi 迴圈），用現成的兩個雜訊把格子扭歪、邊緣抖一點，看起來是一塊塊岩殼之間的縫；
+              // 原本畫雜訊的等高線，地上是一條條粗細不一、彎來繞去的橘色「繩子」
+              vec2 hp = wp * 0.48 + vec2(n1 - 0.5, n2 - 0.5) * vec2(0.28, 0.12) + vec2(n2 - 0.5, n1 - 0.5) * vec2(0.08, 0.2), hs = vec2(1.0, 1.7320508);
+              vec4 hc = floor(vec4(hp, hp - vec2(0.5, 1.0)) / hs.xyxy) + 0.5, hq = vec4(hp - hc.xy * hs, hp - (hc.zw + 0.5) * hs);
+              vec4 hx = dot(hq.xy, hq.xy) < dot(hq.zw, hq.zw) ? vec4(hq.xy, hc.xy) : vec4(hq.zw, hc.zw + 0.5); vec2 ha = abs(hx.xy);
+              float he = 0.5 - max(dot(ha, hs * 0.5), ha.x), seam = mix(1.0 - smoothstep(0.012, 0.035, he), 0.06, smoothstep(45.0, 95.0, tDist)) * field; // he：到格子邊的距離
+              tV *= 1.0 + (tH(hx.zw + 3.3) - 0.5) * 0.2 * field;
               tV = mix(tV, vec3(0.05, 0.03, 0.025), seam * 0.85);
-              tGlow += vec3(1.0, 0.33, 0.06) * seam * (0.5 + 0.35 * sin(uTime * 1.6 + wp.x * 0.3 + wp.y * 0.2)) * tB.z;
+              tGlow += vec3(1.0, 0.33, 0.06) * seam * max(step(0.4, tH(hx.zw + 9.1)), hot) * (0.42 + 0.32 * sin(uTime * 1.3 + tH(hx.zw) * 6.28)) * tB.z;
             #endif
           }
           diffuseColor.rgb = mix(diffuseColor.rgb, tV, tB.z);
@@ -1361,11 +1395,20 @@ function terrainMat() {
             vec2 pc = floor(wp * 5.0), pf = fract(wp * 5.0) - 0.5 - (vec2(tH(pc + 3.1), tH(pc + 7.3)) - 0.5) * 0.45; float ph = tH(pc);
             float peb = step(0.74 + 0.16 * tB.y, ph) * (1.0 - smoothstep(0.02, 0.19, length(pf * vec2(1.0, 1.3)))) * (1.0 - tB.w) * pathK * tNear;
             vec3 pebC = tB.x * vec3(0.3, 0.28, 0.25) * (0.75 + 0.6 * ph) + tB.y * mix(vec3(0.85, 0.78, 0.7), vec3(0.86, 0.55, 0.5), step(0.93, ph)) + tB.z * mix(vec3(0.22, 0.06, 0.035), vec3(0.03, 0.03, 0.035), step(0.88, ph));
+            #ifndef T_HQ
+              // 手機沒有凹凸明暗：森林的碎石比泥土亮，看起來是一撇撇白色短線——壓暗、旁邊偏一側多一道淡淡的影子，才讀得出是一顆顆石子
+              pebC *= 1.0 - 0.36 * tB.x; float pbr = length((pf - vec2(0.0, 0.05)) * vec2(1.0, 1.3)); diffuseColor.rgb *= 1.0 - step(0.74 + 0.16 * tB.y, ph) * smoothstep(0.1, 0.18, pbr) * (1.0 - smoothstep(0.18, 0.26, pbr)) * 0.22 * tB.x * pathK * tNear;
+            #endif
             diffuseColor.rgb = mix(diffuseColor.rgb, pebC, peb * 0.85); tHt += peb * 0.035;
-            if (tB.w > 0.01) { // 雪地：踩實的雪上一個個淺淺的腳印
-              vec2 fc = floor(wp * 3.2); float fh = tH(fc + 5.5), fa = fh * 6.2832; vec2 ff = fract(wp * 3.2) - 0.5 - (vec2(tH(fc + 1.1), tH(fc + 6.6)) - 0.5) * 0.3;
-              float fp = step(0.3, fh) * (1.0 - smoothstep(0.12, 0.22, length(vec2(cos(fa) * ff.x + sin(fa) * ff.y, cos(fa) * ff.y - sin(fa) * ff.x) * vec2(1.0, 1.8)))) * tB.w * pathK * tNear;
-              diffuseColor.rgb *= mix(vec3(1.0), vec3(0.84, 0.89, 0.98), fp); tHt -= fp * 0.012;
+            if (tB.w > 0.01) { // 雪地：踩實的雪上兩行腳印（兩個人走過，各自在路上左右慢慢偏），順著路、左右腳交錯、一步 0.36 m，偶爾一步被風雪填平
+              float fs = pth.b, fla = pth.g, fp = 0.0;
+              for (int k = 0; k < 2; k++) {
+                float fk = float(k), st = fs / 0.36 + fk * 0.5, si = floor(st + 0.5), sd = (st - si) * 0.36, sd2 = mod(si, 2.0) * 2.0 - 1.0;
+                vec2 q = vec2(sd, fla - (fk * 0.95 - 0.5) - 0.22 * sin(fs * 0.5 + fk * 2.0) - sd2 * 0.1) / vec2(0.13, 0.055);
+                fp = max(fp, step(0.15, tH(vec2(si, fk + 5.0))) * (1.0 - smoothstep(0.45, 1.0, length(q))));
+              }
+              fp *= tB.w * pathK * tNear;
+              diffuseColor.rgb *= mix(vec3(1.0), vec3(0.78, 0.86, 0.98), fp); // 只上色不做凹凸：凹凸用螢幕導數算，腳印邊緣會畫出一格格的鋸齒
             }
           }
           tHt -= pathK * n2 * 0.02;
@@ -1531,6 +1574,31 @@ function buildTerrain() {
     tg.boundingBox = new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1)); tg.boundingSphere = tg.boundingBox.getBoundingSphere(new THREE.Sphere());
     const m = new THREE.Mesh(tg, mat); m.receiveShadow = true; Object.assign(m.userData, { x0, z0, x1, z1, far: Infinity, shadow: false, terrain: true }); W.scene.add(m); W.chunks.push(m); W.terrain.push(m);
   }
+  W.tMats = [mat];
+}
+/* 地形挖洞（山洞口、月光隧道谷口）：洞口附近的三角形從各地形塊拿出來，合成一個用 T_CUT 版本的小網格（buildCaves 之後才知道洞口在哪；多 1 次繪製）。
+   原本每塊地形的著色器都有 discard：GPU 不能先做深度測試，被前面山坡擋住的地形也要把整套細節算完，再加上每個像素跑 8 個洞口的迴圈，
+   桌機 retina 每格多 1～2 ms。onBeforeCompile 轉給原本的材質（各區檔案包在上面的修改也一起算進去） */
+function terrainCuts() {
+  const base = W.tMats[0], cut = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 }), R = [];
+  cut.defines = { ...(base.defines || {}), T_CUT: '' }; cut.onBeforeCompile = (sh, r) => base.onBeforeCompile.call(base, sh, r); cut.customProgramCacheKey = () => base.customProgramCacheKey() + 'c';
+  const add = (a, b) => { if (a.w <= 0 || b.z <= 0) return; const ex = a.x + b.x * a.w, ez = a.z + b.y * a.w, m = b.z + 3; R.push([Math.min(a.x, ex) - m, Math.min(a.z, ez) - m, Math.max(a.x, ex) + m, Math.max(a.z, ez) + m]); }; // 斷面的範圍再寬 3 m（地形格 1.8 m，跨過洞口的三角形一定算到）
+  CAVE_UA.forEach((a, i) => add(a, CAVE_UB[i])); add(TNL.A, TNL.B);
+  const g0 = W.terrain[0].geometry, P3 = g0.attributes.position, hit = v => { const x = P3.getX(v), z = P3.getZ(v); return R.some(([x0, z0, x1, z1]) => x > x0 && x < x1 && z > z0 && z < z1); }, out = [], bb = new THREE.Box3();
+  W.terrain.forEach(t => {
+    const ix = t.geometry.index.array, keep = []; let moved = false;
+    for (let i = 0; i < ix.length; i += 3) { const a = ix[i], b = ix[i + 1], c = ix[i + 2]; if (hit(a) || hit(b) || hit(c)) { out.push(a, b, c); moved = true; } else keep.push(a, b, c); }
+    if (moved) t.geometry.setIndex(keep);
+  });
+  if (!out.length) return;
+  const cg = new THREE.BufferGeometry(); for (const k in g0.attributes) cg.setAttribute(k, g0.attributes[k]); cg.setIndex(out);
+  out.forEach(v => bb.expandByPoint(new THREE.Vector3(P3.getX(v), P3.getY(v), P3.getZ(v)))); cg.boundingBox = bb; cg.boundingSphere = bb.getBoundingSphere(new THREE.Sphere());
+  const m = new THREE.Mesh(cg, cut); m.receiveShadow = true; Object.assign(m.userData, { x0: bb.min.x, z0: bb.min.z, x1: bb.max.x, z1: bb.max.z, far: Infinity, shadow: false, terrain: true, cut: true });
+  W.scene.add(m); W.chunks.push(m); W.terrain.push(m); W.tMats.push(cut);
+}
+// 地面細節（T_HQ：凹凸、落葉、野花、岩殼、冰晶……）：手機一律沒有；桌機畫質選「低」或自動降到最低一級也拿掉（換著色器，重新編譯一次）
+function terrainHQ(on) {
+  (W.tMats || []).forEach(m => { const d = { ...(m.defines || {}) }; if (('T_HQ' in d) === on) return; if (on) d.T_HQ = ''; else delete d.T_HQ; m.defines = d; m.needsUpdate = true; });
 }
 /* 海水：GPU 波浪、依水深漸層（淺灘透綠→深海藍）、岸邊白色浪花 */
 function buildWater() {
@@ -1645,7 +1713,12 @@ function buildProps() {
   Object.keys(G_).forEach(k => { if (lists[k]) scatter(G_[k][0](), G_[k][1], lists[k], true, { lo: lod(G_[k][0]) }); });
   if (lists.obsid) { const g = mergeParts([0, 1, 2].map(i => [new THREE.OctahedronGeometry(.45), '#3b1d5e', M4(Math.cos(i * 2) * .3, .6, Math.sin(i * 2) * .3, rnd(-.4, .4), i, rnd(-.4, .4), .6, 1.7 + i * .3, .6)])); scatter(g, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .06, metalness: .3, clearcoat: 1, flatShading: true }), lists.obsid); }
   if (lists.ice) { const g = mergeParts([0, 1, 2, 3].map(i => [new THREE.OctahedronGeometry(.4), '#bae6fd', M4(Math.cos(i * 1.6) * .3, .5, Math.sin(i * 1.6) * .3, rnd(-.4, .4), i, rnd(-.4, .4), .5, 1.5 + i * .25, .5)])); scatter(g, new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .05, clearcoat: 1, transparent: true, opacity: .85, emissive: '#7dd3fc', emissiveIntensity: .2, flatShading: true }), lists.ice); }
-  if (lists.crack) { const g = new THREE.CircleGeometry(1, 7); g.rotateX(-Math.PI / 2); g.scale(1.6, 1, .22); scatter(g, new THREE.MeshBasicMaterial({ color: '#fb923c', toneMapped: false }), lists.crack, false); }
+  // 地上發紅的裂縫：一道彎折、兩頭收尖的細縫＋一條小分岔（原本是壓扁的七邊形，3 公尺長、0.4 公尺寬的一根筆直橘色棒子，看起來像雷射線）
+  if (lists.crack) {
+    const pos = [], rib = (pts, w0) => { const n = pts.length; for (let i = 0; i < n - 1; i++) { const q = [i, i + 1].map(j => { const a = pts[Math.max(0, j - 1)], b = pts[Math.min(n - 1, j + 1)], dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, w = w0 * Math.pow(Math.sin(Math.PI * j / (n - 1)), .6); return [pts[j][0] - dz / l * w, pts[j][1] + dx / l * w, pts[j][0] + dz / l * w, pts[j][1] - dx / l * w]; }); pos.push(q[0][0], 0, q[0][1], q[1][0], 0, q[1][1], q[0][2], 0, q[0][3], q[0][2], 0, q[0][3], q[1][0], 0, q[1][1], q[1][2], 0, q[1][3]); } };
+    rib([[-1.1, 0], [-.75, .09], [-.42, -.05], [-.1, .1], [.22, -.04], [.5, .11], [.8, -.02], [1.1, .05]], .075); rib([[-.1, .1], [.05, .32], [-.04, .52], [.1, .72]], .05);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); scatter(g, new THREE.MeshBasicMaterial({ color: '#fb923c', toneMapped: false, side: THREE.DoubleSide }), lists.crack, false);
+  }
   // 草叢與花（成片分布）、沙灘草、地面碎石、貝殼與海星
   const grass = [], flowers = { daisyW: [], daisyP: [], tulipR: [], tulipY: [], bell: [] }, fkeys = Object.keys(flowers), dune = [], pebbles = [], shells = [], stars = [], reeds = [];
   const gTint = [new THREE.Color(1, 1, 1), new THREE.Color(.82, 1.02, .78), new THREE.Color(1.12, 1.06, .72), new THREE.Color(1.25, 1.12, .6)];
@@ -9456,17 +9529,18 @@ function breathStep(dt, emit, vis) {
   }
   m.visible = alive > 0; if (alive) { m.position.copy(cp); m.instanceMatrix.needsUpdate = true; }
 }
-/* 畫質：自動／高／低。自動時 FPS 連續 5 秒低於 28 就依序關掉粒子、減少遠景植被、縮短霧距（解析度原本就會自動調整） */
+/* 畫質：自動／高／低。自動時 FPS 連續 5 秒低於 28 就依序關掉粒子、減少遠景植被、縮短霧距並簡化地面細節（解析度原本就會自動調整）；選「低」直接到最低一級 */
 const QL = { lvl: 0, lowT: 0, frames: 0, acc: 0, noParts: false };
 function applyQuality(reset) {
   if (reset) QL.lvl = S.quality === 'low' ? 3 : 0;
   QL.noParts = QL.lvl >= 1; W.vegFar = QL.lvl >= 2 ? .6 : 1;
   if (W.scene && W.scene.fog) W.scene.fog.far = (LOW ? 170 : 260) * (QL.lvl >= 3 ? .75 : 1);
+  terrainHQ(!LOW && QL.lvl < 3);
 }
 function qualityStep(dt) {
   QL.frames++; QL.acc += dt; if (QL.acc < 1) return; const fps = QL.frames / QL.acc; QL.frames = 0; QL.acc = 0;
   if (S.quality !== 'auto') return;
-  if (fps < 28) { if (++QL.lowT >= 5 && QL.lvl < 3) { QL.lvl++; QL.lowT = 0; applyQuality(); toast('畫面有點卡，已自動降低畫質（' + ['', '關閉飄浮粒子', '減少遠景植被', '縮短可視距離'][QL.lvl] + '）'); } } else QL.lowT = 0;
+  if (fps < 28) { if (++QL.lowT >= 5 && QL.lvl < 3) { QL.lvl++; QL.lowT = 0; applyQuality(); toast('畫面有點卡，已自動降低畫質（' + ['', '關閉飄浮粒子', '減少遠景植被', '縮短可視距離、簡化地面'][QL.lvl] + '）'); } } else QL.lowT = 0;
 }
 function worldStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
