@@ -17,27 +17,31 @@ const CAVE_IN = 15; // 走進洞口幾公尺之後只畫山洞
 const CAVE_STEP = .5; // 曲線取樣間距（公尺）
 const CAVE_UA = Array.from({ length: 8 }, () => new THREE.Vector4()), CAVE_UB = Array.from({ length: 8 }, () => new THREE.Vector4());
 // 每個洞的主題：岩石底色、洞裡的霧、環境光、發光痕跡（＝那一區的主色，4.4）、粒子、環境音
+// ak＝烘焙時環境光的倍率、exp＝洞裡多加的曝光：熔岩隧道和月光洞窟的岩石很暗，不補光的話整條通道幾乎全黑、看不出牆的形狀
+// trail2／trailA＝地上發光痕跡的顏色與不透明度（冰洞的地面很亮，痕跡用飽和一點的藍、淡一點，才看得出是光而不是白漆）
 const CAVE_THEME = {
   sea: { rock: '#4d6f80', rock2: '#7aa3b3', wet: '#2f4f5e', fog: '#0b1d29', amb: '#5b7f95', light: '#cdeeff', trail: '#5EC2E8', glow: '#bfe9ff', far: 30, hemi: '#9fd8ff', hemiG: '#16303f', part: 'drip', pc: '#bfe9ff' },
-  lava: { rock: '#4a3b36', rock2: '#6a4c40', wet: '#2b211e', fog: '#1d0f0a', amb: '#76625a', light: '#ffd0a0', trail: '#E8743B', glow: '#ffb27a', far: 28, hemi: '#ffb27a', hemiG: '#2a120b', part: 'spark', pc: '#ffae5c' },
-  ice: { rock: '#8db3cf', rock2: '#d3ecfb', wet: '#6d93b3', fog: '#13263a', amb: '#7fa3c4', light: '#e8f6ff', trail: '#BFE3F5', glow: '#eaf6ff', far: 34, hemi: '#d6ecff', hemiG: '#2b3f5c', part: 'glint', pc: '#f0f9ff' },
-  moon: { rock: '#3e3a5e', rock2: '#5d5689', wet: '#29264a', fog: '#0c0a1c', amb: '#4d4880', light: '#c7d2fe', trail: '#a78bfa', glow: '#d8ccff', far: 32, hemi: '#b8c6ff', hemiG: '#141233', part: 'mote', pc: '#ddd6fe' },
+  lava: { rock: '#574540', rock2: '#7a5646', wet: '#33261f', fog: '#2a1610', amb: '#7d6860', ak: 1.5, exp: .3, light: '#ffd0a0', trail: '#E8743B', glow: '#ffb27a', far: 28, hemi: '#ffb27a', hemiG: '#2a120b', part: 'spark', pc: '#ffae5c' },
+  ice: { rock: '#8db3cf', rock2: '#d3ecfb', wet: '#6d93b3', fog: '#13263a', amb: '#7fa3c4', light: '#e8f6ff', trail: '#BFE3F5', trail2: '#6cc4ee', trailA: .6, glow: '#eaf6ff', far: 34, hemi: '#d6ecff', hemiG: '#2b3f5c', part: 'glint', pc: '#f0f9ff' },
+  moon: { rock: '#48436c', rock2: '#665e9c', wet: '#2e2a52', fog: '#16132e', amb: '#57529a', ak: 1.9, exp: .35, light: '#c7d2fe', trail: '#a78bfa', glow: '#d8ccff', far: 32, hemi: '#b8c6ff', hemiG: '#141233', part: 'mote', pc: '#ddd6fe' },
 };
 /* 四個山洞（03 的比較表）。座標是「基礎單位」（世界座標＝基礎單位×K），在洞自己的方向上：
    u＝從月光谷中心往外、v＝沿山脊橫向；d 是 u 的方向。a＝內側洞口、b＝外側洞口（月光洞窟是死路，沒有 b）。
-   pts 是洞裡的控制點：[u, v, 半寬(公尺), 高度(公尺), 地面落差(公尺)]；hall 是大廳那一點的索引 */
+   pts 是洞裡的控制點：[u, v, 半寬(公尺), 高度(公尺), 地面落差(公尺)]；hall 是大廳那一點的索引。
+   管子沿曲線掃出來，彎道內側的牆離曲線不能超過轉彎半徑（否則會往回摺）：大廳的 U 形迴轉用一段半圓（pts[5]～pts[7] 在同一個圓上），
+   兩條腿之間要留夠寬，迴轉半徑才會接近大廳的半寬（7.1） */
 const CAVE_DEF = [
   { id: 'sea', name: '海蝕洞', to: 'coast', gate: 'coast', th: 'sea', d: [1, 0], a: [45.2, 0], aw: 2.6, ah: 5.2, b: [63.8, 2.4], bw: 2.7, bh: 5.4, hall: 6,
-    pts: [[52.2, 4.2, 1.8, 4, -.6], [50.6, 10, 1.5, 3.6, -1], [52.8, 15.5, 1.5, 3.6, -1.4], [50.8, 21, 1.5, 3.6, -1.7], [52.6, 26.5, 1.6, 3.8, -2], [54.8, 31, 4.2, 7.5, -2.4], [57.4, 32.2, 6.8, 11, -2.8], [59.8, 29, 4.8, 8.5, -2.6], [60.4, 22.5, 2.2, 4.6, -1.9], [58.8, 16.5, 2.2, 4.6, -1.4], [60.2, 10.8, 2.3, 4.6, -.9], [59.6, 6.6, 2.4, 4.8, -.5]],
+    pts: [[52.2, 4.2, 1.8, 4, -.6], [50.6, 10, 1.5, 3.6, -1], [52.8, 15.5, 1.5, 3.6, -1.4], [50.8, 21, 1.5, 3.6, -1.7], [52, 27, 1.6, 3.8, -2], [53.32, 31.78, 4.2, 7.5, -2.4], [56.5, 33.1, 6.8, 11, -2.8], [59.68, 31.78, 4.8, 8.5, -2.6], [61, 24, 2.2, 4.6, -1.9], [58.8, 16.5, 2.2, 4.6, -1.4], [60.2, 10.8, 2.3, 4.6, -.9], [59.6, 6.6, 2.4, 4.8, -.5]],
     mural: '潮汐', slime: 'saltc' },
   { id: 'lava', name: '熔岩隧道', to: 'volcano', gate: 'volcano', th: 'lava', d: [0, -1], a: [45.2, 0], aw: 2.6, ah: 5.2, b: [63.8, -2.4], bw: 2.7, bh: 5.4, hall: 6,
-    pts: [[52, -4.5, 1.9, 4.2, -.5], [50.4, -10.5, 1.8, 4.2, -.8], [52.6, -16.5, 1.8, 4.4, -1], [50.8, -22.5, 1.8, 4.4, -1.1], [52.8, -28, 2, 4.6, -1], [55.4, -31.5, 4, 8.5, -.6], [58, -32.2, 6.2, 12.5, -.3], [60, -28.4, 4.4, 9.5, -.6], [60.4, -21.5, 2, 4.6, -1.2], [58.8, -15, 2, 4.6, -1], [60.2, -9.5, 2.2, 4.8, -.8], [59.7, -6, 2.2, 4.8, -.5]],
+    pts: [[52, -4.5, 1.9, 4.2, -.5], [50.4, -10.5, 1.8, 4.2, -.8], [52.6, -16.5, 1.8, 4.4, -1], [50.8, -22.5, 1.8, 4.4, -1.1], [52.2, -28.4, 2, 4.6, -1], [53.49, -31.71, 4, 8.5, -.6], [56.6, -33, 6.2, 12.5, -.3], [59.71, -31.71, 4.4, 9.5, -.6], [61, -23, 2, 4.6, -1.2], [58.8, -15, 2, 4.6, -1], [60.2, -9.5, 2.2, 4.8, -.8], [59.7, -6, 2.2, 4.8, -.5]],
     mural: '熔岩柱', slime: 'charc' },
   { id: 'ice', name: '冰洞', to: 'snow', coat: true, th: 'ice', d: [-1, 0], a: [45.2, 0], aw: 2.6, ah: 5.2, b: [63.8, 2.4], bw: 2.7, bh: 5.4, hall: 6,
-    pts: [[51.8, 5, 1.8, 4, -.6], [50.4, 11, 1.6, 3.8, -1], [52.6, 16.8, 1.6, 3.8, -1.2], [50.8, 22.6, 1.7, 4, -1.4], [53, 28, 1.8, 4.2, -1.5], [55.6, 30.8, 4.4, 8.5, -1.6], [58, 30, 6.4, 10.5, -1.8], [59.8, 25.4, 4.4, 8, -1.5], [60.2, 18.5, 2.2, 4.6, -1.2], [58.8, 12.5, 2.2, 4.6, -1], [60, 8.4, 2.3, 4.8, -.7], [59.7, 5.6, 2.3, 4.8, -.4]],
+    pts: [[51.8, 5, 1.8, 4, -.6], [50.4, 11, 1.6, 3.8, -1], [52.6, 16.8, 1.6, 3.8, -1.2], [50.8, 22.6, 1.7, 4, -1.4], [52.4, 28, 1.8, 4.2, -1.5], [53.63, 30.97, 4.4, 8.5, -1.6], [56.6, 32.2, 6.4, 10.5, -1.8], [59.57, 30.97, 4.4, 8, -1.5], [60.8, 20, 2.2, 4.6, -1.2], [58.8, 12.5, 2.2, 4.6, -1], [60, 8.4, 2.3, 4.8, -.7], [59.7, 5.6, 2.3, 4.8, -.4]],
     mural: '月光洞窟', slime: 'frostb' },
   { id: 'moon', name: '月光洞窟', dead: true, night: true, th: 'moon', d: [0, 1], a: [45.2, -7], aw: 1.05, ah: 3.1, hall: 6,
-    pts: [[50.8, -6.4, 1, 3, -.6], [52.8, -2.6, 1.1, 3.2, -1.1], [52.2, 3, 1.2, 3.4, -1.6], [54.4, 7.4, 1.6, 3.8, -2], [57, 8.6, 3.8, 7.5, -2.4], [59.8, 7.4, 8.6, 12, -2.8], [62.6, 6.6, 9.2, 12.5, -2.8], [65, 6, 5.6, 9, -2.8]],
+    pts: [[50.8, -6.4, 1, 3, -.6], [52.8, -2.6, 1.1, 3.2, -1.1], [52.2, 3, 1.2, 3.4, -1.6], [54.4, 7.4, 1.6, 3.8, -2], [57, 8.2, 3.8, 7.5, -2.4], [59.8, 7.4, 8.6, 12, -2.8], [62.6, 6.6, 9.2, 12.5, -2.8], [65, 6, 5.6, 9, -2.8]],
     mural: '空島', slime: 'moon' },
 ];
 // 壁畫：大廳裡的線索（下一道謎題），拍照後存進手帳（06）
@@ -88,17 +92,46 @@ function caveShape(x, z, h) {
   return h;
 }
 
-/* ---------- 曲線：控制點 → Catmull-Rom → 每 0.5 公尺取樣 ---------- */
+/* ---------- 曲線：控制點 → 向心 Catmull-Rom → 每 0.5 公尺取樣 ---------- */
+// 洞口直段的盡頭 E（方向 h）用一段圓弧（半徑≈2 倍半寬）轉向第一個控制點，再直直接過去（基礎單位）。
+// 控制點太靠近直段（側向偏太多、或幾乎就在直段延長線上而緊接著要急轉）就不用它，改轉向下一個點：原本這裡會出現小於半寬的急彎，牆往回摺
+function caveFillet(E, h, pts, w0, h0) {
+  const n = [-h[1], h[0]];
+  for (let k = 0; k < pts.length - 1; k++) {
+    const P = pts[k], ru = P[0] - E[0], rv = P[1] - E[1], f = ru * h[0] + rv * h[1], l = ru * n[0] + rv * n[1], al = Math.abs(l), wm = (w0 + P[2]) / 2, Rd = 2 * wm / K;
+    if (f <= 0) continue; // 在直段後面
+    if (al < .2) { if (f < Rd * 1.5) continue; return { arc: [], used: k }; } // 在直段的延長線上：太近就丟掉，夠遠就直直走過去
+    const Rf = (f * f + l * l) / (2 * al); if (Rf < 1.3 * wm / K) continue; // 和直段相切、又通過 P 的圓太小：轉不過去
+    const R = Math.min(Rd, Rf), sg = Math.sign(l), cx = E[0] + n[0] * R * sg, cz = E[1] + n[1] * R * sg, a0 = Math.atan2(E[1] - cz, E[0] - cx);
+    const aT = Math.atan2(P[1] - cz, P[0] - cx) - sg * Math.acos(clamp(R / Math.hypot(P[0] - cx, P[1] - cz), -1, 1)); // 從 P 畫到圓的切點
+    let sw = aT - a0; while (sg * sw < 0) sw += sg * 2 * Math.PI; if (Math.abs(sw) > 2 * Math.PI) sw -= sg * 2 * Math.PI;
+    // 對準 P 之後還要在 P 轉向下一個點：轉角大於 40° 就不用 P（離直段最近的兩個點才這樣丟）
+    const N2 = pts[k + 1], ox = N2[0] - P[0], oz = N2[1] - P[1];
+    if (k < 2 && (-Math.sin(aT) * sg * ox + Math.cos(aT) * sg * oz) / Math.hypot(ox, oz) < Math.cos(.7)) continue;
+    const m = Math.ceil(Math.abs(sw) / .4), arcL = R * Math.abs(sw), tot = arcL + Math.hypot(P[0] - cx - R * Math.cos(aT), P[1] - cz - R * Math.sin(aT)), arc = [];
+    for (let j = 1; j <= m; j++) { if (j === m && tot - arcL < .3) break; const a = a0 + sw * j / m, fr = arcL * j / m / tot; arc.push([cx + R * Math.cos(a), cz + R * Math.sin(a), w0 + (P[2] - w0) * fr, h0 + (P[3] - h0) * fr, P[4] * fr]); }
+    return { arc, used: k };
+  }
+  return { arc: [], used: 0 };
+}
 function cavePath(def) {
-  const W2 = caveLocal(def), L0b = CAVE_L0 / K, p0 = def.pts[0], Q = [];
+  const W2 = caveLocal(def), L0b = CAVE_L0 / K, Ma = def.a, Q = [];
   const add = (u, v, w, h, fy) => { const [x, z] = W2(u, v); Q.push([x * K, z * K, w, h, fy]); };
-  add(def.a[0], def.a[1], def.aw, def.ah, 0); add(def.a[0] + L0b, def.a[1], def.aw, def.ah, 0); add(def.a[0] + L0b + 1.8, def.a[1], (def.aw + p0[2]) / 2, (def.ah + p0[3]) / 2, p0[4] * .4);
-  def.pts.forEach(p => add(...p));
-  if (!def.dead) { const [eu, ev] = def.eUV, l = def.pts[def.pts.length - 1]; add(def.b[0] - eu * (L0b + 1.8), def.b[1] - ev * (L0b + 1.8), (def.bw + l[2]) / 2, (def.bh + l[3]) / 2, l[4] * .4); add(def.b[0] - eu * L0b, def.b[1] - ev * L0b, def.bw, def.bh, 0); add(def.b[0], def.b[1], def.bw, def.bh, 0); }
-  const dense = [], NS = 24;
-  for (let i = 0; i < Q.length - 1; i++) {
-    const a = Q[Math.max(0, i - 1)], b = Q[i], c = Q[i + 1], d = Q[Math.min(Q.length - 1, i + 2)];
-    for (let k = 0; k < NS; k++) { const t = k / NS, t2 = t * t, t3 = t2 * t; dense.push(b.map((_, j) => .5 * (2 * b[j] + (-a[j] + c[j]) * t + (2 * a[j] - 5 * b[j] + 4 * c[j] - d[j]) * t2 + (-a[j] + 3 * b[j] - 3 * c[j] + d[j]) * t3))); }
+  // 入口：直段（多留半個單位，地形挖洞的那 6.4 公尺一定是直的）→ 圓弧 → 控制點
+  const Ea = [Ma[0] + L0b + .5, Ma[1]], fa = caveFillet(Ea, [1, 0], def.pts, def.aw, def.ah);
+  add(Ma[0], Ma[1], def.aw, def.ah, 0); add(Ma[0] + L0b, Ma[1], def.aw, def.ah, 0); add(Ea[0], Ea[1], def.aw, def.ah, 0); fa.arc.forEach(p => add(...p));
+  let pts = def.pts.slice(fa.used);
+  if (!def.dead) { // 出口：從外側洞口倒著做一樣的圓弧，再反過來接上（洞口方向仍由最後一個控制點決定，不變）
+    const [eu, ev] = def.eUV, B = def.b, Eb = [B[0] - eu * (L0b + .5), B[1] - ev * (L0b + .5)], fb = caveFillet(Eb, [-eu, -ev], pts.slice().reverse(), def.bw, def.bh);
+    pts.slice(0, pts.length - fb.used).forEach(p => add(...p)); fb.arc.reverse().forEach(p => add(...p));
+    add(Eb[0], Eb[1], def.bw, def.bh, 0); add(B[0] - eu * L0b, B[1] - ev * L0b, def.bw, def.bh, 0); add(B[0], B[1], def.bw, def.bh, 0);
+  } else pts.forEach(p => add(...p));
+  // 向心 Catmull-Rom（節點間距＝弦長的平方根）：控制點間距不均勻時也不會打結、不會衝過頭；兩端用反射的虛擬點，洞口直段保持筆直
+  const QP = [Q[0].map((v, j) => 2 * v - Q[1][j]), ...Q, Q[Q.length - 1].map((v, j) => 2 * v - Q[Q.length - 2][j])], dense = [], NS = 24;
+  const kn = (a, b) => Math.max(1e-4, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1]))), lp = (a, b, ta, tb, t) => a.map((v, j) => ((tb - t) * v + (t - ta) * b[j]) / (tb - ta));
+  for (let i = 1; i < QP.length - 2; i++) {
+    const p0 = QP[i - 1], p1 = QP[i], p2 = QP[i + 1], p3 = QP[i + 2], t1 = kn(p0, p1), t2 = t1 + kn(p1, p2), t3 = t2 + kn(p2, p3);
+    for (let k = 0; k < NS; k++) { const t = t1 + (t2 - t1) * k / NS, A1 = lp(p0, p1, 0, t1, t), A2 = lp(p1, p2, t1, t2, t), A3 = lp(p2, p3, t2, t3, t); dense.push(lp(lp(A1, A2, 0, t2, t), lp(A2, A3, t1, t3, t), t1, t2, t)); }
   }
   dense.push(Q[Q.length - 1].slice());
   const acc = [0]; for (let i = 1; i < dense.length; i++) acc.push(acc[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]));
@@ -112,15 +145,38 @@ function cavePath(def) {
   }
   c.L = c.S[n - 1];
   for (let i = 0; i < n; i++) { const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1), tx = c.X[b] - c.X[a], tz = c.Z[b] - c.Z[a], tl = Math.hypot(tx, tz) || 1; c.TX[i] = tx / tl; c.TZ[i] = tz / tl; }
+  // 曲率（±1 公尺內切線轉的角度÷弧長；正＝往 +n＝(−TZ, TX) 那側彎）：管子依它決定圈距
+  c.KA = A(); for (let i = 0; i < n; i++) { const a = Math.max(0, i - 2), b = Math.min(n - 1, i + 2); let d = Math.atan2(c.TZ[b], c.TX[b]) - Math.atan2(c.TZ[a], c.TX[a]); d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI; c.KA[i] = d / Math.max(1e-6, c.S[b] - c.S[a]); }
+  caveSides(c);
   // 地面：入口高度 → 出口高度（直段保持水平）＋各點的落差
   const y0 = def.ma.y * K, y1 = def.dead ? y0 : def.mb.y * K;
   for (let i = 0; i < n; i++) { const s = c.S[i]; c.Y[i] = y0 + (y1 - y0) * smooth(CAVE_L0, c.L - CAVE_L0, s) + c.FY[i] * (1 - smooth(CAVE_L0 - 2, CAVE_L0, Math.min(s, c.dead ? 1e9 : c.L - s))); }
   c.y0 = y0; c.y1 = y1;
-  // 大廳中心：離 hall 控制點最近的取樣
+  // 大廳中心：離 hall 控制點最近的取樣；大廳的地面整平（潮池、冰面、地下湖都是水平的圓，地面有坡度就會切到它們或浮在半空）
   { const [hx, hz] = W2(def.pts[def.hall][0], def.pts[def.hall][1]); let bd = 1e9; for (let i = 0; i < n; i++) { const d = Math.hypot(c.X[i] - hx * K, c.Z[i] - hz * K); if (d < bd) { bd = d; c.hallI = i; } } }
+  { const s0 = c.S[c.hallI], hw = c.Wd[c.hallI], hy = c.Y[c.hallI]; for (let i = 0; i < n; i++) c.Y[i] += (hy - c.Y[i]) * (1 - smooth(hw * .9, hw * 1.6, Math.abs(c.S[i] - s0))); }
   c.sIn = CAVE_IN; c.ends = [{ s: 0, i: 0, x: c.X[0], z: c.Z[0] }]; if (!c.dead) c.ends.push({ s: c.L, i: n - 1, x: c.X[n - 1], z: c.Z[n - 1] });
   return c;
 }
+// 每一側的牆最多能離曲線多遠：從取樣點往 ±n 推出去，一旦推過了曲率中心（或碰到另一段曲線），離曲線最近的就不再是自己，牆在這裡會往回摺。
+// 牆只放到這個「可及距離」的 0.8 倍（再留 12% 給凹凸），沿曲線平滑後存成 c.WL／c.WR＝左（−n）／右（+n）兩側實際的半寬（7.1）
+function caveSides(c) {
+  const n = c.n, X = c.X, Z = c.Z, e = 30, ex = [X[0] - c.TX[0] * e, Z[0] - c.TZ[0] * e, X[n - 1] + c.TX[n - 1] * e, Z[n - 1] + c.TZ[n - 1] * e]; // 兩端往外延伸：曲線的端點不算「另一段」
+  const seg = (x, z, x0, z0, x1, z1) => { const sx = x1 - x0, sz = z1 - z0, t = clamp(((x - x0) * sx + (z - z0) * sz) / (sx * sx + sz * sz || 1e-9), 0, 1), dx = x - x0 - sx * t, dz = z - z0 - sz * t; return dx * dx + dz * dz; };
+  const near = (x, z) => { let b = Math.min(seg(x, z, ex[0], ex[1], X[0], Z[0]), seg(x, z, X[n - 1], Z[n - 1], ex[2], ex[3])); for (let j = 0; j < n - 1; j++) { const d = seg(x, z, X[j], Z[j], X[j + 1], Z[j + 1]); if (d < b) b = d; } return Math.sqrt(b); };
+  const D = [new Float32Array(n), new Float32Array(n)]; // 每一側要比原本的半寬縮多少
+  for (let i = 0; i < n; i++) for (let sd = 0; sd < 2; sd++) {
+    const sg = sd ? 1 : -1, nx = -c.TZ[i] * sg, nz = c.TX[i] * sg, ok = l => near(X[i] + nx * l, Z[i] + nz * l) > l * .97 - .02, need = c.Wd[i] * 1.12 / .8;
+    if (ok(need)) continue; let r = 0; while (r + .25 < need && ok(r + .25)) r += .25; let hi = r + .25; for (let it = 0; it < 6; it++) { const m = (r + hi) / 2; if (ok(m)) r = m; else hi = m; }
+    D[sd][i] = c.Wd[i] - r * .8 / 1.12;
+  }
+  // 縮的量沿曲線平滑：先取 ±2 公尺內的最大值、再取平均（結果不會少於原本要縮的量），內側的牆才是一條順的曲線；不用縮的地方維持原本的半寬
+  const W = D.map(Dv => { const m = Dv.map((_, i) => { let v = 0; for (let j = Math.max(0, i - 4); j <= Math.min(n - 1, i + 4); j++) v = Math.max(v, Dv[j]); return v; }); return Float32Array.from(Dv, (_, i) => { let t = 0, k = 0; for (let j = Math.max(0, i - 4); j <= Math.min(n - 1, i + 4); j++) { t += m[j]; k++; } return c.Wd[i] - t / k; }); });
+  c.WL = W[0]; c.WR = W[1];
+}
+const caveW = (c, i, l) => (l < 0 ? c.WL : c.WR)[i]; // 第 i 個取樣、l 那一側的實際半寬
+const caveFloorE = () => LOW ? .65 : .743; // 斷面上平地的邊緣（caveProfile 依弧長取點：14 點時在 0.743 倍半寬，LOW 的 8 點時在 0.65 倍），再往外就是牆腳的斜面
+const caveLavaL = (c, i) => -(caveFloorE() * c.WL[i] - .42); // 熔岩溝的中心：左側平地的邊緣往內 0.42 公尺（溝寬 0.7，整條都在平地上，不會埋進牆腳的斜面）
 // 查詢：最近的取樣（從上一次的位置附近找）→ 投影到線段上，算出沿曲線的距離 s、橫向距離 l、地面高度
 const CQ = { s: 0, l: 0, y: 0, w: 0, h: 0, i: 0, nx: 0, nz: 0, cx: 0, cz: 0 };
 function caveQ(c, x, z, i0) {
@@ -130,8 +186,8 @@ function caveQ(c, x, z, i0) {
   const sx = X[j + 1] - X[j], sz = Z[j + 1] - Z[j], sl = Math.hypot(sx, sz) || 1e-6, ux = sx / sl, uz = sz / sl;
   let t = ((x - X[j]) * ux + (z - Z[j]) * uz) / sl; const tc = clamp(t, 0, 1); if (j > 0 && j < n - 2) t = tc;
   CQ.i = bi; CQ.s = c.S[j] + t * sl; CQ.nx = -uz; CQ.nz = ux; CQ.cx = X[j] + sx * tc; CQ.cz = Z[j] + sz * tc;
-  CQ.l = (x - CQ.cx) * CQ.nx + (z - CQ.cz) * CQ.nz;
-  CQ.y = c.Y[j] + (c.Y[j + 1] - c.Y[j]) * tc; CQ.w = c.Wd[j] + (c.Wd[j + 1] - c.Wd[j]) * tc; CQ.h = c.Hh[j] + (c.Hh[j + 1] - c.Hh[j]) * tc;
+  CQ.l = (x - CQ.cx) * CQ.nx + (z - CQ.cz) * CQ.nz; const sw = CQ.l < 0 ? c.WL : c.WR; // w＝人所在那一側的實際半寬（彎道內側比較窄）
+  CQ.y = c.Y[j] + (c.Y[j + 1] - c.Y[j]) * tc; CQ.w = sw[j] + (sw[j + 1] - sw[j]) * tc; CQ.h = c.Hh[j] + (c.Hh[j + 1] - c.Hh[j]) * tc;
   return CQ;
 }
 
@@ -155,74 +211,114 @@ function caveSetLayers(o, mask) { o.traverse(c => { c.layers.mask = mask; }); re
 
 // 一個洞的光：環境＋洞口天光＋光柱＋苔蘚＋熔岩溝＋出口那一區的主色；回傳亮度乘上顏色後寫進 out
 function caveLight(c, s, x, y, z, yn, out) {
-  const T = c.T, r = T.amb.r * .72, g = T.amb.g * .72, b = T.amb.b * .72; let R = r, G2 = g, B = b;
+  const T = c.T, ak = T.ak || .72, r = T.amb.r * ak, g = T.amb.g * ak, b = T.amb.b * ak; let R = r, G2 = g, B = b;
   const add = (col, k) => { R += col.r * k; G2 += col.g * k; B += col.b * k; };
   add(c.lightA, 1.25 * Math.exp(-s / 6.5)); if (!c.dead) add(c.lightB, 1.35 * Math.exp(-(c.L - s) / 7));
   for (const sh of c.shafts) { const d = Math.hypot(x - sh.x, z - sh.z); add(sh.col, sh.k * Math.exp(-d * d / (sh.r * sh.r)) * (yn < .15 ? 1.2 : .75)); }
   for (const m of c.moss) { const d2 = (x - m.x) ** 2 + (y - m.y) ** 2 + (z - m.z) ** 2; if (d2 < 30) add(c.mossC, .75 * Math.exp(-d2 / 3.2)); }
-  if (c.lava) { const q = caveQ(c, x, z, null); if (q.s > c.lava.s0 && q.s < c.lava.s1) { const d = Math.hypot(q.l - c.lava.l * q.w, (y - q.y) * 1.5); add(c.lavaC, .8 * Math.exp(-d * d / 3.2)); } }
+  // 熔岩溝：近處很亮，再加一層照得比較遠的暖光（整條隧道都看得出牆的形狀）
+  if (c.lava) { const q = caveQ(c, x, z, null); if (q.s > c.lava.s0 - 3 && q.s < c.lava.s1 + 3) { const d = Math.hypot(q.l - caveLavaL(c, q.i), (y - q.y) * 1.5), e = smooth(c.lava.s0 - 3, c.lava.s0, q.s) * (1 - smooth(c.lava.s1, c.lava.s1 + 3, q.s)); add(c.lavaC, e * (.8 * Math.exp(-d * d / 3.2) + .3 * Math.exp(-d * d / 18))); } }
   const k = 1.06 - .38 * yn; out.setRGB(R * k, G2 * k, B * k); return out;
 }
 // 管子：先算每一圈的頂點（位置＋烘焙的光），再拆成一個一個三角面、每面一個顏色——和月光谷其他低多邊形的東西一樣看得到稜角
 const caveHash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
 function caveTube(c, i0, i1, N, mask) {
-  const prof = caveProfile(N), step = Math.max(1, Math.round((LOW ? 2.4 : 1.5) / CAVE_STEP)), rings = [];
-  for (let i = i0; i < i1; i += step) rings.push(i); if (rings[rings.length - 1] !== i1) rings.push(i1);
+  // 圈距：彎道外側每一圈前進 (1+κw)·Δs，越彎、越寬的地方圈就越密，外側的牆最長 2 公尺（LOW 3 公尺）一段，不會被拉成一大片；直的地方維持 1.5 公尺（LOW 2.5 公尺）
+  const prof = caveProfile(N), base = (LOW ? 2.5 : 1.5) / CAVE_STEP, edge = (LOW ? 3 : 2) / CAVE_STEP, rings = [i0];
+  for (let i = i0; i < i1;) { const g = 1 + Math.abs(c.KA[i]) * Math.max(c.WL[i], c.WR[i]); i = Math.min(i1, i + clamp(Math.floor(edge / g + 1e-6), 1, base)); rings.push(i); }
   const R = rings.length, VP = new Float32Array(R * N * 3), VC = new Float32Array(R * N * 3), VY = new Float32Array(R * N), RC = new Float32Array(R * 3);
-  const tc = new THREE.Color(), base = new THREE.Color(), rk = c.T.rockC, rk2 = c.T.rock2C, wet = c.T.wetC;
+  const tc = new THREE.Color(), base0 = new THREE.Color(), rk = c.T.rockC, rk2 = c.T.rock2C, wet = c.T.wetC, sh0 = c.shafts[0], pit = mask === 2 ? c.icePit : null;
   rings.forEach((si, ri) => {
-    const s = c.S[si], cx = c.X[si], cz = c.Z[si], nx = -c.TZ[si], nz = c.TX[si], w = c.Wd[si], h = c.Hh[si], fy = c.Y[si] - (c.drop ? c.drop(s) : 0);
+    const s = c.S[si], cx = c.X[si], cz = c.Z[si], nx = -c.TZ[si], nz = c.TX[si], wl = c.WL[si], wr = c.WR[si], h = c.Hh[si], fy = c.Y[si], lv = new Float32Array(N * 2);
     RC[ri * 3] = cx; RC[ri * 3 + 1] = fy + h * .45; RC[ri * 3 + 2] = cz;
     const jit = smooth(CAVE_L0 - 1, CAVE_L0 + 3, Math.min(s, c.dead ? 1e9 : c.L - s)); // 洞口直段不加凹凸：和地形挖的洞剛好吻合
     prof.forEach(([px, py], k) => {
-      const floor = py < .02, nn = vnoise(s * .45 + k * 3.1, k * .7, 31) - .5, nn2 = vnoise(s * 1.3, k * 1.9, 37) - .5, amp = floor ? 0 : (.2 * Math.min(w, h * .6) * nn + .09 * nn2) * jit;
+      const w = px < 0 ? wl : wr, floor = py < .02, nn = vnoise(s * .45 + k * 3.1, k * .7, 31) - .5, nn2 = vnoise(s * 1.3, k * 1.9, 37) - .5;
+      let amp = floor ? 0 : (.2 * Math.min(w, h * .6) * nn + .09 * nn2) * jit;
+      if (sh0 && py > .8) amp *= smooth(sh0.r * .5, sh0.r * .5 + 2.5, Math.hypot(cx + nx * px * w - sh0.x, cz + nz * px * w - sh0.z)); // 光柱的天窗周圍洞頂是平順的，天窗才是完整的圓
       const len = Math.hypot(px, py - .45) || 1, ox = px / len, oy = (py - .45) / len;
-      const lx = px * w + ox * amp, ly = floor ? (k % 2 ? .015 : 0) : py * h + oy * amp * .6;
-      const x = cx + nx * lx, z = cz + nz * lx, y = fy + ly, o = (ri * N + k) * 3; VP[o] = x; VP[o + 1] = y; VP[o + 2] = z; VY[ri * N + k] = y - c.Y[si];
-      base.copy(rk).lerp(rk2, clamp(.5 + nn * 1.6 + py * .25, 0, 1)); if (floor) base.lerp(wet, .45);
+      const lx = px * w + ox * amp, ly = floor ? 0 : py * h + oy * amp * .6;
+      const x = cx + nx * lx, z = cz + nz * lx, y = fy + ly, o = (ri * N + k) * 3; VP[o] = x; VP[o + 1] = y; VP[o + 2] = z; VY[ri * N + k] = ly; lv[k * 2] = lx; lv[k * 2 + 1] = ly;
+      base0.copy(rk).lerp(rk2, clamp(.5 + nn * 1.6 + py * .25, 0, 1)); if (floor) base0.lerp(wet, .45);
       const ao = (floor ? 1 : 1 + nn * .7 * jit) * (py < .16 && Math.abs(px) > .8 ? .72 : 1); // 凹處暗、凸處亮、牆角陰影
-      caveLight(c, s, x, y, z, py, tc); VC[o] = base.r * tc.r * ao; VC[o + 1] = base.g * tc.g * ao; VC[o + 2] = base.b * tc.b * ao;
+      caveLight(c, s, x, y, z, py, tc); VC[o] = base0.r * tc.r * ao; VC[o + 1] = base0.g * tc.g * ao; VC[o + 2] = base0.b * tc.b * ao;
     });
+    // 每一圈的斷面（相對於曲線的 l、y）記下來：小物件、鐘乳石、壁畫、死路的圓頂都依實際的牆面擺放
+    const rs = c.rings || (c.rings = []); if (!rs.length || rs[rs.length - 1].i !== si) rs.push({ i: si, s, v: lv });
   });
-  const T = (R - 1) * N * 2, pos = new Float32Array(T * 9), col = new Float32Array(T * 9), th = c.th;
-  const salt = caveCol('#e3f3f8'), glowL = caveCol('#ff8a3d'), vein = caveCol('#effaff'), deepB = caveCol('#6fb7ff'), amet = caveCol('#cdbdff');
-  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3(), Nn = new THREE.Vector3(), fc = new THREE.Color(); let o = 0;
+  const th = c.th, T = (R - 1) * N * 2 + (th === 'lava' || th === 'moon' ? (R - 1) * N : 0), pos = new Float32Array(T * 9), col = new Float32Array(T * 9); // 熔岩、月光洞窟另外留空間給裂縫條與晶面
+  const salt = caveCol('#e3f3f8'), glowL = caveCol('#ff8a3d'), vein = caveCol('#effaff'), deepB = caveCol('#6fb7ff'), amet = caveCol('#a78bfa'), tint = new THREE.Color(), fc2 = new THREE.Color();
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3(), Nn = new THREE.Vector3(), fc = new THREE.Color(), M = new THREE.Vector3(); let o = 0;
+  const put = (a, b, d, col3) => { for (const v of [a, b, d]) { pos[o] = v.x; pos[o + 1] = v.y; pos[o + 2] = v.z; col[o] = col3.r; col[o + 1] = col3.g; col[o + 2] = col3.b; o += 3; } };
+  const inPit = v => (v.x - pit.x) ** 2 + (v.z - pit.z) ** 2 < pit.r * pit.r;
   const tri = (ia, ib, ic, r, k) => {
-    A.fromArray(VP, ia * 3); B.fromArray(VP, ib * 3); C.fromArray(VP, ic * 3); Nn.crossVectors(E1.subVectors(B, A), E2.subVectors(C, A)).normalize();
+    A.fromArray(VP, ia * 3); B.fromArray(VP, ib * 3); C.fromArray(VP, ic * 3);
+    if (pit && VY[ia] < .01 && VY[ib] < .01 && VY[ic] < .01 && inPit(A) && inPit(B) && inPit(C)) return; // 冰面底下的坑：地面挖空（坑是 caveHall 另外做的碗）
+    Nn.crossVectors(E1.subVectors(B, A), E2.subVectors(C, A)); const area = Nn.length() / 2; Nn.normalize();
     const mx = (A.x + B.x + C.x) / 3, my = (A.y + B.y + C.y) / 3, mz = (A.z + B.z + C.z) / 3; if (Nn.x * (RC[r * 3] - mx) + Nn.y * (RC[r * 3 + 1] - my) + Nn.z * (RC[r * 3 + 2] - mz) < 0) Nn.negate();
     const yr = (VY[ia] + VY[ib] + VY[ic]) / 3, hz = caveHash(c.S[rings[r]] * 1.7 + k, k * 3.3 + o * .001);
     fc.setRGB((VC[ia * 3] + VC[ib * 3] + VC[ic * 3]) / 3, (VC[ia * 3 + 1] + VC[ib * 3 + 1] + VC[ic * 3 + 1]) / 3, (VC[ia * 3 + 2] + VC[ib * 3 + 2] + VC[ic * 3 + 2]) / 3);
-    let sh = .76 + .24 * Nn.y + (hz - .5) * .14;
-    // 紋理都用「乘上去」的方式，跟著烘焙的明暗走；只有熔岩裂縫和紫水晶本身會發光
+    let sh = .76 + .24 * Nn.y + (hz - .5) * .14, deco = 0;
+    // 紋理都用「乘上去」的方式，跟著烘焙的明暗走；熔岩裂縫與紫水晶是牆面上另外加的細條／小晶面，不是把整片牆染色
     if (th === 'sea') { const f = (yr / .55) % 1; if (yr > .25 && yr < 3.2 && f < .16) { fc.multiply(salt).multiplyScalar(1.45); } } // 一層層的水痕
-    else if (th === 'lava') { if (Math.floor(yr / .7) % 2) sh *= .86; if (yr > .25 && yr < 1.6 && Math.abs(Nn.y) < .45 && hz > .94) { fc.lerp(glowL, .32); sh = 1; } } // 岩層、牆上偶爾一道發紅的裂縫
-    else if (th === 'ice') { if (hz > .8) fc.multiply(vein).multiplyScalar(1.35); if (yr > 2.2) fc.multiply(deepB.clone().lerp(vein, 1 - .5 * smooth(2.2, 6, yr))).multiplyScalar(1.15); sh = .86 + .14 * Nn.y + (hz - .5) * .1; } // 冰脈、透出外面的藍光
-    else if (hz > .955 && yr > .4) { fc.lerp(amet, .45); sh = 1.25; } // 月光洞窟：紫水晶
-    fc.multiplyScalar(sh);
-    for (const v of [A, B, C]) { pos[o] = v.x; pos[o + 1] = v.y; pos[o + 2] = v.z; col[o] = fc.r; col[o + 1] = fc.g; col[o + 2] = fc.b; o += 3; }
+    else if (th === 'lava') { if (Math.floor(yr / .7) % 2) sh *= .86; if (yr > .25 && yr < 1.6 && Math.abs(Nn.y) < .45 && hz > .9 && area > .15 && A.distanceTo(B) < 2.2) deco = 1; } // 岩層、牆上偶爾一道發紅的裂縫
+    else if (th === 'ice') { if (hz > .8) fc.multiply(vein).multiplyScalar(1.15); const kb = smooth(1.6, 2.8, yr); if (kb > 0) { tint.copy(deepB).lerp(vein, 1 - .5 * smooth(2.2, 6, yr)); fc.lerp(fc2.copy(fc).multiply(tint).multiplyScalar(1.15), kb); } sh = .86 + .14 * Nn.y + (hz - .5) * .1; } // 冰脈、往上漸漸透出外面的藍光
+    else if (hz > .94 && yr > .4 && area > .12) deco = 2; // 月光洞窟：紫水晶
+    fc.multiplyScalar(sh); put(A, B, C, fc);
+    if (deco === 1) { // 裂縫：沿著三角形的一條邊、很細的一道發光條（往洞裡浮 4 公分：熔岩的熱氣會讓遠處的頂點晃動，太貼牆會一下子被牆蓋住）
+      M.addVectors(A, B).multiplyScalar(.5); E1.copy(C).sub(M).multiplyScalar(.07).add(M).addScaledVector(Nn, .04); const a2 = E2.copy(A).lerp(B, .2).addScaledVector(Nn, .04), b2 = M.copy(B).lerp(A, .2).addScaledVector(Nn, .04);
+      put(a2, b2, E1, fc2.copy(glowL).multiplyScalar(.65 * 1.28 / (1.28 + (c.T.exp || 0))));
+    } else if (deco === 2) { // 紫水晶：三角形中間一小塊晶面（縮成 35%），會微微發光
+      M.set(mx, my, mz).addScaledVector(Nn, .02); put(E1.copy(A).sub(M).multiplyScalar(.35).add(M), E2.copy(B).sub(M).multiplyScalar(.35).add(M), C.sub(M).multiplyScalar(.35).add(M), fc2.copy(fc).lerp(amet, .6).multiplyScalar(1.1));
+    }
   };
   for (let r = 0; r < R - 1; r++) for (let k = 0; k < N; k++) { const k1 = (k + 1) % N, a = r * N + k, b = (r + 1) * N + k, cc = (r + 1) * N + k1, d = r * N + k1; tri(a, b, d, r, k); tri(b, cc, d, r, k); }
-  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeBoundingSphere();
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, o), 3)); geo.setAttribute('color', new THREE.BufferAttribute(col.slice(0, o), 3)); geo.computeBoundingSphere();
   const m = new THREE.Mesh(geo, c.mat); m.layers.mask = mask; m.userData.rings = rings; return m;
 }
-// 死路的盡頭：最後一圈往外收成一個圓頂（不是一片平面），和洞壁一樣一面一個顏色
+// 某個 s 的實際斷面：前後兩圈的斷面（l, y）內插（caveTube 建好之後才有）
+const CAVE_SL = new Float32Array(64);
+function caveSlice(c, s) {
+  const R = c.rings; let a = 0, b = R.length - 1; while (b - a > 1) { const m = (a + b) >> 1; if (R[m].s <= s) a = m; else b = m; }
+  const r0 = R[a], r1 = R[b], t = clamp((s - r0.s) / Math.max(1e-6, r1.s - r0.s), 0, 1), n = r0.v.length; for (let k = 0; k < n; k++) CAVE_SL[k] = r0.v[k] + (r1.v[k] - r0.v[k]) * t; return n / 2;
+}
+// 斷面上 l 這條垂直線碰到的最高點（top：實際的洞頂）或最低點（地面、牆腳的斜面），都是離地面的高度
+function caveVert(c, s, l, top) { const N = caveSlice(c, s), v = CAVE_SL; let best = top ? -1e9 : 1e9; for (let k = 0; k < N; k++) { const k1 = (k + 1) % N, l0 = v[k * 2], l1 = v[k1 * 2]; if (l0 === l1 || (l0 - l) * (l1 - l) > 0) continue; const y = v[k * 2 + 1] + (v[k1 * 2 + 1] - v[k * 2 + 1]) * (l - l0) / (l1 - l0); if (top ? y > best : y < best) best = y; } return Math.abs(best) > 1e8 ? 0 : best; }
+const caveCeil = (c, s, l) => caveVert(c, s, l, true);
+// 實際的牆面（離曲線的橫向距離）：高度 y、side（±1）那一側
+function caveWallL(c, s, side, y) { const N = caveSlice(c, s), v = CAVE_SL; let best = 0; for (let k = 0; k < N; k++) { const k1 = (k + 1) % N, y0 = v[k * 2 + 1], y1 = v[k1 * 2 + 1]; if (y0 === y1 || (y0 - y) * (y1 - y) > 0) continue; const l = v[k * 2] + (v[k1 * 2] - v[k * 2]) * (y - y0) / (y1 - y0); if (l * side > best * side) best = l; } return best; }
+// 死路的盡頭：管子最後一圈（含凹凸）往外收成一個圓頂（不是一片平面），和洞壁一樣一面一個顏色
 function caveCap(c, N, mask) {
-  const prof = caveProfile(N), si = c.n - 1, cx = c.X[si], cz = c.Z[si], tx = c.TX[si], tz = c.TZ[si], nx = -tz, nz = tx, w = c.Wd[si], h = c.Hh[si], fy = c.Y[si], K2 = 4, tc = new THREE.Color();
-  const ring = (k2) => prof.map(([px, py]) => { const f = Math.cos(k2 / K2 * Math.PI / 2), out = Math.sin(k2 / K2 * Math.PI / 2) * Math.min(w, h) * .7, yy = py < .02 ? 0 : (py * h - h * .45) * f + h * .45; return [cx + nx * px * w * f + tx * out, fy + Math.max(0, yy), cz + nz * px * w * f + tz * out, py]; });
-  const R = Array.from({ length: K2 + 1 }, (_, k2) => ring(k2)), pos = [], col = [], base = c.T.rockC.clone(), A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3(), Nn = new THREE.Vector3();
-  const tri = (a, b, d) => { A.set(a[0], a[1], a[2]); B.set(b[0], b[1], b[2]); C.set(d[0], d[1], d[2]); Nn.crossVectors(E1.subVectors(B, A), E2.subVectors(C, A)).normalize(); const mx = (A.x + B.x + C.x) / 3, my = (A.y + B.y + C.y) / 3, mz = (A.z + B.z + C.z) / 3; if (Nn.x * (cx - tx * 2 - mx) + Nn.y * (fy + h * .45 - my) + Nn.z * (cz - tz * 2 - mz) < 0) Nn.negate(); caveLight(c, c.L, mx, my, mz, clamp((my - fy) / h, 0, 1), tc); const k = (.76 + .24 * Nn.y) * (.93 + caveHash(mx, mz) * .14); for (const v of [A, B, C]) { pos.push(v.x, v.y, v.z); col.push(base.r * tc.r * k, base.g * tc.g * k, base.b * tc.b * k); } };
+  const si = c.n - 1, cx = c.X[si], cz = c.Z[si], tx = c.TX[si], tz = c.TZ[si], nx = -tz, nz = tx, h = c.Hh[si], fy = c.Y[si], K2 = 4, tc = new THREE.Color(), lv = c.rings[c.rings.length - 1].v, wm = Math.max(c.WL[si], c.WR[si]);
+  const ring = (k2) => { const f = Math.cos(k2 / K2 * Math.PI / 2), out = Math.sin(k2 / K2 * Math.PI / 2) * Math.min(wm, h) * .7; return Array.from({ length: N }, (_, k) => { const l = lv[k * 2], y = lv[k * 2 + 1], yy = y < .01 ? 0 : (y - h * .45) * f + h * .45; return [cx + nx * l * f + tx * out, fy + Math.max(0, yy), cz + nz * l * f + tz * out]; }); };
+  const R = Array.from({ length: K2 + 1 }, (_, k2) => ring(k2)), pos = [], col = [], base = new THREE.Color(), A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3(), Nn = new THREE.Vector3();
+  const tri = (a, b, d) => { A.set(a[0], a[1], a[2]); B.set(b[0], b[1], b[2]); C.set(d[0], d[1], d[2]); Nn.crossVectors(E1.subVectors(B, A), E2.subVectors(C, A)).normalize(); const mx = (A.x + B.x + C.x) / 3, my = (A.y + B.y + C.y) / 3, mz = (A.z + B.z + C.z) / 3; if (Nn.x * (cx - tx * 2 - mx) + Nn.y * (fy + h * .45 - my) + Nn.z * (cz - tz * 2 - mz) < 0) Nn.negate(); caveLight(c, c.L, mx, my, mz, clamp((my - fy) / h, 0, 1), tc); const hz = caveHash(mx, mz); base.copy(c.T.rockC).lerp(c.T.rock2C, clamp(.35 + (hz - .5) * .9 + (my - fy) / h * .25, 0, 1)); const k = (.76 + .24 * Nn.y) * (.93 + hz * .14); for (const v of [A, B, C]) { pos.push(v.x, v.y, v.z); col.push(base.r * tc.r * k, base.g * tc.g * k, base.b * tc.b * k); } };
   for (let k2 = 0; k2 < K2; k2++) for (let k = 0; k < N; k++) { const k1 = (k + 1) % N; tri(R[k2][k], R[k2 + 1][k], R[k2][k1]); tri(R[k2 + 1][k], R[k2 + 1][k1], R[k2][k1]); }
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.computeBoundingSphere();
-  const m = new THREE.Mesh(geo, c.mat); m.layers.mask = mask; return m;
+  const m = new THREE.Mesh(geo, c.mat); m.layers.mask = mask; m.userData.cap = true; return m;
+}
+// 檢查：相鄰兩圈的同一個斷面點沿著切線往回走＝牆往回摺（7.1）；有的話在主控台警告，改控制點時一眼就看得到
+function caveCheck(c) {
+  const R = c.rings; let bad = 0;
+  for (let r = 0; r + 1 < R.length; r++) {
+    const a = R[r], b = R[r + 1], tx = c.TX[a.i] + c.TX[b.i], tz = c.TZ[a.i] + c.TZ[b.i];
+    for (let k = 0; k < a.v.length / 2; k++) {
+      const la = a.v[k * 2], lb = b.v[k * 2], dx = c.X[b.i] - c.TZ[b.i] * lb - c.X[a.i] + c.TZ[a.i] * la, dz = c.Z[b.i] + c.TX[b.i] * lb - c.Z[a.i] - c.TX[a.i] * la;
+      if (dx * tx + dz * tz <= 0 && ++bad < 4) console.warn(`[山洞] ${c.def.name} s=${a.s.toFixed(1)} 第 ${k} 個斷面點往回摺：控制點的彎太急了`);
+    }
+  }
+  c.foldN = bad; return bad;
 }
 // 地上一道淡淡的發光痕跡，顏色＝那一區的主色，一路帶到出口（4.4）
+// 貼圖的一個週期＝1.6 公尺 × 0.26 公尺，畫布 128×20：一個貼圖像素在地上差不多是正方形，畫上去的圓點在地上才是圓的（兩顆，間隔 0.8 公尺）；
+// 圓點在條帶邊緣之前就淡到 0（不會被切成硬邊的長條），再開非等向過濾，遠處的點不會糊成一條線
 function caveTrail(c) {
-  const pos = [], uv = [], idx = [], hw = .11; let k = 0;
+  const pos = [], uv = [], idx = [], hw = .13; let k = 0;
   for (let i = 0; i < c.n; i += 2) { const x = c.X[i], z = c.Z[i], nx = -c.TZ[i], nz = c.TX[i], y = c.Y[i] + .035, sOff = (vnoise(c.S[i] * .2, 3, 41) - .5) * .5 * smooth(8, 14, c.S[i]); pos.push(x + nx * (sOff - hw), y, z + nz * (sOff - hw), x + nx * (sOff + hw), y, z + nz * (sOff + hw)); uv.push(c.S[i] / 1.6, 0, c.S[i] / 1.6, 1); if (k) idx.push(2 * k - 2, 2 * k - 1, 2 * k, 2 * k - 1, 2 * k + 1, 2 * k); k++; }
-  const tex = caveTex('trail', 64, 16, (g, w, h) => { const r = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, h * .9); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); }).clone();
-  tex.wrapS = THREE.RepeatWrapping; tex.needsUpdate = true;
+  const tex = caveTex('trail2', 128, 20, (g, w, h) => { for (const cx of [w * .25, w * .75]) { const r = g.createRadialGradient(cx, h / 2, 0, cx, h / 2, 8.5); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.45, 'rgba(255,255,255,.7)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(cx - 9, 0, 18, h); } }).clone();
+  tex.wrapS = THREE.RepeatWrapping; tex.anisotropy = Math.min(LOW ? 4 : 8, W.r.capabilities.getMaxAnisotropy()); tex.needsUpdate = true;
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
-  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: c.T.trailC, map: tex, transparent: true, opacity: .75, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: caveCol(c.T.trail2 || c.T.trail), map: tex, transparent: true, opacity: c.T.trailA || .8, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   m.layers.mask = 2; m.renderOrder = 2; c.trailTex = tex; return m;
 }
 // 光柱：半透明的錐形網格（每個洞最多 2 個，LOW 1 個），越靠近洞頂越亮，邊緣淡出
@@ -289,22 +385,26 @@ function buildCaves() {
     c.lightA = caveCol(PALETTE.forest.light).multiplyScalar(1.1); c.lightB = caveCol(def.to ? PALETTE[def.to].light : '#ffffff').lerp(caveCol(def.to ? PALETTE[def.to].main : '#fff'), .25);
     c.mossC = caveCol(def.th === 'lava' ? '#ffb86b' : def.th === 'ice' ? '#a5f3fc' : '#86efac'); c.lavaC = caveCol('#ff7a2e');
     c.g = new THREE.Group(); c.g.name = 'cave:' + def.id; sc.add(c.g);
-    const rd = seeded(101 + di * 17), H_ = c.hallI, hx = c.X[H_], hz = c.Z[H_], hy = c.Y[H_], hw = c.Wd[H_], hh = c.Hh[H_];
+    const rd = seeded(101 + di * 17), H_ = c.hallI, hy = c.Y[H_], hw = c.Wd[H_], hh = c.Hh[H_];
+    // 大廳：U 形迴轉內側的牆比較近，房間的中心往外側偏一點（潮池、冰面、光柱都放在房間的中心）；hr＝中心到平地邊緣的距離
+    const fe = caveFloorE(), ho = (c.WR[H_] - c.WL[H_]) / 2 * fe, hx = c.X[H_] - c.TZ[H_] * ho, hz = c.Z[H_] + c.TX[H_] * ho; c.hall = { x: hx, z: hz, y: hy, o: ho, r: fe * (c.WL[H_] + c.WR[H_]) / 2 };
     // 光柱（大廳頂上的洞）
     c.shafts = def.th === 'lava' ? [] : [{ x: hx, z: hz, r: hw * .55, k: def.th === 'moon' ? .9 : 1.15, col: caveCol(def.th === 'moon' ? '#c7d2fe' : def.th === 'ice' ? '#e0f2fe' : '#fff3d6') }];
     // 苔蘚：窄道與大廳邊緣的幾叢（光照烘進牆上；每叢可以摘，06）
     c.moss = []; const mossS = [c.sIn - 2, (c.sIn + c.S[H_]) / 2, c.S[H_] - hw * .6, c.dead ? c.L - 6 : (c.S[H_] + c.L) / 2 - 6];
-    mossS.forEach((s, mi) => { const i = Math.min(c.n - 1, Math.max(0, Math.round(s / CAVE_STEP))), side = mi % 2 ? 1 : -1, w = c.Wd[i] * .9; c.moss.push({ x: c.X[i] + -c.TZ[i] * side * w, z: c.Z[i] + c.TX[i] * side * w, y: c.Y[i] + .35, i, side, s: c.S[i] }); });
-    // 熔岩溝：牆邊一條發光的溝（只是光源，不能踩、也不扣血，4.2）
-    if (def.th === 'lava') c.lava = { s0: CAVE_L0 + 8, s1: c.L - CAVE_L0 - 8, l: -.78 };
-    // 冰洞大廳：地面往下挖，鋪一層半透明的冰面，冰柱的倒影就在冰面底下（4.3）
-    if (def.th === 'ice') { const s0 = c.S[H_]; c.drop = s => 2.6 * smooth(hw * 1.1, hw * .55, Math.abs(s - s0)); c.iceS = s0; }
+    mossS.forEach((s, mi) => { const i = Math.min(c.n - 1, Math.max(0, Math.round(s / CAVE_STEP))), side = mi % 2 ? 1 : -1, w = caveW(c, i, side) * .9; c.moss.push({ x: c.X[i] + -c.TZ[i] * side * w, z: c.Z[i] + c.TX[i] * side * w, y: c.Y[i] + .35, i, side, s: c.S[i] }); });
+    // 熔岩溝：左側平地邊緣一條發光的溝（只是光源，不能踩、也不扣血，4.2）
+    if (def.th === 'lava') c.lava = { s0: CAVE_L0 + 8, s1: c.L - CAVE_L0 - 8 };
+    // 冰洞大廳：冰面底下挖一個坑（只把平地中間那一塊地面挖空，坑本身是 caveHall 做的碗），冰柱的倒影就在冰面底下（4.3）；
+    // LOW 的斷面只有 8 點、地面只有中間和兩邊三個頂點，坑要涵蓋整個平地的寬度才挖得出來
+    if (def.th === 'ice') c.icePit = { x: hx, z: hz, r: LOW ? c.hall.r + .3 : Math.max(1.5, c.hall.r - .7), d: 2.6 };
     c.mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
     if (def.th === 'lava') { c.mat.onBeforeCompile = sh => { sh.uniforms.uHt = W.wind; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uHt;').replace('#include <begin_vertex>', '#include <begin_vertex>\n{ vec4 hwp = modelMatrix * vec4(position, 1.0); float hd = distance(hwp.xyz, cameraPosition); transformed.xz += vec2(sin(uHt * 2.3 + position.y * 2.7 + position.x * 0.7), cos(uHt * 1.9 + position.y * 2.1 + position.z * 0.7)) * 0.08 * smoothstep(7.0, 24.0, hd); }'); }; c.mat.customProgramCacheKey = () => 'caveHeat'; }
     const iIn = Math.round((c.sIn + 4) / CAVE_STEP), iOut = c.dead ? c.n - 1 : Math.round((c.L - c.sIn - 4) / CAVE_STEP);
-    c.g.add(caveTube(c, 0, Math.min(iIn, c.n - 1), N, 3));
+    c.rings = []; c.g.add(caveTube(c, 0, Math.min(iIn, c.n - 1), N, 3));
     if (c.dead) { c.g.add(caveTube(c, iIn, c.n - 1, N, 2)); c.g.add(caveCap(c, N, 2)); }
     else { c.g.add(caveTube(c, iIn, iOut, N, 2)); c.g.add(caveTube(c, iOut, c.n - 1, N, 3)); }
+    caveCheck(c);
     c.g.add(caveTrail(c));
     // 出口的亮光：從洞裡看出去是一圈亮光（只在第 2 層，走近洞口、外面的世界打開時就換成真的景色）
     c.glows = [];
@@ -313,16 +413,19 @@ function buildCaves() {
       m.position.set(c.X[i] - c.TX[i] * d * .6, c.Y[i] + c.Hh[i] * .45, c.Z[i] - c.TZ[i] * d * .6); m.lookAt(m.position.x + c.TX[i] * d, m.position.y, m.position.z + c.TZ[i] * d); m.scale.set(c.Wd[i] * 2.2, c.Hh[i] * 1.15, 1);
       m.layers.mask = 4; m.renderOrder = 3; c.g.add(m); c.glows.push(m);
     });
-    // 光柱網格
+    // 光柱網格：天窗貼在實際的洞頂下面一點（洞頂有凹凸，固定高度的天窗會被切成一角）
     c.shafts.slice(0, LOW ? 1 : 2).forEach(sh => {
-      const top = hy + hh * .97, len = hh * .97, m = new THREE.Mesh(new THREE.CylinderGeometry(sh.r * .32, sh.r * 1.05, len, 18, 1, true), caveShaftMat(sh.col, def.th === 'moon' ? .55 : .42));
+      const s0 = c.S[H_], rh = sh.r * .36, top = hy + Math.min(...[[0, 0], [rh, 0], [-rh, 0], [0, rh], [0, -rh]].map(([ds, dl]) => caveCeil(c, s0 + ds, c.hall.o + dl))) - .06, len = top - hy;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(sh.r * .32, sh.r * 1.05, len, 18, 1, true), caveShaftMat(sh.col, def.th === 'moon' ? .55 : .42));
       m.position.set(sh.x, top - len / 2, sh.z); m.layers.mask = 2; m.renderOrder = 4; c.g.add(m); sh.m = m;
-      const hole = new THREE.Mesh(new THREE.CircleGeometry(sh.r * .36, 20), new THREE.MeshBasicMaterial({ color: sh.col.clone().multiplyScalar(1.4), fog: false })); hole.rotation.x = Math.PI / 2; hole.position.set(sh.x, top + .02, sh.z); hole.layers.mask = 2; c.g.add(hole); sh.hole = hole;
+      const hole = new THREE.Mesh(new THREE.CircleGeometry(rh, 20), new THREE.MeshBasicMaterial({ color: sh.col.clone().multiplyScalar(1.4), fog: false })); hole.rotation.x = Math.PI / 2; hole.position.set(sh.x, top, sh.z); hole.layers.mask = 2; c.g.add(hole); sh.hole = hole;
     });
     caveHall(c, def, rd);
-    // 壁畫：嵌在大廳牆上的一塊石板（月光洞窟是湖邊的石碑）；石框、底座、苔蘚、岩石都合併在 caveProps
-    { const i = Math.min(c.n - 1, H_ + Math.round(hw * .5 / CAVE_STEP)), side = def.th === 'sea' ? 1 : -1, w = c.Wd[i], nx = -c.TZ[i] * side, nz = c.TX[i] * side, moon = def.id === 'moon', f = moon ? .55 : .84;
-      const g = new THREE.Group(); g.position.set(c.X[i] + nx * w * f, c.Y[i], c.Z[i] + nz * w * f); g.lookAt(g.position.x - nx, g.position.y, g.position.z - nz);
+    // 壁畫：嵌在大廳外側牆上的一塊石板（月光洞窟是湖邊的石碑）；石框、底座、苔蘚、岩石都合併在 caveProps
+    { const i = Math.min(c.n - 1, H_ + Math.round(hw * .5 / CAVE_STEP)), moon = def.id === 'moon', side = moon ? -1 : c.WR[i] >= c.WL[i] ? 1 : -1, nx = -c.TZ[i] * side, nz = c.TX[i] * side;
+      // 石板背面貼著實際的牆（取石框上下幾個高度裡離中心最遠的牆面，下緣嵌進牆腳的斜面）
+      const d = moon ? .55 * caveW(c, i, side) : Math.max(...[.9, 1.65, 2.6].map(y => caveWallL(c, c.S[i], side, y) * side)) - .3;
+      const g = new THREE.Group(); g.position.set(c.X[i] + nx * d, c.Y[i], c.Z[i] + nz * d); g.lookAt(g.position.x - nx, g.position.y, g.position.z - nz);
       const face = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 1.7), new THREE.MeshBasicMaterial({ map: caveMuralTex(def.id), color: '#cdbfaa' })); face.position.set(0, moon ? 1.45 : 1.65, .03); face.rotation.x = -.06; g.add(face);
       const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 2.6), new THREE.MeshBasicMaterial({ color: T.light, map: glowTex(), transparent: true, opacity: .3, depthWrite: false, blending: THREE.AdditiveBlending })); glow.position.set(0, moon ? 1.45 : 1.65, .25); g.add(glow);
       caveSetLayers(g, 2); c.g.add(g); g.updateMatrixWorld(true); c.muralAt = { g, moon, i };
@@ -342,7 +445,7 @@ function buildCaves() {
 function caveParticleList(c, rd) {
   const out = [], n = LOW ? 60 : 140, H_ = c.hallI;
   for (let k = 0; k < n; k++) {
-    const inHall = k < n * .6, s = inHall ? c.S[H_] + (rd() - .5) * c.Wd[H_] * 1.6 : CAVE_L0 + rd() * (c.L - CAVE_L0 * 2), i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), w = c.Wd[i], h = c.Hh[i], l = (rd() - .5) * 2 * w * .8;
+    const inHall = k < n * .6, s = inHall ? c.S[H_] + (rd() - .5) * c.Wd[H_] * 1.6 : CAVE_L0 + rd() * (c.L - CAVE_L0 * 2), i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), lf = (rd() - .5) * 2 * .8, l = lf * caveW(c, i, lf), h = c.Hh[i];
     const x = c.X[i] - c.TZ[i] * l, z = c.Z[i] + c.TX[i] * l, y0 = c.Y[i];
     if (c.T.part === 'drip') out.push({ x, y: y0 + h * .9, z, h: h * .9 });
     else if (c.T.part === 'spark') out.push({ x, y: y0 + .2, z, h: h * (inHall ? 1 : .6) });
@@ -351,11 +454,11 @@ function caveParticleList(c, rd) {
   }
   return out;
 }
-// 大廳的看點：潮池與水光、熱氣與火星光帶、冰柱與倒影、月光地下湖
+// 大廳的看點：潮池與水光、熱氣與火星光帶、冰柱與倒影、月光地下湖（都放在 c.hall＝房間的中心）
 function caveHall(c, def, rd) {
-  const H_ = c.hallI, hx = c.X[H_], hz = c.Z[H_], hy = c.Y[H_], hw = c.Wd[H_], hh = c.Hh[H_];
+  const H_ = c.hallI, { x: hx, z: hz, y: hy } = c.hall, hw = c.Wd[H_], hh = c.Hh[H_];
   if (def.th === 'sea') {
-    const pool = new THREE.Mesh(new THREE.CircleGeometry(hw * .5, 36), caveWaterMat('#7dd3fc', '#0e3a4d', false)); pool.rotation.x = -Math.PI / 2; pool.position.set(hx, hy + .04, hz); pool.layers.mask = 2; pool.renderOrder = 1; c.g.add(pool); c.pool = { x: hx, z: hz, r: hw * .5 - .2 };
+    const pr = Math.min(hw * .5, c.hall.r - .6), pool = new THREE.Mesh(new THREE.CircleGeometry(pr, 36), caveWaterMat('#7dd3fc', '#0e3a4d', false)); pool.rotation.x = -Math.PI / 2; pool.position.set(hx, hy + .04, hz); pool.layers.mask = 2; pool.renderOrder = 1; c.g.add(pool); c.pool = { x: hx, z: hz, r: pr - .2 };
     // 頂上晃動的水光（潮池反射上去的光紋，4.1）
     const R = hw * .95, cau = new THREE.Mesh(new THREE.CircleGeometry(R, 32), new THREE.ShaderMaterial({ uniforms: { t: W.wind, c: { value: new THREE.Color('#a5ecff') } },
       vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -363,13 +466,13 @@ function caveHall(c, def, rd) {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
     cau.rotation.x = Math.PI / 2; cau.position.set(hx, hy + hh * .84, hz); cau.layers.mask = 2; c.g.add(cau);
     // 退潮留下的小水窪（踩過會濺起水花）
-    c.puddles = []; for (let s = CAVE_L0 + 4; s < c.L - CAVE_L0 - 4; s += rnd(7, 11)) { if (Math.abs(s - c.S[H_]) < hw * 1.2) continue; const i = Math.round(s / CAVE_STEP), l = (rd() - .5) * c.Wd[i] * .8; c.puddles.push({ x: c.X[i] - c.TZ[i] * l, z: c.Z[i] + c.TX[i] * l, y: c.Y[i] + .03, r: rnd(.45, .8) }); }
+    c.puddles = []; for (let s = CAVE_L0 + 4; s < c.L - CAVE_L0 - 4; s += rnd(7, 11)) { if (Math.abs(s - c.S[H_]) < hw * 1.2) continue; const i = Math.round(s / CAVE_STEP), lf = (rd() - .5) * .8, l = lf * caveW(c, i, lf); c.puddles.push({ x: c.X[i] - c.TZ[i] * l, z: c.Z[i] + c.TX[i] * l, y: c.Y[i] + .03, r: rnd(.45, .8) }); }
     const pg = c.puddles.map(p => { const g = new THREE.CircleGeometry(p.r, 14); g.rotateX(-Math.PI / 2); g.translate(p.x, p.y, p.z); return g; });
     if (pg.length) { const geo = mergeGeos(pg), pm = new THREE.Mesh(geo, caveWaterMat('#3f86a3', '#0b2230', false)); pm.layers.mask = 3; pm.renderOrder = 1; c.g.add(pm); }
   } else if (def.th === 'lava') {
-    // 熔岩溝：沿牆的一條發光帶
+    // 熔岩溝：左側平地邊緣的一條發光帶（貼著地面，不再埋進牆腳的斜面）
     const pos = [], uv = [], idx = []; let k = 0;
-    for (let s = c.lava.s0; s <= c.lava.s1; s += 1) { const i = Math.round(s / CAVE_STEP), w = c.Wd[i], nx = -c.TZ[i], nz = c.TX[i], l0 = c.lava.l * w - .35, l1 = c.lava.l * w + .35, y = c.Y[i] + .06; pos.push(c.X[i] + nx * l0, y, c.Z[i] + nz * l0, c.X[i] + nx * l1, y, c.Z[i] + nz * l1); uv.push(s / 3, 0, s / 3, 1); if (k) idx.push(2 * k - 2, 2 * k - 1, 2 * k, 2 * k - 1, 2 * k + 1, 2 * k); k++; }
+    for (let s = c.lava.s0; s <= c.lava.s1; s += 1) { const i = Math.round(s / CAVE_STEP), lc = caveLavaL(c, i), nx = -c.TZ[i], nz = c.TX[i], l0 = lc - .35, l1 = lc + .35, y = c.Y[i] + .03; pos.push(c.X[i] + nx * l0, y, c.Z[i] + nz * l0, c.X[i] + nx * l1, y, c.Z[i] + nz * l1); uv.push(s / 3, 0, s / 3, 1); if (k) idx.push(2 * k - 2, 2 * k - 1, 2 * k, 2 * k - 1, 2 * k + 1, 2 * k); k++; }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
     const mat = new THREE.ShaderMaterial({ uniforms: { t: W.wind }, vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: 'uniform float t; varying vec2 vU; float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); } float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); } void main(){ vec2 p = vec2(vU.x * 3.0 - t * 0.35, vU.y * 2.0); float a = n(p * 1.7) * 0.6 + n(p * 4.3 + 7.0) * 0.4; float e = smoothstep(0.0, 0.25, vU.y) * smoothstep(1.0, 0.75, vU.y); vec3 c = mix(vec3(0.55, 0.06, 0.02), vec3(1.0, 0.62, 0.12), smoothstep(0.35, 0.8, a)); c += vec3(1.0, 0.9, 0.5) * pow(a, 5.0) * 1.5; gl_FragColor = vec4(c * (0.45 + 0.75 * e), 1.0); }' });
@@ -377,16 +480,25 @@ function caveHall(c, def, rd) {
     // 熱氣往上：大廳中央一道淡淡的橘色光帶（火星由粒子帶上去）
     const haze = new THREE.Mesh(new THREE.CylinderGeometry(hw * .35, hw * .55, hh * .95, 16, 1, true), caveShaftMat('#ff9a4d', .16)); haze.position.set(hx, hy + hh * .47, hz); haze.layers.mask = 2; c.g.add(haze);
   } else if (def.th === 'ice') {
-    const s0 = c.iceS, list = [], refl = [], ice = new THREE.Mesh(new THREE.CircleGeometry(hw * .95, 40), new THREE.MeshBasicMaterial({ color: '#bfe1f7', transparent: true, opacity: .74, depthWrite: false }));
-    ice.rotation.x = -Math.PI / 2; ice.position.set(hx, hy + .02, hz); ice.layers.mask = 2; ice.renderOrder = 2; c.g.add(ice);
-    for (let k = 0; k < (LOW ? 9 : 16); k++) { const a = rd() * 6.283, r = Math.sqrt(rd()) * hw * .8, x = hx + Math.cos(a) * r, z = hz + Math.sin(a) * r, len = rnd(1.4, 3.4), top = hy + hh * .95; list.push({ x, y: top - len / 2, z, s: rnd(.16, .3), sy: len / (rnd(.16, .3)), rx: Math.PI }); refl.push({ x, y: hy - .02 - len / 2 * .8, z, s: .22, sy: len * .8 / .22 }); }
+    // 冰面蓋住整個坑：坑（碗）只在平地中間，冰面再大一圈，冰面外圍還是原本的地面；冰柱垂在實際的洞頂下，倒影只放在坑的正上方
+    const P = c.icePit, s0 = c.S[H_], list = [], refl = [], ice = new THREE.Mesh(new THREE.CircleGeometry(P.r + 1.1, 40), new THREE.MeshBasicMaterial({ color: '#a9d6f2', transparent: true, opacity: .58, depthWrite: false }));
+    ice.rotation.x = -Math.PI / 2; ice.position.set(hx, hy + .02, hz); ice.layers.mask = 2; ice.renderOrder = 1; c.g.add(ice); // renderOrder 1：永遠比發光痕跡（2）先畫，兩片半透明的面不會互相蓋來蓋去
+    const rb = P.r + .35, bowl = new THREE.LatheGeometry([[0, -P.d], [rb * .5, -P.d * .9], [rb * .85, -P.d * .5], [rb, 0]].map(([x, y]) => new THREE.Vector2(x, y)), LOW ? 8 : 14);
+    c.hallDeep = [[bowl, caveCol('#2c5a7c'), M4(hx, hy, hz), false, H_]]; // 碗併進深處的小物件網格（不多一次繪製）
+    const fk = LOW ? caveFloorE() : .371, lo = -fk * c.WL[H_] + .3, hi = fk * c.WR[H_] - .3; // 坑的範圍：挖空的地面頂點之間（14 點的斷面是中間三個，LOW 是整個平地）
+    for (let k = 0; k < (LOW ? 9 : 16); k++) {
+      const s = s0 + (rd() - .5) * hw * 1.4, i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), lf = (rd() - .5) * 1.5, l = lf * caveW(c, i, lf), x = c.X[i] - c.TZ[i] * l, z = c.Z[i] + c.TX[i] * l, sw = rnd(.16, .3);
+      const ceil = caveCeil(c, s, l), len = Math.min(rnd(1.4, 3.4), ceil - 2.4), top = c.Y[i] + ceil + .1; if (len < .4) continue;
+      list.push({ x, y: top - len / 2, z, s: sw, sy: len / sw, rx: Math.PI });
+      const dp = Math.hypot(x - P.x, z - P.z); if (l > lo && l < hi && dp < P.r - .6) { const rl = Math.min(len * .8, P.d * .85); refl.push({ x, y: hy - .02 - rl / 2, z, s: .22, sy: rl / .22 }); }
+    }
     const im = new THREE.MeshBasicMaterial({ color: '#e6f6ff' }), a = instances(new THREE.ConeGeometry(1, 1, 6), im, list, false), b = instances(new THREE.ConeGeometry(1, 1, 6), new THREE.MeshBasicMaterial({ color: '#5d8fb5', transparent: true, opacity: .55 }), refl, false);
     a.layers.mask = 2; b.layers.mask = 2; c.g.add(a, b);
   } else if (def.th === 'moon') {
-    const R = Math.min(hw * .55, 5.2), lake = new THREE.Mesh(new THREE.CircleGeometry(R, 48), caveWaterMat('#a5b4fc', '#0f1035', true));
+    const R = Math.min(hw * .55, 5.2, c.hall.r - .5), lake = new THREE.Mesh(new THREE.CircleGeometry(R, 48), caveWaterMat('#a5b4fc', '#0f1035', true));
     lake.rotation.x = -Math.PI / 2; lake.position.set(hx, hy + .05, hz); lake.layers.mask = 2; lake.renderOrder = 1; c.g.add(lake); c.lake = { x: hx, z: hz, r: R, m: lake };
-    // 洞頂的螢光蟲：一點一點慢慢閃（像星空，月光洞窟的大廳）
-    const gw = []; for (let k = 0; k < (LOW ? 50 : 120); k++) { const s = c.S[H_] + (rd() - .5) * hw * 2.2, i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), lf = (rd() - .5) * 1.6; gw.push({ x: c.X[i] - c.TZ[i] * lf * c.Wd[i] * .9, y: c.Y[i] + c.Hh[i] * (.97 - .38 * lf * lf), z: c.Z[i] + c.TX[i] * lf * c.Wd[i] * .9, h: 0 }); }
+    // 洞頂的螢光蟲：一點一點慢慢閃（像星空，月光洞窟的大廳），貼在實際的洞頂下
+    const gw = []; for (let k = 0; k < (LOW ? 50 : 120); k++) { const s = clamp(c.S[H_] + (rd() - .5) * hw * 2.2, 0, c.L), i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), lf = (rd() - .5) * 1.6, l = lf * caveW(c, i, lf) * .9; gw.push({ x: c.X[i] - c.TZ[i] * l, y: c.Y[i] + caveCeil(c, s, l) - .12, z: c.Z[i] + c.TX[i] * l, h: 0 }); }
     c.g.add(caveParticles(c, gw, 'glint', '#8ff5ff', .8));
   }
 }
@@ -398,16 +510,24 @@ function caveStarGeo() {
 function caveProps(c, def, rd) {
   const G0 = caveProps.G || (caveProps.G = { rock: new THREE.IcosahedronGeometry(1, 0), cone4: new THREE.ConeGeometry(1, 1, 4), cone: new THREE.ConeGeometry(1, 1, 5), cone6: new THREE.ConeGeometry(1, 1, 6), oct: new THREE.OctahedronGeometry(1, 0), ico: new THREE.IcosahedronGeometry(1, 0), hex: new THREE.CylinderGeometry(1, 1, 1, 6), cyl: new THREE.CylinderGeometry(1, 1, 1, 5), sph: new THREE.SphereGeometry(1, 7, 4), box: new THREE.BoxGeometry(1, 1, 1), star: caveStarGeo(), dome: new THREE.SphereGeometry(1, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2), disc: new THREE.CircleGeometry(1, 9).rotateX(-Math.PI / 2) });
   const th = def.th, T = c.T, near = [], deep = [], L = c.L, dead = c.dead, LQ = LOW ? .4 : 1, r = (a, b) => a + rd() * (b - a);
-  const at = (s, lf, yr) => { s = clamp(s, 0, L); const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), w = c.Wd[i]; return { s, i, w, h: c.Hh[i], x: c.X[i] - c.TZ[i] * lf * w, y: c.Y[i] + yr, z: c.Z[i] + c.TX[i] * lf * w, ry: Math.atan2(c.TX[i], c.TZ[i]) }; };
-  const add = (geo, col, p, rx, ry, rz, sx, sy = sx, sz = sx, glow = false) => ((p.s < c.sIn + 3 || (!dead && p.s > L - c.sIn - 3)) ? near : deep).push([geo, col, M4(p.x, p.y, p.z, rx, ry, rz, sx, sy, sz), glow, p.i]);
+  // atL：沿曲線 s、橫向 l 公尺、離地 yr；at：橫向用比例 lf（−1～1，乘上那一側的實際半寬，彎道內側比較窄）
+  const atL = (s, l, yr) => { s = clamp(s, 0, L); const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1); return { s, i, l, w: caveW(c, i, l), h: c.Hh[i], x: c.X[i] - c.TZ[i] * l, y: c.Y[i] + yr, z: c.Z[i] + c.TX[i] * l, ry: Math.atan2(c.TX[i], c.TZ[i]) }; };
+  const at = (s, lf, yr) => atL(s, lf * caveW(c, clamp(Math.round(clamp(s, 0, L) / CAVE_STEP), 0, c.n - 1), lf), yr);
+  // 依實際的斷面擺：onWall＝貼在高度 y 的牆面上（往洞裡 inset 公尺）；floorY＝那個橫向位置的地面（牆腳是斜面）；out＝擋路的東西推到玩家走得到的範圍外（caveSlide 的界線）
+  const onWall = (s, side, y, inset) => { const wl = caveWallL(c, clamp(s, 0, L), side, y); return atL(s, (wl * side > .1 ? wl : side * caveW(c, clamp(Math.round(clamp(s, 0, L) / CAVE_STEP), 0, c.n - 1), side) * .9) - side * inset, y); }; // 那個高度碰不到牆（比洞頂還高）就退回半寬的 0.9 倍
+  const floorY = p => caveVert(c, p.s, p.l, false), out = (p, side, m) => { const lm = Math.max(.15, p.w * .84 - .35) + m; return Math.abs(p.l) < lm ? atL(p.s, side * lm, 0) : p; };
+  const add = (geo, col, p, rx, ry, rz, sx, sy = sx, sz = sx, glow = false, dec = 0) => ((p.s < c.sIn + 3 || (!dead && p.s > L - c.sIn - 3)) ? near : deep).push([geo, col, M4(p.x, p.y, p.z, rx, ry, rz, sx, sy, sz), glow, p.i, dec]);
+  // 地上的薄片（沙地、焦黑的地面）：每個頂點各自貼齊地面再墊高 2.2 公分（地面沿曲線有坡度，水平的薄片會被地面吃掉一邊）；半徑夾在平地裡面
+  const decal = (col, s, lf, R1, R2) => { const i = clamp(Math.round(clamp(s, 0, L) / CAVE_STEP), 0, c.n - 1), w = caveW(c, i, lf), fe = caveFloorE() - .05, k = Math.min(1, (fe * w - .1) / Math.max(R1, R2)), mx = fe * w - Math.max(R1, R2) * k; add(G0.disc, col, atL(s, clamp(lf * w, -mx, mx), 0), 0, rd() * 3, 0, R1 * k, 1, R2 * k, false, .022); };
   const rockC = () => T.rockC.clone().lerp(T.rock2C, rd() * .6).multiplyScalar(r(.8, 1.15));
-  const s0 = CAVE_L0 + 1.2, s1 = dead ? L - 1 : L - CAVE_L0 - 1.2, hallS = c.S[c.hallI], hw = c.Wd[c.hallI], inHall = s => Math.abs(s - hallS) < hw * 1.1;
+  const s0 = CAVE_L0 + 1.2, s1 = dead ? L - 1 : L - CAVE_L0 - 1.2, hallS = c.S[c.hallI], hw = c.Wd[c.hallI];
   // 共通：牆腳的大石頭、地上的碎石、鐘乳石與石筍
-  for (let s = s0; s < s1; s += r(2, 3.2) / LQ) {
-    for (const side of [-1, 1]) { if (rd() < .45) continue; const p = at(s + r(-.6, .6), side * r(.8, .93), 0), k = clamp(p.w / 2, .45, 1.7) * r(.26, .55); add(G0.rock, rockC(), p, rd() * 3, rd() * 3, rd() * 3, k * 1.2, k * r(.45, .85), k); }
-    for (let k = 0; k < (LOW ? 0 : 2); k++) { const p = at(s + r(-1, 1), r(-.75, .75), .02); add(G0.oct, rockC().multiplyScalar(.9), p, rd() * 3, rd() * 3, 0, r(.05, .13), r(.03, .07), r(.05, .12)); }
-    if (rd() < (th === 'ice' ? .95 : .6)) { const p = at(s, r(-.65, .65), 0); p.y += p.h * r(.86, .95) - (inHall(s) ? 0 : .1); const len = th === 'ice' ? r(.6, 2.2) : r(.35, 1.4), wd = th === 'ice' ? r(.07, .16) : r(.09, .2); p.y -= len / 2; add(th === 'ice' ? G0.cone6 : G0.cone, th === 'ice' ? T.rock2C.clone().lerp(caveCol('#ffffff'), .5) : rockC().multiplyScalar(.85), p, Math.PI, rd() * 3, 0, wd, len, wd); }
-    if (rd() < .22) { const p = at(s, (rd() < .5 ? -1 : 1) * r(.55, .8), 0), len = r(.3, .9); p.y += len / 2; add(G0.cone, rockC(), p, 0, rd() * 3, 0, r(.1, .2), len, r(.1, .2)); }
+  for (let s = s0; s < s1; s += r(2.25, 3.55) / LQ) { // 間距比原本稍大：曲線改順之後洞變長了一點，小物件的總數維持不變
+    for (const side of [-1, 1]) { if (rd() < .5) continue; let p = at(s + r(-.6, .6), side * r(.8, .93), 0); const k = clamp(p.w / 2, .45, 1.7) * r(.26, .55); p = out(p, side, k * 1.15); p.y += floorY(p); add(G0.rock, rockC(), p, rd() * 3, rd() * 3, rd() * 3, k * 1.2, k * r(.45, .85), k); }
+    for (let k = 0; k < (LOW ? 0 : 2); k++) { const p = at(s + r(-1, 1), r(-.7, .7), .02); add(G0.oct, rockC().multiplyScalar(.9), p, rd() * 3, rd() * 3, 0, r(.05, .13), r(.03, .07), r(.05, .12)); }
+    // 鐘乳石／冰柱：根部嵌進實際的洞頂（拱頂是斜的，粗的嵌深一點），尖端留在頭頂 2.2 公尺以上
+    if (rd() < (th === 'ice' ? .95 : .6)) { const p = at(s, r(-.55, .55), 0), ceil = caveCeil(c, p.s, p.l), len = Math.min(th === 'ice' ? r(.6, 2.2) : r(.35, 1.4), ceil - 2.2), wd = th === 'ice' ? r(.07, .16) : r(.09, .2); if (len > .25) { p.y += ceil + .06 + wd * 1.2 - len / 2; add(th === 'ice' ? G0.cone6 : G0.cone, th === 'ice' ? T.rock2C.clone().lerp(caveCol('#ffffff'), .5) : rockC().multiplyScalar(.85), p, Math.PI, rd() * 3, 0, wd, len, wd); } }
+    if (rd() < .22) { const side = rd() < .5 ? -1 : 1, p = out(at(s, side * r(.55, .8), 0), side, .2), len = r(.3, .9); p.y += floorY(p) + len / 2 - .05; add(G0.cone, rockC(), p, 0, rd() * 3, 0, r(.1, .2), len, r(.1, .2)); }
   }
   // 苔蘚（會發光，可以摘）
   c.moss.forEach(m => { for (let k = 0; k < (LOW ? 6 : 11); k++) { const p = { s: m.s, i: m.i, x: m.x + r(-.5, .5) * Math.abs(c.TX[m.i]) + r(-.25, .25), y: m.y + r(-.35, .6), z: m.z + r(-.5, .5) * Math.abs(c.TZ[m.i]) + r(-.25, .25) }; add(G0.oct, c.mossC.clone().multiplyScalar(r(1, 1.35)), p, rd() * 3, rd() * 3, 0, r(.07, .16), r(.04, .09), r(.07, .16), true); } });
@@ -416,41 +536,46 @@ function caveProps(c, def, rd) {
     if (c.muralAt.moon) { push(G0.box, T.rockC.clone().multiplyScalar(1.1), 0, 1.45, -.27, 3.05, 2.2, .5); push(G0.box, T.rockC.clone().multiplyScalar(.9), 0, .22, -.2, 3.4, .44, .9); for (let k = 0; k < 6; k++) push(G0.oct, caveCol('#b9a6ff'), r(-1.6, 1.6), .2, r(.2, .6), .1, r(.3, .6), .1, 0, rd() * 3, r(-.3, .3)); }
     else { push(G0.box, T.rockC.clone().multiplyScalar(.85), 0, 1.65, -.2, 3.1, 2.1, .36); for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; push(G0.rock, rockC(), Math.cos(a) * 1.62, 1.65 + Math.sin(a) * 1.12, -.05, r(.22, .38), r(.18, .3), .25, rd() * 3, rd() * 3, 0); } }
   }
+  if (c.hallDeep) deep.push(...c.hallDeep);
   if (th === 'sea') {
-    for (let s = s0; s < s1; s += r(5, 8) / LQ) { const side = rd() < .5 ? -1 : 1; for (let k = 0; k < (LOW ? 2 : 5); k++) { const p = at(s + r(-.6, .6), side * r(.86, .95), r(.3, 1.3)); add(G0.cone4, caveCol(['#d8d0bf', '#cfc6b4', '#e7dfcf'][k % 3]), p, -Math.PI / 2 * side * .9, p.ry, 0, r(.04, .08), r(.05, .11), r(.04, .08)); } } // 藤壺
-    for (let k = 0; k < 16 * LQ; k++) { const p = at(r(s0, s1), (rd() < .5 ? -1 : 1) * r(.5, .85), .03); add(G0.ico, caveCol(['#f5d0c5', '#fde4cf', '#e7d9c7', '#fbcfe8'][k % 4]), p, 0, rd() * 3, 0, r(.06, .12), r(.025, .05), r(.06, .1)); } // 貝殼
-    for (let k = 0; k < 10 * LQ; k++) { const p = at(r(s0, s1), r(-.6, .6), .015); add(G0.disc, caveCol('#cdbb8f'), p, 0, rd() * 3, 0, r(.5, 1.1), 1, r(.4, .9)); } // 沙地
-    const pr = c.pool ? c.pool.r : 3; for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2 + r(-.1, .1), p = { s: hallS, i: c.hallI, x: c.pool.x + Math.cos(a) * (pr + .25), y: c.Y[c.hallI] + .05, z: c.pool.z + Math.sin(a) * (pr + .25) }; add(G0.rock, rockC().multiplyScalar(.85), p, rd() * 3, rd() * 3, 0, r(.25, .45), r(.14, .24), r(.22, .4)); }
-    for (let k = 0; k < 6; k++) { const a = rd() * Math.PI * 2, p = { s: hallS, i: c.hallI, x: c.pool.x + Math.cos(a) * (pr + r(.6, 1.6)), y: c.Y[c.hallI] + .03, z: c.pool.z + Math.sin(a) * (pr + r(.6, 1.6)) }; add(G0.star, caveCol(['#fb923c', '#f472b6', '#facc15'][k % 3]), p, 0, rd() * 6, 0, r(.13, .2), .4, r(.13, .2), true); } // 海星
-    for (let k = 0; k < 9; k++) { const a = rd() * Math.PI * 2, d = pr + r(.4, 1.2), x = c.pool.x + Math.cos(a) * d, z = c.pool.z + Math.sin(a) * d, col = caveCol(['#fb7185', '#fdba74', '#f9a8d4'][k % 3]), hgt = r(.25, .6); add(G0.cyl, col, { s: hallS, i: c.hallI, x, y: c.Y[c.hallI] + hgt / 2, z }, r(-.3, .3), 0, r(-.3, .3), .04, hgt, .04, true); add(G0.ico, col, { s: hallS, i: c.hallI, x, y: c.Y[c.hallI] + hgt, z }, 0, 0, 0, .07, .07, .07, true); } // 珊瑚
-    for (const [sa, sb] of [[CAVE_L0 * .3, c.sIn], [L - c.sIn, L - CAVE_L0 * .3]]) for (let k = 0; k < 10 * LQ; k++) { const p = at(r(sa, sb), r(-.8, .8), 0), len = r(.5, 1.3); p.y += p.h * .9 - len / 2; add(G0.box, caveCol(['#4d7c3a', '#6b8f4e', '#3f6b4a'][k % 3]), p, r(-.1, .1), p.ry + r(-.5, .5), r(-.15, .15), .05, len, .14); } // 洞口的海草
+    for (let s = s0; s < s1; s += r(6, 9) / LQ) { const side = rd() < .5 ? -1 : 1; for (let k = 0; k < (LOW ? 2 : 5); k++) { const p = onWall(s + r(-.6, .6), side, r(.3, 1.3), .02); add(G0.cone4, caveCol(['#d8d0bf', '#cfc6b4', '#e7dfcf'][k % 3]), p, -Math.PI / 2 * side * .9, p.ry, 0, r(.04, .08), r(.05, .11), r(.04, .08)); } } // 藤壺：長在實際的牆面上
+    for (let k = 0; k < 16 * LQ; k++) { const p = at(r(s0, s1), (rd() < .5 ? -1 : 1) * r(.4, .7), .03); add(G0.ico, caveCol(['#f5d0c5', '#fde4cf', '#e7d9c7', '#fbcfe8'][k % 4]), p, 0, rd() * 3, 0, r(.06, .12), r(.025, .05), r(.06, .1)); } // 貝殼
+    for (let k = 0; k < 10 * LQ; k++) decal(caveCol('#cdbb8f'), r(s0, s1), r(-.6, .6), r(.5, 1.1), r(.4, .9)); // 沙地
+    const pr = c.pool ? c.pool.r : 3, py = c.hall.y; for (let k = 0; k < 18; k++) { const a = k / 18 * Math.PI * 2 + r(-.1, .1), p = { s: hallS, i: c.hallI, x: c.pool.x + Math.cos(a) * (pr + .25), y: py + .05, z: c.pool.z + Math.sin(a) * (pr + .25) }; add(G0.rock, rockC().multiplyScalar(.85), p, rd() * 3, rd() * 3, 0, r(.25, .45), r(.14, .24), r(.22, .4)); }
+    for (let k = 0; k < 6; k++) { const a = rd() * Math.PI * 2, p = { s: hallS, i: c.hallI, x: c.pool.x + Math.cos(a) * (pr + r(.6, 1.6)), y: py + .03, z: c.pool.z + Math.sin(a) * (pr + r(.6, 1.6)) }; add(G0.star, caveCol(['#fb923c', '#f472b6', '#facc15'][k % 3]), p, 0, rd() * 6, 0, r(.13, .2), .4, r(.13, .2), true); } // 海星
+    for (let k = 0; k < 9; k++) { const a = rd() * Math.PI * 2, d = pr + r(.4, 1.2), x = c.pool.x + Math.cos(a) * d, z = c.pool.z + Math.sin(a) * d, col = caveCol(['#fb7185', '#fdba74', '#f9a8d4'][k % 3]), hgt = r(.25, .6); add(G0.cyl, col, { s: hallS, i: c.hallI, x, y: py + hgt / 2, z }, r(-.3, .3), 0, r(-.3, .3), .04, hgt, .04, true); add(G0.ico, col, { s: hallS, i: c.hallI, x, y: py + hgt, z }, 0, 0, 0, .07, .07, .07, true); } // 珊瑚
+    for (const [sa, sb] of [[CAVE_L0 * .3, c.sIn], [L - c.sIn, L - CAVE_L0 * .3]]) for (let k = 0; k < 10 * LQ; k++) { const p = at(r(sa, sb), r(-.8, .8), 0), len = r(.5, 1.3); p.y += caveCeil(c, p.s, p.l) + .1 - len / 2; add(G0.box, caveCol(['#4d7c3a', '#6b8f4e', '#3f6b4a'][k % 3]), p, r(-.1, .1), p.ry + r(-.5, .5), r(-.15, .15), .05, len, .14); } // 洞口的海草：從實際的洞頂垂下來
   } else if (th === 'lava') {
-    for (let k = 0; k < 26 * LQ; k++) { const s = inHall(hallS) && k < 14 ? hallS + r(-hw, hw) : r(s0, s1), p = at(s, (rd() < .5 ? -1 : 1) * r(.72, .9), 0), hgt = inHall(s) ? r(1.2, 4.2) : r(.6, 2), rr = r(.22, .42); p.y += hgt / 2; add(G0.hex, caveCol('#3b2b27').multiplyScalar(r(.85, 1.15)), p, r(-.06, .06), rd(), r(-.06, .06), rr, hgt, rr); } // 玄武岩柱
-    for (let k = 0; k < 18 * LQ; k++) { const p = at(r(s0, s1), (rd() < .5 ? -1 : 1) * r(.45, .8), .1); add(G0.oct, caveCol('#2d1f3d'), p, r(-.5, .5), rd() * 3, r(-.5, .5), r(.06, .12), r(.2, .45), r(.06, .12)); } // 黑曜石碎片
-    for (let s = c.lava.s0; s < c.lava.s1; s += r(1.4, 2.6) / LQ) { const p = at(s, c.lava.l * r(.92, 1.05) + .18, .08); add(G0.ico, caveCol(rd() < .5 ? '#ff8a3d' : '#ffb35c'), p, rd() * 3, rd() * 3, 0, r(.07, .14), r(.05, .09), r(.07, .14), true); } // 熔岩溝邊的餘燼石
-    for (let k = 0; k < 8 * LQ; k++) { const p = at(r(s0, s1), r(-.4, .5), .012); add(G0.disc, caveCol('#2a1d1a'), p, 0, rd() * 3, 0, r(.5, 1), 1, r(.4, .8)); } // 焦黑的地面
-    for (let k = 0; k < 5; k++) { const p = at(hallS + r(-hw, hw) * .6, (rd() < .5 ? -1 : 1) * r(.6, .85), r(.2, 2)); add(G0.oct, caveCol('#facc15'), p, r(-.4, .4), rd() * 3, 0, .07, .16, .07, true); } // 硫磺結晶
+    for (let k = 0; k < 26 * LQ; k++) { const s = k < 14 ? hallS + r(-hw, hw) : r(s0, s1), side = rd() < .5 ? -1 : 1, hgt0 = Math.abs(s - hallS) < hw * 1.1 ? r(1.2, 4.2) : r(.6, 2), rr = r(.22, .42), p = out(at(s, side * r(.72, .9), 0), side, rr - .05), hgt = Math.min(hgt0, caveCeil(c, p.s, p.l) - .6); if (hgt < .3) continue; p.y += floorY(p) + hgt / 2 - .1; add(G0.hex, caveCol('#3b2b27').multiplyScalar(r(.85, 1.15)), p, r(-.06, .06), rd(), r(-.06, .06), rr, hgt, rr); } // 玄武岩柱：靠牆站，不擋路
+    for (let k = 0; k < 18 * LQ; k++) { const p = at(r(s0, s1), (rd() < .5 ? -1 : 1) * r(.45, .8), .1); p.y += floorY(p); add(G0.oct, caveCol('#2d1f3d'), p, r(-.5, .5), rd() * 3, r(-.5, .5), r(.06, .12), r(.2, .45), r(.06, .12)); } // 黑曜石碎片
+    for (let s = c.lava.s0; s < c.lava.s1; s += r(1.5, 2.8) / LQ) { const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), p = atL(s, caveLavaL(c, i) + (rd() < .5 ? -1 : 1) * r(.4, .55), .05); add(G0.ico, caveCol(rd() < .5 ? '#ff8a3d' : '#ffb35c'), p, rd() * 3, rd() * 3, 0, r(.07, .14), r(.05, .09), r(.07, .14), true); } // 熔岩溝邊的餘燼石
+    for (let k = 0; k < 8 * LQ; k++) decal(caveCol('#2a1d1a'), r(s0, s1), r(-.1, .5), r(.5, 1), r(.4, .8)); // 焦黑的地面（避開左邊的熔岩溝）
+    for (let k = 0; k < 5; k++) { const p = onWall(hallS + r(-hw, hw) * .6, rd() < .5 ? -1 : 1, r(.3, 2), .03); add(G0.oct, caveCol('#facc15'), p, r(-.4, .4), rd() * 3, 0, .07, .16, .07, true); } // 硫磺結晶：長在牆面上
   } else if (th === 'ice') {
-    for (let k = 0; k < 22 * LQ; k++) { const s = k < 10 ? hallS + r(-hw, hw) : r(s0, s1), side = rd() < .5 ? -1 : 1, p = at(s, side * r(.6, .9), r(0, .4)), glow = rd() < .3; for (let j = 0; j < 4; j++) add(G0.oct, glow ? caveCol('#a5f3fc') : caveCol('#d7f0ff'), { s: p.s, i: p.i, x: p.x + r(-.25, .25), y: p.y + r(0, .3), z: p.z + r(-.25, .25) }, r(-.5, .5), rd() * 3, r(-.5, .5), r(.07, .15), r(.25, .6), r(.07, .15), glow); } // 冰晶簇
-    for (const [sa, sb] of [[0, c.sIn * .7], [L - c.sIn * .7, L]]) for (let k = 0; k < 9; k++) { const p = at(r(sa, sb), (rd() < .5 ? -1 : 1) * r(.4, .9), 0); add(G0.dome, caveCol('#f4f9ff'), p, 0, rd() * 3, 0, r(.5, 1.1), r(.15, .35), r(.4, .9)); } // 洞口的雪堆
-    for (let k = 0; k < 24 * LQ; k++) { const p = at(r(s0, s1), (rd() < .5 ? -1 : 1) * r(.82, .97), r(.4, 3)); add(G0.oct, caveCol('#f8fdff'), p, 0, rd() * 3, 0, r(.04, .09), r(.04, .09), r(.04, .09), true); } // 凍在冰裡的氣泡
+    for (let k = 0; k < 22 * LQ; k++) { const s = k < 10 ? hallS + r(-hw, hw) : r(s0, s1), side = rd() < .5 ? -1 : 1, p = out(at(s, side * r(.6, .9), 0), side, .3), glow = rd() < .3; p.y += floorY(p) + r(0, .3); for (let j = 0; j < 4; j++) add(G0.oct, glow ? caveCol('#a5f3fc') : caveCol('#d7f0ff'), { s: p.s, i: p.i, x: p.x + r(-.25, .25), y: p.y + r(0, .3), z: p.z + r(-.25, .25) }, r(-.5, .5), rd() * 3, r(-.5, .5), r(.07, .15), r(.25, .6), r(.07, .15), glow); } // 冰晶簇：靠牆，不擋路
+    for (const [sa, sb] of [[0, c.sIn * .7], [L - c.sIn * .7, L]]) for (let k = 0; k < (LOW ? 7 : 9); k++) { const p = at(r(sa, sb), (rd() < .5 ? -1 : 1) * r(.4, .9), 0); p.y += floorY(p); add(G0.dome, caveCol('#f4f9ff'), p, 0, rd() * 3, 0, r(.5, 1.1), r(.15, .35), r(.4, .9)); } // 洞口的雪堆
+    for (let k = 0; k < 24 * LQ; k++) { const p = onWall(r(s0, s1), rd() < .5 ? -1 : 1, r(.4, 3), r(-.02, .02)); add(G0.oct, caveCol('#e6f4ff'), p, 0, rd() * 3, 0, r(.03, .07), r(.03, .07), r(.03, .07)); } // 凍在冰裡的氣泡：一半嵌在牆裡（不再浮在牆前發白光）
   } else if (th === 'moon') {
-    const lk = c.lake, ly = c.Y[c.hallI];
+    const lk = c.lake, ly = c.hall.y;
     for (let k = 0; k < 24; k++) { const a = k / 24 * Math.PI * 2 + r(-.08, .08), p = { s: hallS, i: c.hallI, x: lk.x + Math.cos(a) * (lk.r + .2), y: ly + .04, z: lk.z + Math.sin(a) * (lk.r + .2) }; add(G0.rock, caveCol('#4c4775').multiplyScalar(r(.8, 1.1)), p, rd() * 3, rd() * 3, 0, r(.25, .45), r(.12, .22), r(.22, .42)); }
-    for (let k = 0; k < 14 * LQ; k++) { const s = k < 8 ? hallS + r(-hw, hw) * .9 : r(s0, s1), p = at(s, (rd() < .5 ? -1 : 1) * r(.62, .9), 0); for (let j = 0; j < 5; j++) add(G0.oct, caveCol(rd() < .5 ? '#c4b5fd' : '#a78bfa'), { s: p.s, i: p.i, x: p.x + r(-.3, .3), y: p.y + r(.1, .4), z: p.z + r(-.3, .3) }, r(-.45, .45), rd() * 3, r(-.45, .45), r(.06, .13), r(.25, .7), r(.06, .13), true); } // 紫水晶
+    for (let k = 0; k < 14 * LQ; k++) { const s = k < 8 ? hallS + r(-hw, hw) * .9 : r(s0, s1), side = rd() < .5 ? -1 : 1, p = out(at(s, side * r(.62, .9), 0), side, .3); p.y += floorY(p); for (let j = 0; j < (LOW ? 4 : 5); j++) add(G0.oct, caveCol(rd() < .5 ? '#c4b5fd' : '#a78bfa'), { s: p.s, i: p.i, x: p.x + r(-.3, .3), y: p.y + r(.1, .4), z: p.z + r(-.3, .3) }, r(-.45, .45), rd() * 3, r(-.45, .45), r(.06, .13), r(.25, .7), r(.06, .13), true); } // 紫水晶
     for (let k = 0; k < 16 * LQ; k++) { const a = rd() * Math.PI * 2, d = lk.r + r(.7, 2.6), x = lk.x + Math.cos(a) * d, z = lk.z + Math.sin(a) * d, hgt = r(.12, .32), col = caveCol(rd() < .55 ? '#67e8f9' : '#f0abfc'), q = { s: hallS, i: c.hallI }; add(G0.cyl, caveCol('#e7e5f5'), Object.assign({ x, y: ly + hgt / 2, z }, q), 0, 0, 0, .025, hgt, .025, true); add(G0.dome, col, Object.assign({ x, y: ly + hgt - .01, z }, q), 0, 0, 0, r(.07, .14), r(.05, .09), r(.07, .14), true); } // 會發光的小蘑菇
     for (let k = 0; k < 12 * LQ; k++) { const a = rd() * Math.PI * 2, d = lk.r + r(1.2, 3.4), q = { s: hallS, i: c.hallI, x: lk.x + Math.cos(a) * d, y: ly + .12, z: lk.z + Math.sin(a) * d }; add(G0.oct, caveCol('#fdfcff'), q, 0, rd() * 3, 0, .05, .05, .05, true); } // 月光花
   }
-  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3(), N = new THREE.Vector3(), tc = new THREE.Color(), base = new THREE.Color();
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3(), N = new THREE.Vector3(), tc = new THREE.Color(), base = new THREE.Color(), gk = 1.28 / (1.28 + (T.exp || 0));
   const bake = (list, mask) => {
-    if (!list.length) return; let tot = 0; const gs = list.map(([g0, col, m, glow, hi]) => { const g = g0.index ? g0.toNonIndexed() : g0.clone(); g.applyMatrix4(m); tot += g.attributes.position.count; return [g, col, glow, hi]; });
+    if (!list.length) return; let tot = 0; const gs = list.map(([g0, col, m, glow, hi, dec]) => {
+      const g = g0.index ? g0.toNonIndexed() : g0.clone(); g.applyMatrix4(m); tot += g.attributes.position.count;
+      if (dec) { const p = g.attributes.position; for (let v = 0; v < p.count; v++) p.setY(v, caveQ(c, p.getX(v), p.getZ(v), hi).y + dec); }
+      return [g, col, glow, hi];
+    });
     const pos = new Float32Array(tot * 3), cl = new Float32Array(tot * 3); let o = 0;
     gs.forEach(([g, col, glow, hi]) => {
       const p = g.attributes.position.array; base.copy(col);
       for (let t = 0; t + 8 < p.length; t += 9) {
         A.fromArray(p, t); B.fromArray(p, t + 3); C.fromArray(p, t + 6); N.crossVectors(E1.subVectors(B, A), E2.subVectors(C, A)).normalize();
         let rr, gg, bb;
-        if (glow) { const k = 1.05 + .2 * N.y; rr = base.r * k; gg = base.g * k; bb = base.b * k; }
+        if (glow) { const k = (1.05 + .2 * N.y) * gk; rr = base.r * k; gg = base.g * k; bb = base.b * k; } // 自己會發光的東西：扣掉這個洞多加的曝光，顏色才不會被沖淡
         else { const cx = (A.x + B.x + C.x) / 3, cy = (A.y + B.y + C.y) / 3, cz = (A.z + B.z + C.z) / 3, q = caveQ(c, cx, cz, hi); caveLight(c, q.s, cx, cy, cz, clamp((cy - q.y) / q.h, 0, 1), tc); const k = .66 + .34 * N.y; rr = base.r * tc.r * k; gg = base.g * tc.g * k; bb = base.b * tc.b * k; }
         for (let v = 0; v < 3; v++) { pos[o] = p[t + v * 3]; pos[o + 1] = p[t + v * 3 + 1]; pos[o + 2] = p[t + v * 3 + 2]; cl[o] = rr; cl[o + 1] = gg; cl[o + 2] = bb; o += 3; }
       }
@@ -554,13 +679,13 @@ function caveEnv(dt) {
   if (INTRO.on) { if (INTRO.inCave) { CV.c = INTRO.c; CV.s = INTRO.s; CV.i = INTRO.i || 0; CV.dir = -1; } else CV.c = null; } // 開場：山洞的霧、光、圖層跟著穿越機走
   if (TITLE.on) { if (CV.mode !== 'out') { CV.mode = 'out'; W.cam.layers.mask = 1; CAVES.forEach(o => { o.g.visible = true; }); } return; } // 主選單的環繞鏡頭不受玩家位置影響
   // 讀檔或傳送之後人在洞裡（例如存檔時正在洞裡）：找出是哪個洞
-  if (!INTRO.on && !CV.c && (++CV.scanN % 20 === 0 || CV.scanNow)) for (const c of CAVES) { const q = caveQ(c, P.x, P.z, null); if (q.s > .3 && q.s < c.L - .3 && Math.abs(q.l) < q.w * .9) { caveEnter(c, q.s < c.L / 2 ? 1 : -1); CV.i = q.i; CV.s = q.s; P.y = q.y; P.vy = 0; break; } } // 山脊上走不到，人在洞的範圍裡一定是在洞裡
+  if (!INTRO.on && !CV.c && (++CV.scanN % 20 === 0 || CV.scanNow)) for (const c of CAVES) { const q = caveQ(c, P.x, P.z, null), inside = q.s > .3 && q.s < c.L - .3 && Math.abs(q.l) < q.w * .9, near = !inside && q.s > 3 && q.s < c.L - 3 && Math.abs(q.l) < q.w + 2.5 && H(P.x, P.z) > q.y + q.h; if (inside || near) { if (near) { const k = (Math.abs(q.l) - Math.max(.15, q.w * .84 - P.r)) * Math.sign(q.l); P.x -= q.nx * k; P.z -= q.nz * k; } caveEnter(c, q.s < c.L / 2 ? 1 : -1); CV.i = q.i; CV.s = q.s; P.y = q.y; P.vy = 0; break; } } // 山脊上走不到，人在洞的範圍裡一定是在洞裡；舊存檔的位置在洞壁外一點點（洞的曲線改過）、頭上又是山體，就拉回洞裡
   if (CV.c && !INTRO.on) { const q = caveQ(CV.c, P.x, P.z, CV.i); if (q.s < -3 || q.s > CV.c.L + 3 || Math.abs(q.l) > q.w + 3) { CV.c = null; } }
   const c = CV.c, s = CV.s; let k = 0, mode = 'out';
   if (c) { k = smooth(1.5, c.sIn, s) * (c.dead ? 1 : 1 - smooth(c.L - c.sIn, c.L - 1.5, s)); mode = s > c.sIn && (c.dead || s < c.L - c.sIn) ? 'deep' : 'mouth'; }
   CV.k = k;
-  if (mode !== CV.mode) {
-    CV.mode = mode; W.cam.layers.mask = mode === 'deep' ? 6 : mode === 'mouth' ? 3 : 1;
+  if (mode !== CV.mode || c !== CV.visC) { // 換到另一個洞但模式沒變（例如從一個洞的深處傳送到另一個洞的深處）也要重算
+    CV.mode = mode; CV.visC = c; W.cam.layers.mask = mode === 'deep' ? 6 : mode === 'mouth' ? 3 : 1;
     CAVES.forEach(o => { o.g.visible = mode === 'out' || o === c; }); // 在洞裡（含洞口那段）只畫目前這個洞
     if (W.sun && !LOW) W.sun.castShadow = mode !== 'deep';
     W.cam.children.forEach(ch => ch.traverse(o => { o.layers.mask = 7; })); if (W.goo && W.goo.im) W.goo.im.layers.mask = 7;
@@ -577,7 +702,7 @@ function caveEnv(dt) {
   // 手（第一人稱）的環境反射：洞裡變暗（不換環境貼圖，避免重新編譯著色器）
   if (Math.abs((CV.envK || 0) - k) > .01) { CV.envK = k; W.cam.traverse(o => { const m = o.material; if (m && 'envMapIntensity' in m) m.envMapIntensity = 1 - .85 * k; }); }
   // 曝光：洞裡眼睛適應黑暗；快到出口時越走越亮，走出去的一瞬間豁然開朗，再慢慢回到正常
-  let ex = 1 + .28 * k;
+  let ex = 1 + (.28 + ((T && T.exp) || 0)) * k;
   if (c && !c.dead) { const toEnd = CV.dir > 0 ? c.L - s : s; ex += .55 * smooth(24, 3, toEnd) * (mode === 'deep' || toEnd < c.sIn ? 1 : 0); }
   if (CV.flash > 0) { CV.flash = Math.max(0, CV.flash - dt * .6); ex += .5 * CV.flash * CV.flash; }
   W.r.toneMappingExposure += (ex - W.r.toneMappingExposure) * Math.min(1, dt * 4);
@@ -588,7 +713,7 @@ function caveEnv(dt) {
     if (o.trailTex) o.trailTex.offset.x = -W.t * .45 * (o === c ? CV.dir : 1);
     if (o !== c && mode !== 'out') continue;
     o.glows.forEach((g, j) => { const e = o.ends[j], d = o === c ? Math.abs((e.s || 0) - s) : 99; g.material.opacity = smooth(4, 16, d) * (1 - .55 * DN.night); });
-    if (o.mat) o.mat.color.setRGB(1 - .3 * DN.night, 1 - .27 * DN.night, 1 - .15 * DN.night);
+    if (o.mat) { const nk = DN.night * (o.dead ? .3 : 1); o.mat.color.setRGB(1 - .3 * nk, 1 - .27 * nk, 1 - .15 * nk); } // 月光洞窟只在夜裡開，不再額外調暗
   }
   caveMoonStep(dt);
 }
@@ -671,7 +796,7 @@ function caveSpawnSlimes() {
     const sp = SPECIES.find(s => s.cave === c.id); if (!sp || c.slimes) return; c.slimes = 0; const max = LOW ? 2 : 3, spots = [];
     if (c.lake) for (let k = 0; k < max; k++) { const a = k / max * Math.PI * 2 + .7, d = c.lake.r + 1.4; spots.push([c.lake.x + Math.cos(a) * d, c.lake.z + Math.sin(a) * d]); } // 月光史萊姆：湖邊
     else { const hs = c.S[c.hallI], hw = c.Wd[c.hallI]; [.3, .5, .74].slice(0, max).forEach((f, k) => { let s = c.sIn + 4 + f * (c.L - 2 * c.sIn - 8); if (Math.abs(s - hs) < hw * .5) s = hs + (k % 2 ? 1 : -1) * hw * .75; // 避開大廳中央的光柱
-        for (const m of c.moss) if (Math.abs(m.s - s) < 3) s += 4; const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), lf = (k % 2 ? .3 : -.3) * c.Wd[i]; spots.push([c.X[i] - c.TZ[i] * lf, c.Z[i] + c.TX[i] * lf]); }); }
+        for (const m of c.moss) if (Math.abs(m.s - s) < 3) s += 4; const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), lf = (k % 2 ? .3 : -.3) * caveW(c, i, k % 2 ? 1 : -1); spots.push([c.X[i] - c.TZ[i] * lf, c.Z[i] + c.TX[i] * lf]); }); }
     spots.forEach(([x, z]) => {
       const m = slimeMesh(sp), sl = newSlime(sp, m, { id: ++W.sid, sc: rnd(.58, .72), zid: 'cave:' + c.id, hx: x, hz: z, x, z, cave: c, ci: 0, shrink: 0, pers: 'calm' });
       sl.ci = caveQ(c, x, z, null).i; m.scale.setScalar(sl.sc); m.userData.body.userData.sl = sl; caveSetLayers(m, 3); W.scene.add(m); W.slimes.push(sl); c.slimes++;
