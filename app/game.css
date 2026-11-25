@@ -541,3 +541,17 @@ body.intro-done #hud > *:not(#vig):not(#log) { animation: hudIn .5s ease both; }
 #introSkip { position: fixed; right: 22px; bottom: calc(7vh + 14px); z-index: 7; color: rgba(255, 255, 255, .78); font-size: 13px; letter-spacing: .08em; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); animation: introHint 2.4s ease-in-out infinite; }
 @keyframes introHint { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 #introFade { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 8; } /* 遮罩：caves.js 每格設 opacity 與顏色（黑幕、雲、出口的白光），和鏡頭同步 */
+
+/* 搭計程車（game.js 的 rideStart）：HUD 讓位給窗外。只留右上角的背包與選單（觸控沒有 Esc，要留一個出口）、對話泡泡、聊天列與第一次的地名字卡；下車時 0.3 秒淡回 */
+body.riding #hud > *:not(#vig):not(#topbtns):not(#talk):not(#chatBar):not(#zoneTitle) { opacity: 0 !important; transition: opacity .4s; pointer-events: none; }
+body.riding #topbtns { opacity: .55; transition: opacity .4s; }
+body.ride-done #hud > *:not(#vig):not(#talk):not(#zoneTitle) { animation: hudIn .3s ease both; }
+/* 觸控：右下角按住開快一點（56 px，避開安全區）；不建搖桿，整個畫面都能拖曳轉頭 */
+#rideFF { display: none; position: fixed; right: 16px; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 16px); width: 56px; height: 56px; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .45); background: rgba(15, 23, 42, .42); color: #fff; place-items: center; padding: 0; z-index: 7; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+#rideFF svg { width: 26px; height: 26px; fill: currentColor; }
+#rideFF:active { background: rgba(15, 23, 42, .62); }
+body.touch.riding #rideFF { display: grid; }
+/* 桌機前 3 趟：起步後右下角淡淡出現 4 秒「按住 空白鍵：開快一點」（樣式同開場的略過提示） */
+#rideHint { position: fixed; right: 22px; bottom: 26px; z-index: 7; color: rgba(255, 255, 255, .78); font-size: 13px; letter-spacing: .08em; pointer-events: none; text-shadow: 0 1px 6px rgba(0, 0, 0, .6); opacity: 0; visibility: hidden; transition: opacity .6s, visibility .6s; }
+#rideHint.on { opacity: 1; visibility: visible; animation: introHint 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { #rideHint.on { animation: none; } }

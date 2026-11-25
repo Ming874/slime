@@ -137,6 +137,7 @@ function fresh() {
     contracts: [], regulars: {}, tier: { live: {}, web: {} }, customers: [], nextId: 1, last: Date.now(), done: false, sound: true, seen: false, sales: 0,
     pos: null, hb: 0, sens: 1, q: null, own: {}, photos: [], cafe: { d: 0, done: false }, mkt: { w: 0, got: [] }, liveBest: 0, vol: { music: .6, sfx: .9 }, quality: 'auto', warm: WARM_MAX, frozen: false, tutDone: false, lineMade: false, farmT: 0, cut: 'thick', cutN: 0, show: [], wk: { w: 0, done: [] }, npc: {}, avatar: 'mint', cave: { seen: {}, mural: {}, moss: { d: 0, n: {} }, mossN: 0 },
     eggs: [], // 找到的「月光谷的小秘密」（彩蛋 id，依發現順序）
+    rideN: 0, // 搭過幾趟計程車（前 3 趟提示「按住開快一點」）
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -187,6 +188,7 @@ function sanitize(o) {
   // 彩蛋：舊存檔沒有這個欄位就是空清單；只留合法的 id（大城市的彩蛋也存在這裡，所以不依登記表過濾）
   s.eggs = [...new Set(arr(s.eggs).filter(k => typeof k === 'string' && /^[\w-]{1,48}$/.test(k)))].slice(0, 300);
   s.tipTalk = clamp(Math.floor(+s.tipTalk) || 0, 0, 9); // 前兩次對話在泡泡下方提示「E 繼續・走開就結束」（talk.js）
+  s.rideN = clamp(Math.floor(+s.rideN) || 0, 0, 99999);
   s.wk = { w: Math.floor(+obj(s.wk).w) || 0, done: arr(obj(s.wk).done).filter(Number.isFinite).slice(0, 10) };
   s.tutDone = !!s.tutDone; s.lineMade = !!s.lineMade; if (!CUTS[s.cut]) s.cut = 'thick'; s.cutN = Math.max(0, Math.floor(+s.cutN) || 0);
   s.farmT = Math.max(0, +s.farmT || 0); if (s.farmT > Date.now()) s.farmT = Date.now();
@@ -206,7 +208,7 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return 
 // 雲端存檔（gate.js 的 SlimeCloud）：每次存檔都通知；'now'＝馬上上傳（買東西、做完加工），'leave'＝頁面要關了
 const cloud = how => { try { if (window.SlimeCloud) SlimeCloud.sync(how); } catch (e) { } };
 function saveCloud() { save(); cloud('now'); }
-function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } }
+function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = RIDE.on && RIDE.safe ? RIDE.safe : { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } } // 搭車中存安全的站位（換邊前＝上車的地方、換邊後＝目的地的下車處），重新整理不會卡在山裡
 
 /* ---------- 經濟公式 ---------- */
 const trend = { sp: null };
@@ -284,7 +286,7 @@ function musicStep(dt) {
   if (!AC || AC.state !== 'running') return; // 瀏覽器規定：玩家第一次點畫面之後才能出聲
   if (master) master.gain.value = .9 * (S.vol ? S.vol.sfx : .9) / .9;
   const want = musicWant(); MUS.want = want;
-  MUS.duck += ((L.on ? .3 : GUI.kind === 'line' ? .55 : TK.on ? .85 : 1) - MUS.duck) * Math.min(1, dt * 2); // 直播時音樂自動降低，讓捏捏聲更清楚；跟人說話時也輕輕降一點（talk.js）
+  MUS.duck += ((L.on ? .3 : GUI.kind === 'line' ? .55 : RIDE.on ? (RIDE.k > .5 ? .2 : .5) : TK.on ? .85 : 1) - MUS.duck) * Math.min(1, dt * 2); // 直播時音樂自動降低，讓捏捏聲更清楚；跟人說話時也輕輕降一點（talk.js）；坐計程車時壓低，鑽進隧道再低一點（換區的交叉淡入在隧道裡幾乎聽不到）
   const vol = (S.vol ? S.vol.music : .6) * MUS.duck * caveMusic(); // 進山洞時配樂淡出（第 4 堂 2.2）
   if (want && !MUS.els[want]) { try { musicEl(want); } catch (e) { MUS.list[want] = null; } }
   // 走到別區附近時先開始下載那一區的曲子（串流，不必整首下載完）
@@ -422,6 +424,7 @@ function swell(t, dur, f, q, vol, type = 'lowpass') {
 const AMB = { t: 1 };
 function ambStep(dt) {
   if (!AC || AC.state !== 'running' || !S.sound || TITLE.on || !P || GUI.kind === 'live') return;
+  if (RIDE.on && RIDE.shut) return; // 坐在計程車裡、車門關著：聽不到外面的鳥叫（下車開門那一刻恢復）
   if ((AMB.t -= dt) > 0) return; if (caveAmb()) return; const t = AC.currentTime, z = W.zoneNow || 'forest', nite = DN.night > .5;
   if (z === 'forest') {
     if (!nite) { const f = rnd(2400, 3600); for (let i = 0, n = 2 + Math.floor(rnd(0, 3)); i < n; i++) sweep(f * rnd(.9, 1.1), f * rnd(1.2, 1.5), t + i * .13, .09, .012); AMB.t = rnd(2.5, 6); }
@@ -476,6 +479,7 @@ const sfx = {
 for (const k of Object.keys(sfx)) { const f = sfx[k]; sfx[k] = (...a) => { try { f(...a); } catch (e) { } }; }
 /* ---------- 訊息紀錄 / 對話框 ---------- */
 function toast(msg) {
+  if (RIDE.on) { RIDE.tq.push(msg); if (RIDE.tq.length > 3) RIDE.tq.shift(); return; } // 搭車中畫面上不跳字，下車後每 600 ms 補一則（rideEnd）
   const box = $('#log'), d = document.createElement('div'); d.className = 'logl'; d.textContent = msg; box.appendChild(d);
   setTimeout(() => d.classList.add('old'), 6000); setTimeout(() => d.remove(), 6700);
   while (box.children.length > 6) box.firstChild.remove();
@@ -871,6 +875,29 @@ function nookH(x, z, h) {
   }
   return h;
 }
+/* ---------- 計程車與月光隧道：資料（谷口的地形雕塑 taxiShape 在 H0 裡呼叫，所以數字放在 H0 前面；程式在「計程車與月光隧道」段落） ----------
+   兩根一模一樣的直管：月光谷那根在南面山腳（谷口），城市那根在大街西端盡頭。車子在月光谷那根往山裡開到 u＝15（第 3 盞燈正下方），
+   換到城市那根的 u＝15、車頭反過來往外開——等於繞 (u＝15, 橫向 0) 轉 180°。管子裡 u∈[0, 30] 對這一點點對稱、鏡頭只畫第 3 層（管子、車、車內）、
+   球形霧 14 m，所以換邊那一格不管往哪裡看都一模一樣。月光谷是世界座標；城市是相對 CITY 的座標（公尺）。 */
+const TAXI = {
+  V: { x: -32, y: -.6, z: 72.8, dx: 0, dz: 1 }, // 谷口：洞口面的路面中心、往山裡的方向（往南）
+  C: { x: -84, y: .04, z: 0, dx: -1, dz: 0 }, // 城市洞口（相對 CITY）：往西；原點抬高 4 cm，管子地板蓋過柏油（.005）與標線（.02）
+  U: 15, LEN: 36, HW: 4.4, WALL: 2.6, TOP: 5.8, DEEP: 6, LAMP: [3, 9, 15, 21, 27, 33],
+  vStand: [-19.6, 19, -Math.PI / 2], vDrop: [-8.9, 20, Math.PI / 2], vOut: [-7.05, 20.75], vLook: [0, 8], // [x, z, 車的 rotation.y]：上車處車頭朝南、下車處車頭朝北（右門朝東對著工坊）
+  cStand: [-28.5, -5.4, Math.PI], cDrop: [-24, 5.4, 0], cOut: [-24.75, 7.55], cOutF: [-27.75, -7.55], cLook: [0, 26], cHosp: [-34, -12.6], // 醫院門口（右門＝北側人行道）、咖啡館前
+  E: [-.62, 1.32, .36], M: [-.62, 1.2, .92], D: [-.62, 1.5, 1.55], // 後座的眼睛、門檻、門外（車的本地座標：+x 車頭、+z 右側；z 乘上哪一側 s）
+};
+const TNL = { raw: false, A: new THREE.Vector4(-32, -.6, 72.8, 6.4), B: new THREE.Vector4(0, 1, 4.6, 6) }; // terrainMat 在谷口挖洞的範圍（比管子大 0.2 m，地形不會和管壁打架）
+// 搭車的狀態（toast、save、keydown 都會讀，所以也放在前面）。ph：board（上車）→ drive（兩段路）→ wait（到站但介面開著）→ alight（下車）
+const RIDE = { on: false, dir: '', ph: '', t: 0, t0: 0, legs: null, li: 0, rate: 1, hk: new Map(), ffT: 0, cab: null, side: 1, ly: .1, lp: -.05, lastYaw: 0, sus: null, head: null, k: 0, u: -99, f0: null, safe: null, stand: null, frozen: false, tq: [], said: {}, evs: [], fz: null, log: null, shut: false, cv: null, held: false, out: false, snap: 0, fast: 0 };
+// 接在 H0 的 nookH 之後（基礎單位，先換成世界座標再比）：谷口前 16 m 整平到路面高度、管子上方墊土（權重同 caveShape），從谷口看進去不會看到地形穿進管子
+function taxiShape(x, z, h) {
+  if (TNL.raw) return h; const V = TAXI.V, xw = x * K - V.x, zw = z * K - V.z, u = xw * V.dx + zw * V.dz, v = Math.abs(xw * V.dz - zw * V.dx);
+  if (u < -21 || u > 47 || v > 18) return h;
+  h += (V.y / K - h) * smooth(-20, -16, u) * (1 - smooth(0, 1.5, u)) * (1 - smooth(7, 11, v));
+  const top = (V.y + TAXI.TOP + 2.4) / K, wt = (1 - smooth(5.6, 10.9, v)) * smooth(1.9, 3.6, u) * (1 - smooth(40, 46, u)); if (h < top) h += (top - h) * wt;
+  return h;
+}
 function H0(x, z) {
   const ax = Math.abs(x), az = Math.abs(z), r = Math.max(ax, az);
   let h = (fbm(x * .045, z * .045, 3) - .45) * 3.2 + (vnoise(x * .2, z * .2, 11) - .5) * .35;
@@ -891,12 +918,13 @@ function H0(x, z) {
   h += smooth(62, 84, -x) * fbm(x * .05, z * .05, 21) * 10;
   // 小場景的地形：池塘與溫泉挖出碗、冰湖與冰屋整平（只動場景附近，見 NOOK_DIG）
   h = nookH(x, z, h);
+  h = taxiShape(x, z, h); // 月光隧道的谷口（計程車鑽進南面山腳）
   // 山洞口：洞口前整平成小平台、洞口後方墊高成山壁（caves.js 的 caveShape）
   if (typeof caveShape === 'function') h = caveShape(x, z, h);
   return h;
 }
 const WS_R = 16, WS_Y = .4;
-function G(x, z) { return CV.c ? caveG(x, z) : H(x, z); } // 玩家腳下：在山洞裡用山洞自己的地面
+function G(x, z) { if (CV.c) return caveG(x, z); const T = TAXI.V, u = (x - T.x) * T.dx + (z - T.z) * T.dz; if (u > -.3 && u < TAXI.LEN && Math.abs((x - T.x) * T.dz - (z - T.z) * T.dx) < TAXI.HW) return T.y; return H(x, z); } // 玩家腳下：在山洞裡用山洞自己的地面；月光隧道的洞口裡是管子的地板（地形在那裡被挖掉了，H 還是山坡的高度）
 
 /* 天空環境光（IBL）：用和天空相同的漸層＋太陽烘焙成 PMREM。
    原本開放世界用的是攝影棚式的暗色環境圖，金屬、水面、史萊姆反射出的是一片深藍黑色，與晴朗的天空不符。
@@ -946,9 +974,9 @@ function initWorld() {
     vertexShader: 'varying vec3 vd; void main(){ vd = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform float night; varying vec3 vd; float h3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); } void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); vec3 sc = mix(vec3(1.0, 0.93, 0.78), vec3(0.78, 0.84, 1.0), night); c += sc * (pow(s, 700.0) * 3.5 * (1.0 - night * 0.3) + pow(s, 48.0) * 0.28 * (1.0 - night * 0.5) + pow(s, 6.0) * 0.07 * (1.0 - night)) * smoothstep(-0.05, 0.05, d.y); float st = step(0.9965, h3(floor(d * 230.0))) * night * smoothstep(0.03, 0.3, d.y); c += vec3(0.85, 0.9, 1.0) * st; c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
-  buildTerrain(); buildCaves(); buildWater(); buildProps(); buildLandmarks(); buildFauna(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
+  buildTerrain(); buildCaves(); buildWater(); buildProps(); buildLandmarks(); buildFauna(); buildWorkshop(); buildCity(); buildTunnel(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
   W.goo = makeGoo(sc); skyEnv(true);
-  initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); W.ready = true; return true;
+  initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); taxiWarm(); W.ready = true; return true;
 }
 /* ---------- 小徑：烘焙成遮罩（地表著色、道具避讓、腳步聲共用） ---------- */
 const MAP_SIZE = 370 * K, PMR = 512, PMASK = new Float32Array(PMR * PMR); let PATH_TEX = null;
@@ -985,7 +1013,10 @@ function bakePaths() {
   const line = (pts, w) => { for (let i = 0; i < pts.length - 1; i++) seg(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], w); };
   PATH_LINES.forEach(l => line(crPts(l), 1.35));
   line(Array.from({ length: 73 }, (_, i) => [Math.cos(i / 72 * PI2) * 18.5, Math.sin(i / 72 * PI2) * 18.5]), 1.4);
-  line(crPts([[-3, 16.5], [-6, 14.5], [-8.6, 12.4]]), 1); line([[0, 15], [0, 18.5]], 1.1);
+  line(crPts([[-3, 16.5], [-5.6, 18.6], [-7.6, 20.2]]), 1); line([[0, 15], [0, 18.5]], 1.1); // 出生點到計程車下車處的小支線
+  // 計程車的碎石路（去程、回程兩條）與空車繞花島北端開回站位的路：道具自動避開、走上去是泥土聲
+  { const L = taxiLegs(), pts = (l, ok) => { const a = []; for (let i = 0; i < l.n; i += 4) if (ok(l.Z[i])) a.push([l.X[i], l.Z[i]]); a.push([l.X[l.n - 1], l.Z[l.n - 1]]); return a; }, out = z => z < TAXI.V.z + 2;
+    line(pts(L[1], out).filter(p => out(p[1])), 3.4); line(pts(L[5], out).filter(p => out(p[1])), 3.4); line(pts(L[6], () => true), 2.8); }
   line(crPts([[GIANT[0] - 22, GIANT[1] - 30], [GIANT[0] - 8, GIANT[1] - 12], [GIANT[0] - 2, GIANT[1] - 3]].map(([x, z]) => [x, z])), .9);
   const u8 = new Uint8Array(PMR * PMR); for (let i = 0; i < u8.length; i++) u8[i] = Math.round(PMASK[i] * 255);
   PATH_TEX = new THREE.DataTexture(u8, PMR, PMR, THREE.RedFormat, THREE.UnsignedByteType); PATH_TEX.magFilter = PATH_TEX.minFilter = THREE.LinearFilter; PATH_TEX.needsUpdate = true;
@@ -1014,14 +1045,17 @@ function terrainMat() {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, metalness: 0 });
   if (!LOW) m.defines = { T_HQ: '' };
   m.onBeforeCompile = sh => {
-    sh.uniforms.uPath = { value: PATH_TEX }; sh.uniforms.uTime = W.wind; sh.uniforms.uCvA = { value: CAVE_UA }; sh.uniforms.uCvB = { value: CAVE_UB };
+    sh.uniforms.uPath = { value: PATH_TEX }; sh.uniforms.uTime = W.wind; sh.uniforms.uCvA = { value: CAVE_UA }; sh.uniforms.uCvB = { value: CAVE_UB }; sh.uniforms.uTnA = { value: TNL.A }; sh.uniforms.uTnB = { value: TNL.B };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 dirt;\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt; vWP = position; vWN = normal;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uPath;\nuniform float uTime;\nuniform vec4 uCvA[8];\nuniform vec4 uCvB[8];\nuniform vec4 uTnA;\nuniform vec4 uTnB;\nvarying vec3 vDirt;\nvarying vec3 vWP;\nvarying vec3 vWN;\n' + GLSL_DETAIL)
       .replace('#include <color_fragment>', `#include <color_fragment>
         // 山洞口：在洞口直段的斷面裡不畫地形（uCvA＝洞口地面中心＋直段長度、uCvB＝往洞裡的方向＋半寬＋高度；斷面形狀同 caves.js 的 caveProfile）
         for (int ci = 0; ci < 8; ci++) { vec4 ca = uCvA[ci]; if (ca.w <= 0.0) continue; vec4 cb = uCvB[ci]; vec2 cr = vWP.xz - ca.xz; float ct = dot(cr, cb.xy); if (ct < 0.0 || ct > ca.w) continue;
           float cl = abs(dot(cr, vec2(-cb.y, cb.x))), cy = (vWP.y - ca.y) / cb.w; if (cy < -0.03 || cy > 0.985) continue;
           float cf = cy < 0.12 ? 0.86 + cy / 0.12 * 0.14 : cy < 0.4 ? 1.0 : sqrt(max(0.0, 1.0 - pow((cy - 0.4) / 0.6, 2.0))); if (cl < cb.z * cf * 0.97) discard; }
+        // 月光隧道的谷口：同一種挖法（斷面同 tubeGeo：直牆到 0.45、上面橢圓拱；uTnA＝洞口地面中心＋挖多深、uTnB＝往山裡的方向＋半寬＋高度）
+        { vec2 tr = vWP.xz - uTnA.xz; float tt = dot(tr, uTnB.xy); if (tt >= 0.0 && tt <= uTnA.w) { float tl = abs(dot(tr, vec2(-uTnB.y, uTnB.x))), ty = (vWP.y - uTnA.y) / uTnB.w;
+          if (ty > -0.03 && ty < 0.985) { float tf = ty < 0.45 ? 1.0 : sqrt(max(0.0, 1.0 - pow((ty - 0.45) / 0.55, 2.0))); if (tl < uTnB.z * tf) discard; } } }
         vec2 wp = vWP.xz; float n1 = tN(wp * 0.85), n2 = tN(wp * 3.3), n3 = tN(wp * 0.11 + 7.0), n4 = tN(wp * 11.0);
         float tDist = distance(vWP, cameraPosition), tNear = 1.0 - smoothstep(28.0, 70.0, tDist);
         vec4 tB = tBiome(wp); float rockK = smoothstep(0.17, 0.42, 1.0 - clamp(normalize(vWN).y, 0.0, 1.0)), soil = 1.0 - rockK;
@@ -1790,6 +1824,7 @@ const nw = k => kk(NOOK[k]);
 // 隨機散布的樹木、岩石不要長在場景裡（世界座標、半徑）；水面上的草叢另外用 nookWet 清掉
 const NOOK_CLEAR = [['pond', 10.5], ['willow', 3], ['ring', 7], ['picnic', 6], ['log', 6], ['rock', 2.4], ['tide', 12], ['boat', 6], ['arch', 7.5], ['conch', 2.2], ['spring', 9], ['obsid', 11], ['tube', 10], ['lake', 16], ['igloo', 6], ['snowmen', 4.5], ['falls', 7], ['icicle', 4]].map(([k, r]) => [...nw(k), r]);
 NOOK_CLEAR.push([-165.5 * K, 38.6 * K, 9]); // 冰瀑整條斜坡
+NOOK_CLEAR.push([-14.25, 21, 9.5], [-32, 64, 12]); // 計程車：花島與空車繞島的路、谷口前（世界座標）
 const nookAvoid = (x, z) => NOOK_CLEAR.some(([cx, cz, r]) => (x - cx) ** 2 + (z - cz) ** 2 < r * r);
 const nookWet = (x, z) => NOOK_DIG.some(p => { const dx = x / K - p.x, dz = z / K - p.z; return dx * dx + dz * dz < (nookR(p, Math.atan2(dz, dx)) + .4) ** 2; })
   || [['log', 4.5], ['igloo', 3.4], ['tube', 6.5]].some(([k, r]) => { const [cx, cz] = nw(k); return (x - cx) ** 2 + (z - cz) ** 2 < r * r; });
@@ -2619,13 +2654,11 @@ function buildWorkshop() {
   W.slotCol.live = { x: BASE.live[0], z: BASE.live[1], r: .55 }; // 只擋住中央的展示柱，舞台本身可以站上去
   W.slotInter.live = addInter(hitBox(3.6, 2.6, 3.6, 0, 1.3, 0, lv), 'station', 'live', '直播台');
   W.slotMark.live = slotMark(g, BASE.live, '直播台空地', '工作電腦網購或大城市器材行', 2.2);
-  // 計程車（出生點左邊）
-  const tx = at(makeTaxi('#facc15', true), BASE.taxi, Math.PI / 2); W.taxiV = tx; // 司機從車窗說話（taxiWho）
-  addCol({ box: [BASE.taxi[0] - 1, BASE.taxi[1] - 2, BASE.taxi[0] + 1, BASE.taxi[1] + 2] });
-  addInter(hitBox(4.2, 2.2, 2, 0, 1, 0, tx), 'station', 'taxi', '計程車'); label('計程車', '#facc15', '前往大城市購買設備', BASE.taxi[0], tx.position.y + 3, BASE.taxi[1]);
+  // 計程車招呼站（出生點左邊的花島）：車子加在場景、不加在工坊群組——它會載你開走、空車再自己開回來（計程車與月光隧道）
+  W.taxiV = makeCab(false); W.scene.add(W.taxiV); cabPark(W.taxiV); buildCabInner(); W.taxiV.add(INNER.g); taxiIsland();
   g.traverse(o => { if (o.isMesh && o.material.visible !== false) { o.castShadow = !LOW; o.receiveShadow = true; } });
   W.neon.forEach(n => MK.dyn.add(n));
-  [pc, chair, bn, dt, lv, camG, tx, W.lineParts.belt, ...W.lineParts.m].forEach(o => mergeStatic(o, MK.dyn));
+  [pc, chair, bn, dt, lv, camG, W.lineParts.belt, ...W.lineParts.m].forEach(o => mergeStatic(o, MK.dyn));
   buildRacks(g); buildCottage(g); refreshBase();
 }
 /* 金屬髮絲紋：沿水平方向的細紋改變粗糙度與明暗，反射天空時有拉絲金屬的質感 */
@@ -3770,13 +3803,18 @@ function bindInput() {
       if (GUI.kind === 'line' && M.active) { if (k === 'Space') { e.preventDefault(); if (!e.repeat) { makeAction('tap'); makeAction('hold', true); } } if (k === 'ArrowLeft' || k === 'KeyA') M.kdir = -1; if (k === 'ArrowRight' || k === 'KeyD') M.kdir = 1; }
       if (k === 'KeyE' && GUI.kind !== 'line' && !e.repeat) closeGui(); return;
     }
+    if (RIDE.on) { // 搭車中：只收「開快一點」與快捷列；移動鍵不進 KEYS，下車那一刻才不會暴衝
+      if (['Space', 'KeyE', 'KeyF', 'Enter'].includes(k)) { e.preventDefault(); if (!e.repeat) RIDE.hk.set(k, performance.now()); }
+      else if (/^Digit[1-9]$/.test(k)) { S.hb = +k.slice(5) - 1; renderHotbar(true); }
+      return;
+    }
     if (TK.cards && (k === 'Digit1' || k === 'Digit2')) { if (!e.repeat) tkPick(+k[5] - 1); return; } // 回話卡舉著時 1、2 是選卡，不切快捷列
     KEYS.add(k); if (k === 'Space') { e.preventDefault(); if (!e.repeat) jump(); }
     if ((k === 'KeyE' || k === 'KeyF') && !e.repeat) { act(); IN.holdE = true; IN.holdT = .55; }
     if (/^Digit[1-9]$/.test(k)) { S.hb = +k.slice(5) - 1; renderHotbar(true); }
   });
-  addEventListener('keyup', e => { KEYS.delete(e.code); if (e.code === 'Space') makeAction('hold', false); if (e.code === 'KeyE' || e.code === 'KeyF') IN.holdE = false; if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) M.kdir = 0; });
-  addEventListener('blur', () => { KEYS.clear(); IN.hold = IN.holdE = false; });
+  addEventListener('keyup', e => { KEYS.delete(e.code); RIDE.hk.delete(e.code); if (e.code === 'Space') makeAction('hold', false); if (e.code === 'KeyE' || e.code === 'KeyF') IN.holdE = false; if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) M.kdir = 0; });
+  addEventListener('blur', () => { KEYS.clear(); RIDE.hk.clear(); IN.hold = IN.holdE = false; });
   cv.addEventListener('contextmenu', e => e.preventDefault());
   cv.addEventListener('wheel', e => { if (GUI.kind) return; S.hb = (S.hb + (e.deltaY > 0 ? 1 : 8)) % 9; renderHotbar(true); }, { passive: true });
   addEventListener('keyup', e => { if (e.code === 'AltLeft' || e.code === 'AltRight') e.preventDefault(); });
@@ -3793,12 +3831,12 @@ function bindInput() {
     if (GUI.kind || TITLE.on) return;
     if (e.pointerType === 'touch') return;
     if (e.pointerType === 'mouse') {
-      if (locked()) { if (e.button === 0 || e.button === 2) { act(); IN.hold = true; IN.holdT = .55; } return; }
+      if (locked()) { if (e.button === 0 || e.button === 2) { act(); IN.hold = true; IN.holdT = .55; IN.hT = performance.now(); } return; } // IN.hT：搭車時判斷「上車之後才按下、按住 0.25 秒」＝開快一點
       IN.drag = { x: e.clientX, y: e.clientY, moved: 0, id: e.pointerId }; lockMouse(); return;
     }
     // 觸控：左下半部為搖桿，其他區域拖曳轉視角、輕點互動
     const w = innerWidth, h = innerHeight;
-    if (!IN.joy && e.clientX < w * .45 && e.clientY > h * .4) { IN.joy = { id: e.pointerId, x0: e.clientX, y0: e.clientY }; const jb = $('#joyBase'); jb.style.left = (e.clientX - 60) + 'px'; jb.style.top = (e.clientY - 60) + 'px'; jb.classList.add('on'); }
+    if (!IN.joy && !RIDE.on && e.clientX < w * .45 && e.clientY > h * .4) { IN.joy = { id: e.pointerId, x0: e.clientX, y0: e.clientY }; const jb = $('#joyBase'); jb.style.left = (e.clientX - 60) + 'px'; jb.style.top = (e.clientY - 60) + 'px'; jb.classList.add('on'); }
     else if (!IN.look) IN.look = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: 0 };
   });
   bindTouch(cv);
@@ -3869,11 +3907,12 @@ function tryMove(dx, dz) {
   if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) { if ((ha - h0) / .7 < .8) barrierMsg(barrierWhy(nx, nz)); return false; }
   if (coldBlocked(nx, nz) && !coldBlocked(P.x, P.z)) { const nw = performance.now(); if (!W.coldT || nw - W.coldT > 4000) { W.coldT = nw; toast('刺骨的寒氣擋住了去路……沒有保暖衣無法進入雪原。' + (armsOpen() ? '到大城市的武器店買一件吧。' : '升到 Lv ' + ARMS_LV + ' 後，大城市會開設武器店。')); } return false; }
   for (const c of colsNear(nx, nz)) {
-    if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (c.gate && GATES[c.gate]) barrierMsg({ coast: '東方', volcano: '北方' }[c.gate] + '能量門還封著：解開「' + GATES[c.gate].title + '」才能通過。'); if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
+    if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (c.gate && GATES[c.gate]) barrierMsg({ coast: '東方', volcano: '北方' }[c.gate] + '能量門還封著：解開「' + GATES[c.gate].title + '」才能通過。'); if (c.msg) barrierMsg(c.msg); if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (c.tree) bumpTree(c); if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
   }
   if (inCity(nx) && W.npcs) for (const n of W.npcs) { const ox = CITY.x + n.x, oz = CITY.z + n.z, ddx = nx - ox, ddz = nz - oz, l = Math.hypot(ddx, ddz), RR = .34 * (n.d.kid || 1) + P.r; if (l < RR) { if (l < 1e-4) return false; nx = ox + ddx / l * RR; nz = oz + ddz / l * RR; } }
-  if (inCity(nx)) { const cx = nx - CITY.x, cz = nz - CITY.z; if (Math.abs(cx) > 70 || cz < -30 || cz > 44) { barrierMsg('這個街區就到這裡了。想回月光谷，到廣場邊搭計程車。'); return false; } }
+  { const b = cabBlock(nx, nz, P.r); nx = b[0]; nz = b[1]; } // 計程車會動，不在靜態的碰撞格子裡
+  if (inCity(nx)) { const cx = nx - CITY.x, cz = nz - CITY.z; if (Math.abs(cx) > 70 || cz < -30 || cz > 44) { barrierMsg(cx < -70 && Math.abs(cz) < 14 ? '前面是回月光谷的隧道，用走的太遠了，搭計程車吧。' : '這個街區就到這裡了。想回月光谷，到醫院門口搭計程車。'); return false; } }
   else if (Math.max(Math.abs(nx), Math.abs(nz)) > 178 * K) return false;
   P.x = nx; P.z = nz; return true;
 }
@@ -3988,7 +4027,7 @@ function pickAt(ndcX, ndcY) {
   const objs = [];
   W.slimes.forEach(s => { if (s.m.visible && Math.hypot(s.x - P.x, s.z - P.z) < 9) objs.push(s.m.userData.body); });
   W.inter.forEach(it => { if (it.off) return; const p = it.wp || (it.wp = it.hit.getWorldPosition(new THREE.Vector3())); if (Math.hypot(p.x - P.x, p.z - P.z) < 14) objs.push(it.hit); }); // 互動物件都是固定的，位置算一次即可
-  AV.forEach(a => { if (a.hb && Math.hypot(a.x - P.x, a.z - P.z) < 8) objs.push(a.hb); });
+  AV.forEach(a => { if (a.hb && a.g.visible && Math.hypot(a.x - P.x, a.z - P.z) < 8) objs.push(a.hb); }); // 正在搭車的朋友（頭像藏起來）不能送凝膠
   if (W.npcs && inCity()) W.npcs.forEach(n => { if (Math.hypot(CITY.x + n.x - P.x, CITY.z + n.z - P.z) < 8) objs.push(n.m.hb); });
   const h = RAY.intersectObjects(objs, false); RAY.far = Infinity; if (!h.length) return null;
   const o = h[0].object; if (o.userData.npc) return { type: 'npc', n: o.userData.npc, d: h[0].distance }; if (o.userData.av) return { type: 'avatar', id: o.userData.av, d: h[0].distance }; if (o.userData.sl) return { type: 'slime', sl: o.userData.sl, d: h[0].distance, pt: h[0].point.clone() };
@@ -4036,8 +4075,8 @@ function finishTutorial() {
   if (S.tutDone) return; S.tutDone = true; const gift = !S.own.slicer; S.own.slicer = true; refreshBase(); objSig = ''; if (W.starterLabel) { dropObj(W.starterLabel); W.starterLabel = null; } gainXP(5); save();
   modal(`<h2>第一個捏捏完成！</h2><p>聽到那聲「喀滋」了嗎？這就是捏捏讓人停不下來的地方。</p>${gift ? '<p>奶奶的倉庫裡還留著一台<b>舊切片機</b>，已經幫你裝到中央平地北邊的<b>加工產線</b>上。用機器做的捏捏更酥脆、更值錢。</p>' : ''}<p><b>接下來</b>：把捏捏<b>賣掉</b> → 存錢 → 在<b>工作電腦的「網購」</b>買更多機器。</p>`, [{ t: '好！' }]);
 }
-function act() { if (GUI.kind || !W.ready) return; if (TK.on && tkKey(TARGET)) return; if (TARGET && TARGET.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(TARGET); } // 對話中：E＝繼續（手不揮）；對著別的東西＝先收起再照常互動
-function actAt(x, y) { const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (TK.on && tkKey(t, true)) return; if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
+function act() { if (RIDE.on || GUI.kind || !W.ready) return; if (TK.on && tkKey(TARGET)) return; if (TARGET && TARGET.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(TARGET); } // 對話中：E＝繼續（手不揮）；對著別的東西＝先收起再照常互動；搭車中點一下沒有作用（按住＝開快一點，rideStep 判斷）
+function actAt(x, y) { if (RIDE.on) return; const t = pickAt(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); if (TK.on && tkKey(t, true)) return; if (t && t.type === 'slime') VM.sq = .2; else VM.swing = .35; doAct(t); }
 function doAct(t) {
   if (!t) return;
   FOCUS = (t.type === 'station' || t.type === 'puzzle') && t.it && t.it.hit ? t.it : null; // 打開介面時鏡頭推近這個物件（surfOf）
@@ -4095,7 +4134,7 @@ function objective() {
   const gel = unlockedSpecies().some(s => (S.gel[s.id] || 0) >= 2);
   if (inCity()) {
     if (!ownAny()) return { t: '購買第一台機器', d: S.money >= OWN.slicer.cost ? '到路北側的「機械行」購買切片機。' : `切片機要 ${fmt(OWN.slicer.cost)}（目前 ${fmt(S.money)}），錢不夠就先回去多賺一點。`, x: CITY.x - 18, z: CITY.z - 13, c: '#22d3ee', n: '機械行', here: '對準機械行的店門' + (TOUCH ? '點擊' : '按 E') + '，購買切片機。' };
-    return { t: '逛逛大城市', d: '商店在路的北側；廣場旁有咖啡館（老闆每天有小訂單）、週末市集與公告欄。買完後搭計程車回月光谷。', x: CITY.x + 7, z: CITY.z + 11.6, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
+    return { t: '逛逛大城市', d: '商店在路的北側；廣場旁有咖啡館（老闆每天有小訂單）、週末市集與公告欄。買完後到醫院門口的招呼站搭計程車回月光谷。', x: CITY.x + TAXI.cStand[0], z: CITY.z - 7.6, c: '#facc15', n: '計程車招呼站', here: '對準計程車' + (TOUCH ? '點擊' : '按 E') + '，回到月光谷。' };
   }
   if (!S.stock.length && !gel && !S.sales) return { t: '採集凝膠', d: '靠近史萊姆，對準後' + (TOUCH ? '點擊' : '按 E 或左鍵') + ' 3 次，收集至少 2 份凝膠。', track: 'slime', c: '#6ee7a8' };
   if (!S.stock.length && !S.sales) return { t: '手作第一個捏捏', d: '回到中央平地，使用「手作台」做出粗製捏捏。', x: BASE.bench[0], z: BASE.bench[1], c: '#fbbf24', n: '手作台', here: '對準手作台' + (TOUCH ? '點擊' : '按 E') + '，用 2 份凝膠做出粗製捏捏。' };
@@ -4866,7 +4905,6 @@ document.addEventListener('click', e => {
     case 'unlist': { const p = S.web.find(q => q.id === +id); if (!p) return; if (S.stock.length >= cap()) return toast('庫存已滿'); S.web = S.web.filter(q => q !== p); S.stock.push(p); renderWeb(); renderHotbar(); save(); break; }
     case 'buyOwn': buyOwn(k); break;
     case 'benchMake': benchMake(); break;
-    case 'taxiGo': taxiRide(); break;
     case 'mapRot': mapRotate(+el.dataset.i); break;
     case 'hint': giveHint(k); break;
     case 'buyUp': { if (!UPS[k]) return; const c = upCost(k); if (S.money < c || S.up[k] >= UPS[k].max || (UPS[k].need && !S.own[UPS[k].need])) return; S.money -= c; S.up[k]++; sfx.level(); toast(`${UPS[k].name} 升到 Lv${S.up[k]}`); (PANEL[tab] ? renderShop(tab) : renderUp()); renderTop(); saveCloud(); break; }
@@ -4885,7 +4923,7 @@ document.addEventListener('click', e => {
     case 'quality': if (['auto', 'high', 'low'].includes(k)) { S.quality = k; applyQuality(true); save(); ui('pause'); toast('畫質：' + { auto: '自動', high: '高', low: '低' }[k]); } break;
     case 'sens': S.sens = (S.sens + 1) % 3; renderTop(); save(); break;
     case 'help': showHelp(); break;
-    case 'home': P.x = 0; P.z = 16; P.y = G(0, 16); P.yaw = 0; closeGui(); toast('已傳送回中央平地入口'); break;
+    case 'home': if (RIDE.on) break; if (inCity()) { closeGui(); setTimeout(() => rideStart('c2v', { seated: true }), HC.fade + 30); } else homeStamp(); break; // 城市：直接坐進招呼站的車走回程；月光谷：筆記本擋著時換位置，不跳 toast
     case 'reset': modal('<h2>重置存檔？</h2><p>所有進度將被清除，無法復原。</p>', [{ t: '取消', ghost: true }, { t: '確定重置', f: newGame }]); break;
   }
 });
@@ -4906,6 +4944,7 @@ const TITLE = { on: false };
 function fmtTime(t) { if (!t) return '—'; const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
 function renderTitle() { ui('title'); } // 主選單由 React 負責（components/stations/Title.tsx）
 function showTitle() {
+  rideAbort(); // 搭車中回主選單：人放回安全的站位、兩台車回站位、霧光曝光圖層還原
   if (GUI.kind) { GUI.kind = null; GUI.focus = null; tab = ''; guiHide(true); }
   if (L.watch) L.watch = null; L.on = false; M.active = false;
   unlockMouse(); TITLE.on = true; TITLE.mp = false; if (VM.g) VM.g.visible = false; IN.hold = IN.holdE = false; document.body.classList.add('titleon'); $('#title').hidden = false; $('#startHint').hidden = true; renderTitle();
@@ -4951,7 +4990,7 @@ const freeSlot = () => { for (let i = 1; i < MAX_SAVES; i++) if (!lsGet(slotKey(
 // 把存檔 slot 換成目前的進度（0＝目前這份）：目前的進度另存到被換掉的位置，再重新載入遊戲
 function switchSave(slot) {
   if (!slot) { startPlay(); return; }
-  save(); const cur = lsGet(SAVE_KEY), pick = lsGet(slotKey(slot)); if (!pick) return;
+  rideAbort(); save(); const cur = lsGet(SAVE_KEY), pick = lsGet(slotKey(slot)); if (!pick) return;
   NOSAVE = true; netLeave(true);
   try { if (cur) localStorage.setItem(slotKey(slot), cur); else localStorage.removeItem(slotKey(slot)); localStorage.setItem(SAVE_KEY, pick); sessionStorage.setItem('squish_autostart', '1'); } catch (e) { NOSAVE = false; toast('切換存檔失敗'); return; }
   if (window.SlimeCloud) SlimeCloud.swapLocal(); location.reload();
@@ -5026,7 +5065,7 @@ const nCol = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : '#22d
 const nCrack = c => Array.isArray(c) ? c.slice(0, 12).map(v => nNum(v, -1, 2)) : null;
 function nPlayer(m) {
   const lv = m.live && typeof m.live === 'object' && m.live.on ? { on: true, hype: Math.round(nNum(m.live.hype, 0, 100)), viewers: Math.round(nNum(m.live.viewers, 0, 1e6)), sp: SP[m.live.sp] ? m.live.sp : null } : null;
-  return { name: nStr(m.name, 12) || '玩家', color: nCol(m.color), x: nNum(m.x, -1e4, 1e4), y: nNum(m.y, -100, 500), z: nNum(m.z, -1e4, 1e4), yaw: nNum(m.yaw, -1e3, 1e3), live: lv, held: typeof m.held === 'string' && /^[pg]\d{1,2}$/.test(m.held) ? m.held : '', show: Array.isArray(m.show) ? m.show.slice(0, 4).filter(x => x && SP[x.sp]).map(x => ({ sp: x.sp, cut: CUTS[x.cut] ? x.cut : null, cr: Math.round(nNum(x.cr, 0, 100)) })) : [] };
+  return { name: nStr(m.name, 12) || '玩家', color: nCol(m.color), x: nNum(m.x, -1e4, 1e4), y: nNum(m.y, -100, 500), z: nNum(m.z, -1e4, 1e4), yaw: nNum(m.yaw, -1e3, 1e3), rd: m.rd ? 1 : 0, live: lv, held: typeof m.held === 'string' && /^[pg]\d{1,2}$/.test(m.held) ? m.held : '', show: Array.isArray(m.show) ? m.show.slice(0, 4).filter(x => x && SP[x.sp]).map(x => ({ sp: x.sp, cut: CUTS[x.cut] ? x.cut : null, cr: Math.round(nNum(x.cr, 0, 100)) })) : [] };
 }
 function nProd(p) {
   if (!p || typeof p !== 'object' || !SP[p.sp]) return null;
@@ -5169,7 +5208,7 @@ const backlog = c => (c.bufferSize || 0) > 40 || (c.dataChannel && c.dataChannel
 function bcast(m, except, rt) { NET.conns.forEach((c, id) => { if (id !== except && c.open && !(rt && backlog(c))) { try { c.send(m); } catch (_) { } } }); }
 function myState() {
   const p = stockById(L.stageId);
-  return { t: 'st', name: NET.name, color: NET.color, x: +(P ? P.x : 0).toFixed(2), y: +(P ? P.y : 0).toFixed(2), z: +(P ? P.z : 0).toFixed(2), yaw: +(P ? P.yaw : 0).toFixed(2), zones: S.zones, live: L.on ? { on: true, hype: Math.round(L.hype), viewers: Math.round(L.viewers), sp: p ? p.sp : null } : null, held: P ? heldKey() : '', show: S.show.map(p => ({ sp: p.sp, cut: p.cut || null, cr: Math.round(effCrisp(p) * 100) })) };
+  return { t: 'st', name: NET.name, color: NET.color, x: +(P ? P.x : 0).toFixed(2), y: +(P ? P.y : 0).toFixed(2), z: +(P ? P.z : 0).toFixed(2), yaw: +(P ? P.yaw : 0).toFixed(2), rd: RIDE.on ? 1 : 0, zones: S.zones, live: L.on ? { on: true, hype: Math.round(L.hype), viewers: Math.round(L.viewers), sp: p ? p.sp : null } : null, held: P ? heldKey() : '', show: S.show.map(p => ({ sp: p.sp, cut: p.cut || null, cr: Math.round(effCrisp(p) * 100) })) };
 }
 function hostRecv(id, m) {
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
@@ -5286,7 +5325,7 @@ function netTick() {
     for (const [id, t] of NET.last) if (now - t > NET_TIMEOUT) { toast('有玩家長時間沒有回應，已移出房間'); dropPlayer(id); }
     NET.players.set(NET.me, Object.assign(nPlayer(myState()), { id: NET.me }));
     if (!NET.conns.size) return;
-    const ps = {}; NET.players.forEach((p, id) => { ps[id] = { name: p.name, color: p.color, x: p.x, y: p.y, z: p.z, yaw: p.yaw, live: p.live, held: p.held, show: p.show }; });
+    const ps = {}; NET.players.forEach((p, id) => { ps[id] = { name: p.name, color: p.color, x: p.x, y: p.y, z: p.z, yaw: p.yaw, rd: p.rd, live: p.live, held: p.held, show: p.show }; });
     bcast({ t: 'ps', p: ps }, null, true);
     // 每位玩家只收到自己附近的史萊姆（原本整張地圖上百隻、每秒廣播 10 次）
     NET.conns.forEach((c, id) => {
@@ -5355,6 +5394,8 @@ function avatarsStep(dt) {
       if (a.heldKey) { const sp = SPECIES[+a.heldKey.slice(1)] || SPECIES[0], mat = new THREE.MeshPhysicalMaterial({ color: sp.color, roughness: .12, clearcoat: 1, transparent: true, opacity: .9 });
         a.hm = mesh(a.heldKey[0] === 'p' ? new THREE.BoxGeometry(.2, .2, .2) : new THREE.SphereGeometry(.11, 14, 10), mat, .42, .95, -.3, a.g); }
     }
+    if (Math.hypot(p.x - a.x, p.z - a.z) > 30) { a.x = p.x; a.y = p.y; a.z = p.z; } // 朋友搭計程車換到另一頭：直接定位，不會「滑過 4 公里」
+    a.g.visible = !p.rd; // 正在搭車：頭像在車門邊消失、到站下車時才出現（這一輪不畫別人的計程車）
     const k = Math.min(1, dt * 10), ox = a.x, oz = a.z; a.x += (p.x - a.x) * k; a.y += (p.y - a.y) * k; a.z += (p.z - a.z) * k;
     let d = p.yaw - a.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); a.yaw += d * k;
     const sp = Math.hypot(a.x - ox, a.z - oz) / Math.max(dt, 1e-3); a.bob += dt * (sp > .4 ? 10 : 0);
@@ -5396,7 +5437,7 @@ function renderLiveOthersOnly() {
 /* ============================================================
    基地、計程車、大城市、商店、手作台、古地圖拼圖、觸控
    ============================================================ */
-const BASE = { line: [0, -9], decor: [-11, 1], live: [11, 1], pc: [4.5, 7], bench: [-4.5, 7], taxi: [-9, 15], shelf: [8.8, 7.4], rack: [-8.8, 7.4], farm: [-14.4, -4.6] };
+const BASE = { line: [0, -9], decor: [-11, 1], live: [11, 1], pc: [4.5, 7], bench: [-4.5, 7], taxi: [-19.6, 19], shelf: [8.8, 7.4], rack: [-8.8, 7.4], farm: [-14.4, -4.6] };
 const OWN = {
   slicer: { name: '切片機', cost: 200, shop: 'mach', desc: '加工產線的第一台機器：看著輸送帶上的史萊姆下刀切片，可選厚塊、薄片、星形、愛心切法。' },
   coater: { name: '糖晶滾筒機', cost: 450, shop: 'mach', desc: '幫捏捏裹上糖晶，提高酥脆度（按住控速）。' },
@@ -5453,20 +5494,130 @@ function refreshBase() {
     if (o.live && !prev.live) deliverFx(W.liveG, BASE.live[0], BASE.live[1], OWN.live.name);
   }
 }
-function makeTaxi(color = '#facc15', sign = true) {
-  const g = new THREE.Group(), yel = std(color, { roughness: .35, metalness: .3 }), dk = std('#111827', { roughness: .3, metalness: .4 }), gl = std('#1e3a5f', { roughness: .08, metalness: .6 }), wh = std('#e5e7eb', { metalness: .6, roughness: .3 });
-  box(3.9, .62, 1.7, yel, 0, .72, 0, g); box(2.1, .6, 1.56, yel, -.2, 1.32, 0, g);
-  [-.79, .79].forEach(z => box(1.9, .4, .02, gl, -.2, 1.36, z, g)); box(.02, .42, 1.42, gl, .86, 1.34, 0, g); box(.02, .42, 1.42, gl, -1.26, 1.34, 0, g);
-  if (sign) box(3.92, .1, 1.72, dk, 0, .92, 0, g);
-  [[1.25, .82], [-1.25, .82], [1.25, -.82], [-1.25, -.82]].forEach(([x, z]) => { const w = cyl(.36, .36, .26, 20, dk, x, .36, z, g); w.rotation.x = Math.PI / 2; const h = cyl(.18, .18, .27, 12, wh, x, .36, z, g); h.rotation.x = Math.PI / 2; });
-  [-.55, .55].forEach(z => { box(.05, .14, .3, glow('#fef9c3'), 1.96, .78, z, g); box(.05, .12, .26, glow('#ef4444'), -1.96, .8, z, g); });
-  if (sign) {
+/* ---------- 計程車：兩頭各一台（月光谷花島西側、城市醫院門口），車內與司機全遊戲一份（INNER），掛在玩家那一頭的車上、換邊時跟著搬 ----------
+   本地座標：+x 車頭、+z 右側、y＝0 地面。座艙（x −1.25～.85）不是實心的：底板、腰線以下的門板、A／B／C 柱與車頂，車窗是真的開口；
+   兩扇後門是以前緣鉸鏈（x＝−.1）為原點的群組，往外往後開 70°；後窗搖下來了，所以玻璃只有前擋、後擋與前門的窗（一個網格）。
+   所有網格在第 0＋3 層：鏡頭鑽進隧道深處只畫第 3 層時，車子、車內、司機照樣看得到。繪製：近 11（車身、燈、燈箱、玻璃、兩扇門＋車內＋司機 4）、遠 6 */
+const INNER = { g: null, fu: null, lam: null, who: null, mir: 0 };
+let CAB_M = null;
+const CAB_W = [[1.25, .82], [1.25, -.82], [-1.25, .82], [-1.25, -.82]]; // 四個輪子（右前、左前、右後、左後）
+const cabBox = (a, w, h, d, c, x, y, z, rx = 0, ry = 0, rz = 0) => a.push([new THREE.BoxGeometry(w, h, d), c, M4(x, y, z, rx, ry, rz)]);
+const cabQuad = q => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([q[0], q[1], q[2], q[0], q[2], q[3]].flatMap(([x, y]) => [x, y, 0]), 3)); return g; };
+function makeCab(city) {
+  if (!CAB_M) { // 兩台車共用車身、燈的材質與 TAXI 燈箱的貼圖
     const c = document.createElement('canvas'); c.width = 256; c.height = 96; const x = c.getContext('2d'); x.fillStyle = '#fef08a'; x.fillRect(0, 0, 256, 96); x.fillStyle = '#111827'; x.font = 'bold 64px Inter,sans-serif'; x.textAlign = 'center'; x.fillText('TAXI', 128, 72);
     const tt = new THREE.CanvasTexture(c); tt.colorSpace = THREE.SRGBColorSpace;
-    box(.75, .28, .32, new THREE.MeshStandardMaterial({ map: tt, emissive: '#fef08a', emissiveIntensity: .4, emissiveMap: tt }), -.2, 1.76, 0, g);
+    CAB_M = { body: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .38, metalness: .25 }), lamp: new THREE.MeshBasicMaterial({ vertexColors: true }), tt };
   }
-  g.traverse(o => { if (o.isMesh) o.castShadow = !LOW; });
+  const g = new THREE.Group(), BP = [], LP = [], GP = [], Y = '#facc15', DK = '#1f2937', B = cabBox;
+  // 引擎蓋、行李箱、底板、前後隔板（座艙是空的）
+  B(BP, 1.1, .62, 1.7, Y, 1.4, .72, 0); B(BP, .7, .62, 1.7, Y, -1.6, .72, 0); B(BP, 2.1, .1, 1.7, DK, -.2, .3, 0); B(BP, .06, .68, 1.6, DK, .85, .69, 0); B(BP, .06, .68, 1.6, Y, -1.25, .69, 0);
+  [-1, 1].forEach(s => {
+    B(BP, .95, .68, .06, Y, .375, .69, s * .82); B(BP, .2, .68, .06, Y, -1.15, .69, s * .82); B(BP, .95, .16, .06, DK, -.575, .33, s * .82); // 前門、後輪上方、後門下面的門檻
+    B(BP, .07, .74, .07, Y, .675, 1.345, s * .8, 0, 0, .507); B(BP, .09, .65, .07, Y, -.1, 1.345, s * .8); B(BP, .07, .7, .07, Y, -1.125, 1.345, s * .8, 0, 0, -.378); // A、B、C 柱
+    [[1.1, 1.4], [.7, -1.6], [.95, .375], [.2, -1.15]].forEach(([w, x]) => B(BP, w, .1, .02, DK, x, .92, s * .86)); // 黑色飾條
+    B(BP, .12, .1, .16, Y, .78, 1.12, s * .96); B(BP, .12, .03, .03, '#cbd5e1', .2, .95, s * .87); // 後照鏡、門把
+    B(LP, .05, .14, .3, '#fef9c3', 1.96, .78, s * .55); B(LP, .05, .12, .26, '#ef4444', -1.96, .8, s * .55); // 大燈、尾燈
+    GP.push([cabQuad([[-.05, 1.05], [.83, 1.05], [.52, 1.63], [-.05, 1.63]]), '#ffffff', M4(0, 0, s * .8)]); // 前門的窗（前緣順著 A 柱）
+  });
+  B(BP, 1.5, .06, 1.64, Y, -.25, 1.69, 0); B(BP, .02, .16, .7, DK, 1.96, .66, 0); // 車頂、水箱罩
+  [1, -1].forEach(s => { B(BP, .02, .1, 1.72, DK, s * 1.96, .92, 0); B(BP, .1, .16, 1.74, '#9ca3af', s * 1.98, .44, 0); B(BP, .02, .12, .34, '#f8fafc', s * 1.99, s > 0 ? .5 : .62, 0); }); // 飾條、保險桿、車牌
+  CAB_W.forEach(([x, z]) => BP.push([new THREE.CylinderGeometry(.36, .36, .26, LOW ? 12 : 18), '#111827', M4(x, .36, z, Math.PI / 2)], [new THREE.CylinderGeometry(.19, .19, .27, 10), '#d1d5db', M4(x, .36, z, Math.PI / 2)])); // 輪子（靜止，併進車身）
+  B(GP, .02, .72, 1.52, '#ffffff', .675, 1.345, 0, 0, 0, .507); B(GP, .02, .68, 1.52, '#ffffff', -1.125, 1.345, 0, 0, 0, -.378); // 前擋、後擋
+  const body = new THREE.Mesh(mergeParts(BP), CAB_M.body), lamp = new THREE.Mesh(mergeParts(LP), CAB_M.lamp);
+  const signM = new THREE.MeshStandardMaterial({ map: CAB_M.tt, emissive: '#fef08a', emissiveMap: CAB_M.tt, emissiveIntensity: .9 }), sign = box(.75, .28, .32, signM, -.2, 1.86, 0);
+  const glassM = new THREE.MeshStandardMaterial({ color: '#2a4566', roughness: .06, metalness: .5, transparent: true, opacity: .35, depthWrite: false, side: THREE.DoubleSide }), glass = new THREE.Mesh(mergeParts(GP), glassM);
+  g.add(body, lamp, sign, glass); body.castShadow = !LOW; body.receiveShadow = true;
+  // 後門：外黃內米色、扶手、窗框；鉸鏈在前緣，a＝0 關、1 開（70°）
+  const doors = [-1, 1].map(s => {
+    const D = [], dg = new THREE.Group(); dg.position.set(-.1, 0, s * .85);
+    B(D, .95, .62, .05, Y, -.475, .72, -s * .025); B(D, .9, .55, .03, '#e7dcc6', -.475, .7, -s * .065); B(D, .5, .05, .07, '#cbbf9f', -.5, .78, -s * .1); B(D, .95, .1, .02, DK, -.475, .92, s * .005);
+    B(D, .85, .04, .04, DK, -.48, 1.62, -s * .03); B(D, .04, .6, .04, DK, -.92, 1.33, -s * .03); B(D, .12, .03, .03, '#cbd5e1', -.25, .95, s * .02);
+    const m = new THREE.Mesh(mergeParts(D), CAB_M.body); m.castShadow = !LOW; dg.add(m); g.add(dg); return { g: dg, s, a: 0, a0: 0, a1: 0, t0: 0, d: 350 };
+  });
+  const it = addInter(hitBox(4.2, 2.2, 2, 0, 1, 0, g), 'station', 'taxi', '計程車');
+  g.traverse(o => { o.layers.mask = 9; });
+  g.userData = { city, st: 'park', doors, signM, glassM, glass, it, wx: 0, wz: 0, c: 1, s: 0, lt: 0, leg: null, p: {}, at: 0, next: '', blink: -1e9, hail: false, wave: -1e9 };
   return g;
+}
+// 車內（米色座椅、儀表板、方向盤、紅色計費表、後照鏡、內飾）與司機福伯：MeshLambert，不受環境貼圖影響（換邊時亮度不會跳）
+function buildCabInner() {
+  const A = [], B = (w, h, d, c, x, y, z, rx, ry, rz) => cabBox(A, w, h, d, c, x, y, z, rx, ry, rz), SEAT = '#efe3c4', DK = '#3b3f46', TRIM = '#ddd3bb', MAT = '#2f343b';
+  [-1, 1].forEach(s => {
+    B(.46, .1, .46, SEAT, .3, .5, s * .36); B(.1, .56, .44, SEAT, -.01, .84, s * .36, 0, 0, .1); B(.08, s > 0 ? .12 : .16, .24, SEAT, -.04, s > 0 ? 1.18 : 1.22, s * .36, 0, 0, .1); // 前座：椅背與頭枕比真車矮一點，後座往前看得到路、也看得到福伯的頭
+    B(.95, .55, .03, TRIM, .375, .7, s * .775); B(.2, .55, .03, TRIM, -1.15, .7, s * .775); // 前門與後輪上方的內飾
+    B(.04, .72, .05, TRIM, .66, 1.345, s * .76, 0, 0, .507); B(.1, .63, .04, TRIM, -.1, 1.345, s * .765); B(.04, .68, .05, TRIM, -1.11, 1.345, s * .76, 0, 0, -.378); // 柱子的內襯
+    B(.55, .02, .5, MAT, .38, .36, s * .36); // 腳踏墊
+  });
+  B(.5, .15, 1.5, SEAT, -.65, .52, 0); B(.12, .7, 1.5, SEAT, -.95, .92, 0, 0, 0, .15); B(.45, .02, 1.3, MAT, -.22, .36, 0); // 後座長椅
+  B(.5, .2, .18, DK, .35, .55, 0); B(.3, .3, 1.6, DK, .78, .88, 0); B(.34, .04, 1.62, '#2b2f36', .76, 1.04, 0); // 中央扶手、儀表板
+  B(.12, .05, .07, '#b91c1c', .72, 1.075, .1); B(.08, .02, .072, '#fca5a5', .72, 1.08, .1); // 紅色 LED 計費表
+  B(.04, .07, .22, DK, .72, 1.52, 0); B(.02, .1, .02, DK, .74, 1.6, 0); B(1.5, .02, 1.6, '#efe8d8', -.25, 1.655, 0); B(.3, .04, 1.6, DK, -1.12, 1.03, 0); // 車內後照鏡、車頂內襯、後擋下的置物板
+  B(.3, .05, .05, DK, .72, .88, -.36, 0, 0, -.45); A.push([new THREE.TorusGeometry(.17, .022, 6, LOW ? 12 : 18), '#2b2f36', new THREE.Matrix4().makeRotationY(-Math.PI / 2).premultiply(new THREE.Matrix4().makeRotationZ(-.45)).setPosition(.6, .95, -.36)]); // 方向盤（左前）
+  const lam = INNER.lam = new THREE.MeshLambertMaterial({ vertexColors: true }), g = INNER.g = new THREE.Group(); g.add(new THREE.Mesh(mergeParts(A), lam));
+  lam.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * 0.3;'); }; lam.customProgramCacheKey = () => 'cabLift'; // 車內在車頂的影子裡、背光的椅背會黑成一片：每個面自己亮 30%（固定值，換邊那一格兩邊一樣）
+  // 司機福伯：成人比例的居民模型改成坐姿（藏起雙腳、身體往下坐進椅子、雙手往前握方向盤），面向車頭；手機藏起手臂
+  const fu = INNER.fu = npcMesh({ id: 'fu', name: '福伯', hair: 'cap', cap: '#1e3a5f', hc: '#9ca3af', skin: '#e8b996', top: '#bfdbfe', bot: '#334155', acc: 'glasses' });
+  fu.lL.visible = fu.lR.visible = false; fu.root.remove(fu.hb); fu.body.position.y = -.33; fu.aL.rotation.x = fu.aR.rotation.x = -1.15; if (LOW) fu.aL.visible = fu.aR.visible = false;
+  fu.root.position.set(.18, .02, -.36); fu.root.rotation.y = Math.PI / 2; g.add(fu.root);
+  g.traverse(o => { o.layers.mask = 9; if (o.isMesh) { o.material = lam; o.castShadow = false; } });
+}
+// 停回站位（建城、換邊、取消搭車、空車開到了）：車身貼地、門關好、可以再叫車
+function cabPark(cab) {
+  const u = cab.userData, st = u.city ? TAXI.cStand : TAXI.vStand; u.st = 'park'; u.leg = null; u.next = ''; u.hail = false; u.it.off = false; u.glass.visible = true;
+  u.doors.forEach(d => { d.a = d.a0 = d.a1 = 0; d.g.rotation.y = 0; }); placeCab(cab, { x: st[0], z: st[1], hd: st[2] + Math.PI / 2 }, null);
+}
+// 把車放到路段上的一點：航向、地面（月光谷四個輪子各取一次高度；城市與管子裡是平的）、車身的俯仰與側傾。
+// sus＝搭車中的二階彈簧（ω 9、ζ .55；加速度造成的俯仰、彎道往外側傾），null＝直接貼地。減少動態：只動位置、不轉角度
+function placeCab(cab, p, sus, dt = 0, acc = 0, alat = 0) {
+  const u = cab.userData, ry = p.hd - Math.PI / 2, c = Math.cos(ry), s = Math.sin(ry), T = u.city ? TAXI.C : TAXI.V, hs = [0, 0, 0, 0], rm = RM();
+  for (let i = 0; i < 4; i++) { const [lx, lz] = CAB_W[i], x = p.x + lx * c + lz * s, z = p.z - lx * s + lz * c, du = (x - T.x) * T.dx + (z - T.z) * T.dz, dv = Math.abs((x - T.x) * T.dz - (z - T.z) * T.dx); hs[i] = du > -.4 && du < TAXI.LEN && dv < TAXI.HW ? T.y : u.city ? 0 : H(x, z); }
+  const y0 = (hs[0] + hs[1] + hs[2] + hs[3]) / 4, pt = rm ? 0 : Math.atan2(hs[0] + hs[1] - hs[2] - hs[3], 5) + .004 * acc, rl = rm ? 0 : clamp(Math.atan2(hs[1] + hs[3] - hs[0] - hs[2], 3.28) - .006 * alat, -.03, .03);
+  let y = y0, rx = rl, rz = pt;
+  if (sus && dt > 0) { const w2 = 81, dmp = 2 * .55 * 9, k = Math.min(dt, .05); sus.vy += (w2 * (y0 - sus.y) - dmp * sus.vy) * k; sus.y += sus.vy * k; sus.vp += (w2 * (pt - sus.p) - dmp * sus.vp) * k; sus.p += sus.vp * k; sus.vr += (w2 * (rl - sus.r) - dmp * sus.vr) * k; sus.r += sus.vr * k; if (rm) sus.p = sus.r = sus.vp = sus.vr = 0; y = sus.y; rx = sus.r; rz = sus.p; } // 減少動態：車身只動位置、永遠不轉角度
+  else if (sus) { sus.y = y0; sus.p = pt; sus.r = rl; sus.vy = sus.vp = sus.vr = 0; }
+  cab.position.set(p.x, y, p.z); cab.rotation.set(rx, ry, rz, 'YZX');
+  u.wx = p.x + (u.city ? CITY.x : 0); u.wz = p.z + (u.city ? CITY.z : 0); u.c = c; u.s = s; u.it.wp = null; cab.updateMatrixWorld(true);
+}
+// 會動的車也要擋人（不能放進靜態的碰撞格子）：點轉到車的本地座標，在車身範圍內就沿最近的邊推出去
+function cabBlock(nx, nz, r) {
+  for (const cab of [W.taxiV, W.taxiC]) {
+    if (!cab || cab.userData.city !== inCity(nx)) continue; const u = cab.userData, dx = nx - u.wx, dz = nz - u.wz, lx = dx * u.c - dz * u.s, lz = dx * u.s + dz * u.c, ax = 1.95 + r, az = .85 + r;
+    if (Math.abs(lx) >= ax || Math.abs(lz) >= az) continue; let px = lx, pz = lz; if (ax - Math.abs(lx) < az - Math.abs(lz)) px = (lx < 0 ? -1 : 1) * ax; else pz = (lz < 0 ? -1 : 1) * az;
+    nx = u.wx + px * u.c + pz * u.s; nz = u.wz - px * u.s + pz * u.c;
+  }
+  return [nx, nz];
+}
+// 玩家（或任何一點）在車的哪一側：本地 z 的正負（+1＝右門）
+function cabSide(cab, x = P.x, z = P.z) { const u = cab.userData, dx = x - u.wx, dz = z - u.wz; return dx * u.s + dz * u.c < 0 ? -1 : 1; }
+// 開關門：a 從目前的角度用 out3 追到目標（delay 毫秒後才開始動）
+function cabDoor(cab, s, open, dur = 350, delay = 0) { const d = cab.userData.doors[s < 0 ? 0 : 1]; d.a0 = d.a; d.a1 = open ? 1 : 0; d.t0 = performance.now() + delay; d.d = dur; }
+// 月光谷的計程車招呼站：出生點左邊一座小花島（石頭邊、矮樹籬圍著一圈小花），西側一塊木牌「計程車招呼站 → 大城市」，畫著一台小計程車
+function taxiIsland() {
+  const P0 = [], cx = -14.1, cz = 21.5, R = 2.9, hz = 3.6, rd = seeded(19), per = 4 * hz + PI2 * R;
+  const at = (s, k = 0) => { s = ((s % per) + per) % per; let x, z, nx, nz; // 跑道形：右邊直線 → 北端半圓 → 左邊直線 → 南端半圓；k＝往內縮幾公尺
+    if (s < 2 * hz) { x = cx + R; z = cz + hz - s; nx = 1; nz = 0; } else if ((s -= 2 * hz) < Math.PI * R) { const a = s / R; nx = Math.cos(a); nz = -Math.sin(a); x = cx + R * nx; z = cz - hz + R * nz; }
+    else if ((s -= Math.PI * R) < 2 * hz) { x = cx - R; z = cz - hz + s; nx = -1; nz = 0; } else { const a = (s - 2 * hz) / R; nx = -Math.cos(a); nz = Math.sin(a); x = cx + R * nx; z = cz + hz + R * nz; }
+    return [x - nx * k, z - nz * k, nx, nz]; };
+  let top = -9; for (let s = 0; s < per; s += 1) { const [x, z] = at(s); top = Math.max(top, H(x, z)); } top += .16;
+  const sh = new THREE.Shape(); for (let i = 0; i <= 48; i++) { const [x, z] = at(i / 48 * per, .12); i ? sh.lineTo(x, -z) : sh.moveTo(x, -z); }
+  P0.push([new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2), '#6aa760', M4(0, top, 0)]); // 島上的草
+  for (let s = 0, i = 0; s < per; s += .5, i++) { const [x, z, nx, nz] = at(s), y0 = H(x, z) - .08; P0.push([new THREE.BoxGeometry(.46, top + .05 - y0, .2), i % 3 ? '#cfc8b8' : '#bdb5a3', M4(x, (top + .05 + y0) / 2, z, 0, Math.atan2(nx, nz), 0)]); } // 石頭邊
+  for (let s = 0, i = 0; s < per; s += .55, i++) { const [x, z] = at(s, .38); P0.push([blobG(.3, i % 5), ['#3f7d3a', '#4a8a40', '#37713a'][i % 3], M4(x, top + .2, z, 0, i, 0, 1, .75, 1)]); } // 矮樹籬
+  const FL = ['#f9a8d4', '#fde047', '#ffffff', '#c4b5fd', '#fb7185'];
+  for (let s = 0, i = 0; s < per; s += .42, i++) { const [x, z] = at(s, 1.0 + rd() * .25); P0.push([sphG(.09, 6, 4), FL[i % 5], M4(x, top + .18 + rd() * .06, z)], [sphG(.07, 5, 3), '#4c8f45', M4(x + .08, top + .08, z - .06)]); } // 一圈小花
+  // 木牌（朝東，車子停在它和花島之間）：兩根柱子＋木板，字畫在另一個貼圖網格
+  const sx = -22.4, sz = 19.6, sy = H(sx, sz);
+  [-.66, .66].forEach(dz => P0.push([new THREE.BoxGeometry(.1, 2.3, .1), '#6b4d33', M4(sx, sy + 1.15, sz + dz)])); P0.push([new THREE.BoxGeometry(.06, .98, 1.62), '#7d5c3a', M4(sx - .01, sy + 1.72, sz)], [new THREE.BoxGeometry(.16, .06, 1.7), '#5b4330', M4(sx, sy + 2.24, sz)]);
+  const m = new THREE.Mesh(mergeParts(P0), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0 })); m.castShadow = !LOW; m.receiveShadow = true; W.scene.add(m);
+  const tex = artTex(512, 290, (g, w, h) => {
+    woodBoard(g, w, h); artText(g, '計程車招呼站', w / 2, 92, 60, '#fef3c7', w - 44); artText(g, '→ 大城市', w / 2 + 64, 188, 50, '#fde047', 290);
+    g.lineJoin = 'round'; g.lineWidth = 5; g.strokeStyle = '#2b1b0e'; const r = (x, y, ww, hh, c) => { g.fillStyle = c; g.beginPath(); g.roundRect ? g.roundRect(x, y, ww, hh, 9) : g.rect(x, y, ww, hh); g.fill(); g.stroke(); };
+    r(70, 172, 80, 30, '#facc15'); r(40, 196, 140, 40, '#facc15'); r(84, 178, 24, 18, '#bfdbfe'); r(114, 178, 24, 18, '#bfdbfe'); r(98, 160, 26, 12, '#fef08a'); // 小計程車
+    g.fillStyle = '#1f2937'; [72, 148].forEach(x => { g.beginPath(); g.arc(x, 238, 14, 0, PI2); g.fill(); g.stroke(); });
+  });
+  const pl = mesh(new THREE.PlaneGeometry(1.52, .86), new THREE.MeshStandardMaterial({ map: tex, roughness: .85, metalness: 0 }), sx + .03, sy + 1.72, sz); pl.rotation.y = Math.PI / 2; W.scene.add(pl);
+  addCol({ box: [cx - R, cz - hz, cx + R, cz + hz] }); addCol({ x: cx, z: cz - hz, r: R }); addCol({ x: cx, z: cz + hz, r: R }); addCol({ x: sx, z: sz, r: .8 }); // 跑道形：中間一個方塊、兩端圓形（回程的車從南端圓角外 1 m 多經過）
 }
 /* ---------- 大城市 ---------- */
 function drawShopSign(c, name, accent, locked) {
@@ -5486,6 +5637,7 @@ function unlockArms() {
    sign＝招牌圖集、glass＝櫥窗玻璃、mark＝路面標線、pool＝路燈下的光暈。
    原本每盞路燈、每棵樹、每條斑馬線都是獨立網格，站在街上一眼望去要三百多次繪製。 */
 let CZ = null;
+const CZ_L = ['det', 'wood', 'glow', 'sign', 'glass', 'mark', 'pool']; // CZ 裡的零件清單（sg、dark 是圖集資料，不是清單）
 const UBOX = new THREE.BoxGeometry(1, 1, 1), UPLN = new THREE.PlaneGeometry(1, 1), GEOC = {};
 const geoC = (k, f) => GEOC[k] || (GEOC[k] = f());
 const cylG = (rt, rb, h, s = 8) => geoC(['c', rt, rb, h, s].join(), () => new THREE.CylinderGeometry(rt, rb, h, LOW ? Math.max(5, Math.ceil(s / 2)) : s)); // 手機的圓柱面數減半
@@ -5855,8 +6007,11 @@ function buildTowers(g, rd) {
   // 大街往東西兩端延伸出去的樓（走不到，讓街道看起來一直延伸到遠方）；最靠近的那兩棟有完整店面
   [-1, 1].forEach(s => [0, 1, 2].forEach(i => {
     const x = s * (76.5 + i * 13), near = i === 0, st = () => rpk(rd, ['brick', 'tile', 'plaster', 'panel', 'ribbon']), cl = () => rpk(rd, ['#ffffff', '#fde2e4', '#e0f2fe', '#fef3c7', '#ecfccb']);
+    // 西端 x＝−89.5、−102.5 這四棟在月光隧道的小山裡：照樣建（cityBldg 裡面會吃 rd，跳過整棟會讓後面的遠景環、街道家具全部換樣子），建完再把它們丟進清單的零件截掉
+    const cut = s < 0 && i > 0 ? { tb: FSTY.map(k => TB[k].length), cz: CZ_L.map(k => CZ[k].length) } : null;
     T({ x, z: -21, w: 12, d: 14, fl: 4 + Math.floor(rd() * 7), sty: st(), col: cl(), near, vs: near ? [s > 0 ? V.game : V.inn] : null, shop: near ? { sign: s > 0 ? H.book : H.noodle, int: s > 0 ? I.book : I.noodle, aw: ['#334155', '#f1f5f9'], kind: s > 0 ? 'book' : 'noodle' } : null });
     T({ x, z: 21, w: 12, d: 14, fl: 3 + Math.floor(rd() * 6), sty: st(), col: cl(), face: -1, near, vs: near ? [s > 0 ? V.beef : V.fried] : null, shop: near ? { sign: s > 0 ? H.dessert : H.salon, int: s > 0 ? I.cafe : I.home, aw: ['#be185d', '#fdf2f8'], kind: s > 0 ? 'dessert' : 'home' } : null });
+    if (cut) { FSTY.forEach((k, j) => TB[k].splice(cut.tb[j]).forEach(geo => geo.dispose())); CZ_L.forEach((k, j) => { CZ[k].length = cut.cz[j]; }); }
   }));
   FSTY.forEach(k => {
     if (!TB[k].length) return; const t = facadeTex(k), m = new THREE.MeshStandardMaterial({ map: t.map, emissive: '#ffffff', emissiveMap: t.emi, emissiveIntensity: .12, roughness: k === 'glass' ? .25 : .85, metalness: k === 'glass' ? .35 : 0, vertexColors: true });
@@ -5993,7 +6148,7 @@ function buildCity() {
   buildTowers(g, rd);
   // 遠景：一圈簡單的大樓（一次繪製）
   { const n = LOW ? 13 : 26, pos = [], nor = [], uv = [], col = [], idx = []; let base = 0; const cc = new THREE.Color();
-    for (let i = 0; i < n; i++) { const a = i / n * PI2, r = 116 + rd() * 30, h = 30 + rd() * 50, bg = new THREE.BoxGeometry(14, h, 14); bg.translate(Math.cos(a) * r, h / 2, Math.sin(a) * r); cc.set(pick(cols));
+    for (let i = 0; i < n; i++) { const a = i / n * PI2, r = 116 + rd() * 30, h = 30 + rd() * 50; if (Math.cos(a) * r < -76 && Math.abs(Math.sin(a) * r) < 75) continue; const bg = new THREE.BoxGeometry(14, h, 14); bg.translate(Math.cos(a) * r, h / 2, Math.sin(a) * r); cc.set(pick(cols)); // 西邊被月光隧道的小山擋住的那幾棟不蓋（r、h 照樣先算，亂數順序不變）
       const P0 = bg.attributes.position, N0 = bg.attributes.normal, U0 = bg.attributes.uv;
       for (let v = 0; v < P0.count; v++) { pos.push(P0.getX(v), P0.getY(v), P0.getZ(v)); nor.push(N0.getX(v), N0.getY(v), N0.getZ(v)); const side = Math.abs(N0.getY(v)) < .5; uv.push(U0.getX(v) * (side ? 3.5 : .1), U0.getY(v) * (side ? h / 7 : .1)); col.push(cc.r, cc.g, cc.b); }
       for (let k = 0; k < bg.index.count; k++) idx.push(bg.index.getX(k) + base); base += P0.count; bg.dispose(); }
@@ -6014,10 +6169,8 @@ function buildCity() {
   shop('gear', 18, 12, '#221d3d', '器材行', '直播設備、裝飾桌', '#e879f9');
   shop('hospital', -34, 11, '#f8fafc', '醫院', '凍僵了來這裡看醫生', '#f87171');
   shop('arms', 35, 11, '#f2e3c6', '武器店', armsOpen() ? '長劍、保暖衣' : 'Lv 5 解鎖營業', '#f87171');
-  // 計程車招呼站（同材質的零件合併；停在人行道路線南邊，散步的居民不會穿過車子）
-  const tx = makeTaxi('#facc15', true); tx.position.set(7, 0, 13.6); g.add(tx); mergeStatic(tx); W.taxiC = tx; addCol({ box: [CITY.x + 5, CITY.z + 12.6, CITY.x + 9, CITY.z + 14.6] });
-  addInter(hitBox(4.2, 2.2, 2, 7, 1, 13.6, g), 'station', 'taxi', '計程車');
-  const tl = textSprite('計程車招呼站', '#facc15', '回到月光谷'); tl.position.set(7, 3.4, 13.6); g.add(tl);
+  // 計程車招呼站在醫院門口（路北側、車頭朝西）；大街西端盡頭是月光隧道的洞口與小山（從廣場往西看一直都看得到回家的路）
+  W.taxiC = makeCab(true); g.add(W.taxiC); cabPark(W.taxiC); cityTunnel(g);
   buildStreet(g, rd);
   buildCityFx(g);
   cityMerge(g); CZ = null;
@@ -6038,7 +6191,7 @@ function buildStreet(g, rd) {
   cityMailbox(-4.6, -9.1, Math.PI, '#15803d', CZ.sg.mailG); cityMailbox(-5.4, -9.1, Math.PI, '#b91c1c', CZ.sg.mailR);
   [[-30.8, -8], [22.2, -8], [-21.5, 8.2], [30, 8.2]].forEach(([x, z]) => cityHydrant(x, z));
   cityBins(-16.5, -9.1, 0); cityBins(15.9, 9.1, Math.PI);
-  [[-30, 4.5, 0, '#ef4444'], [26, -4.5, Math.PI, '#3b82f6'], [40, 4.5, 0, '#e5e7eb'], [-55, -4.5, Math.PI, '#fbbf24']].forEach(([x, z, r, c]) => { cityCar(x, z, r, c); addCol({ box: [CITY.x + x - 2, CITY.z + z - 1, CITY.x + x + 2, CITY.z + z + 1] }); });
+  [[-57, 4.5, 0, '#ef4444'], [26, -4.5, Math.PI, '#3b82f6'], [40, 4.5, 0, '#e5e7eb'], [-55, -4.5, Math.PI, '#fbbf24']].forEach(([x, z, r, c]) => { cityCar(x, z, r, c); addCol({ box: [CITY.x + x - 2, CITY.z + z - 1, CITY.x + x + 2, CITY.z + z + 1] }); });
   cityBikes(58, 9, LOW ? 4 : 6);
   cityParkSE(56.5, 29); cityParkSW(-56.5, 29);
   cityAlley();
@@ -6278,7 +6431,7 @@ function catFollow(c) { c.st = 'follow'; c.ft = 0; c.fd = 0; citySnd.meow(.8); c
 function catPet() { const c = W.cfx.cat; citySnd.purr(); cityBubble(c.m.root, 'heart', .78, 1.8); fx3(new THREE.Vector3(CITY.x + c.x, .9, CITY.z + c.z), '呼嚕呼嚕～', '#fdba74'); c.cd = 0; if (c.st !== 'follow') catFollow(c); }
 // 貓走得到的地方：跟玩家共用碰撞資料（不穿牆、不穿長椅），也不離開街區
 function catFree(x, z) {
-  if (Math.abs(x) > 69 || z < -29.5 || z > 43.5) return false; const wx = CITY.x + x, wz = CITY.z + z, r = .22;
+  if (Math.abs(x) > 69 || z < -29.5 || z > 43.5) return false; const wx = CITY.x + x, wz = CITY.z + z, r = .22, cb = cabBlock(wx, wz, r); if (cb[0] !== wx || cb[1] !== wz) return false; // 計程車（會動，不在碰撞格子裡）
   for (const c of colsNear(wx, wz)) { if (c.box) { const [x0, z0, x1, z1] = c.box; if (wx > x0 - r && wx < x1 + r && wz > z0 - r && wz < z1 + r) return false; } else if (Math.hypot(wx - c.x, wz - c.z) < c.r + r) return false; }
   return true;
 }
@@ -6286,7 +6439,7 @@ function catStep(dt, t, c) {
   const px = P.x - CITY.x, pz = P.z - CITY.z, dx = px - c.x, dz = pz - c.z, d = Math.hypot(dx, dz), m = c.m;
   m.root.visible = d < 55; c.it.off = !m.root.visible; if (!m.root.visible) return;
   let tx = null, tz = null, spd = 0; c.cd = Math.max(0, c.cd - dt);
-  if (c.st === 'sit' && d < 3 && !P.running && c.cd <= 0) catFollow(c);
+  if (c.st === 'sit' && d < 3 && !P.running && !RIDE.on && c.cd <= 0) catFollow(c); // 經過的計程車（裡面坐著你）不會被橘貓跟
   if (c.st === 'follow') {
     c.ft += dt;
     if (d > 12 || c.ft > 35) { c.st = 'rest'; c.rt = rnd(5, 9); c.cd = 6; if (d < 20) citySnd.meow(.5); }
@@ -6296,7 +6449,7 @@ function catStep(dt, t, c) {
   else if (c.st === 'home') {
     const [hx, hz] = CAT_HOME; if (c.z > -13.6 && Math.abs(c.x - hx) > .7) { tx = hx; tz = -12.6; } else { tx = hx; tz = hz; } spd = 1.6;
     if (Math.hypot(hx - c.x, hz - c.z) < .3) { c.st = 'sit'; c.cd = 4; }
-    if (d < 2.4 && !P.running && c.cd <= 0) catFollow(c);
+    if (d < 2.4 && !P.running && !RIDE.on && c.cd <= 0) catFollow(c);
   }
   let mv = 0;
   if (tx != null) { const ex = tx - c.x, ez = tz - c.z, l = Math.hypot(ex, ez); if (l > .08) { const s = Math.min(l, spd * dt), nx = c.x + ex / l * s, nz = c.z + ez / l * s, ox = c.x, oz = c.z; if (catFree(nx, nz)) { c.x = nx; c.z = nz; } else if (catFree(nx, c.z)) c.x = nx; else if (catFree(c.x, nz)) c.z = nz; const moved = Math.hypot(c.x - ox, c.z - oz); mv = moved / Math.max(dt, 1e-3); if (c.st === 'follow') c.fd += moved; c.yaw = lerpAng(c.yaw, Math.atan2(ex, ez), Math.min(1, dt * 7)); } }
@@ -6579,7 +6732,7 @@ const NPC_DEF = [
   { id: 'wang', name: '王阿姨', role: '市集攤販', bye: '慢走喔，下週見！', hair: 'bun', hc: '#44403c', skin: '#e9b892', top: '#f97316', bot: '#57534e', acc: 'apron', apron: '#fef3c7', spot: [28, PLAZA.z - 1.8], face: [28, 10],
     lines: ['來來來，看看喔！這週的凝膠很漂亮喔！', '我在市集擺攤擺了二十年，什麼客人都見過。', '平日我在家準備貨，週末才出來擺攤。', '你奶奶以前也常來我的攤子買材料。', '做生意最重要的是誠實，東西好客人自然會回來。', '下雨天我就用布把攤子蓋起來，等雨停。', '我的攤子每週輪替不同的稀有凝膠，要常來看看喔。', '今天生意還不錯，阿姨請你喝杯茶。', '年輕人有夢想很好，要一步一步來。', '這些凝膠都是從很遠的地方運來的，很珍貴喔。'] },
   { id: 'zhang', name: '張警官', role: '交通警察', bye: '注意安全！', hair: 'cap', hc: '#111827', cap: '#1e3a8a', skin: '#e2ad85', top: '#1e40af', bot: '#1e3a8a', acc: 'vest', spot: [13.5, -9.4], face: [13.5, 0],
-    lines: ['過馬路要走斑馬線喔，注意左右來車。', '這個路口每天早上都很塞。', '我站在這裡十年了，認得這條街上的每一個人。', '計程車招呼站在廣場邊，要回月光谷就去那裡。', '有人說看到史萊姆跑進城裡，結果只是一團綠色塑膠袋。', '晚上巡邏的時候，路燈一盞一盞亮起來，很漂亮。', '安全第一！做捏捏的機器也要注意安全喔。', '不要在街上奔跑，很容易撞到人。', '武器店賣的東西要小心使用，長劍只能收藏喔。', '有任何問題都可以來問我，這是我的工作。'] },
+    lines: ['過馬路要走斑馬線喔，注意左右來車。', '這個路口每天早上都很塞。', '我站在這裡十年了，認得這條街上的每一個人。', '計程車招呼站在醫院門口，要回月光谷就去那裡。', '有人說看到史萊姆跑進城裡，結果只是一團綠色塑膠袋。', '晚上巡邏的時候，路燈一盞一盞亮起來，很漂亮。', '安全第一！做捏捏的機器也要注意安全喔。', '不要在街上奔跑，很容易撞到人。', '武器店賣的東西要小心使用，長劍只能收藏喔。', '有任何問題都可以來問我，這是我的工作。'] },
   { id: 'anna', name: '安娜', role: '觀光客', bye: 'Bye bye！', hair: 'pony', hc: '#facc15', skin: '#f8d9c4', top: '#38bdf8', bot: '#a16207', acc: 'camera', r: 1, o: .45,
     lines: ['Hello！我是從很遠的地方來旅行的。', '這座鐘塔好美，我已經拍了一百張照片。', '我聽說附近有一座會發光的森林，在哪裡呢？', '這裡的人都好親切，每個人都跟我打招呼。', '我想帶一個捏捏回國當紀念品，你有推薦的嗎？', '咖啡館的熱可可是我喝過最好喝的！', '我在旅遊書上看到「史萊姆捏捏」，原來這麼受歡迎。', '週末的市集好熱鬧，我買了好多東西。', '我的中文還在學，說錯了請不要笑我。', '下一站我想去看海，聽說東邊有一座燈塔。'] },
 ];
@@ -6683,10 +6836,12 @@ function npcMesh(d) {
   return { root, body, head, aL, aR, lL, lR, hb };
 }
 function buildNPCs(g) {
-  const ROUTES = [[[-62, -11.7], [62, -11.7], [62, 11.8], [-62, 11.8]], [[-14, PLAZA.z - 1], [0, PLAZA.z - 14.5], [14, PLAZA.z - 1], [0, PLAZA.z + 13.5]], [[-44, 34], [44, 34], [44, 18], [-44, 18]]];
+  // 0 號：西邊改走 x＝−11 的斑馬線過馬路——x < −12.6 的大街留給計程車，車子不會穿過居民
+  const ROUTES = [[[-62, -11.7], [62, -11.7], [62, 11.8], [-62, 11.8], [-11, 11.8], [-11, -11.7]], [[-14, PLAZA.z - 1], [0, PLAZA.z - 14.5], [14, PLAZA.z - 1], [0, PLAZA.z + 13.5]], [[-44, 34], [44, 34], [44, 18], [-44, 18]]];
   const len = r => r.reduce((a, p, i) => a + Math.hypot(r[(i + 1) % r.length][0] - p[0], r[(i + 1) % r.length][1] - p[1]), 0);
   const at = (route, s) => { const L0 = len(route); s = ((s % L0) + L0) % L0; for (let i = 0; i < route.length; i++) { const a = route[i], b = route[(i + 1) % route.length], d = Math.hypot(b[0] - a[0], b[1] - a[1]); if (s <= d) return [a[0] + (b[0] - a[0]) * s / d, a[1] + (b[1] - a[1]) * s / d, Math.atan2(b[0] - a[0], b[1] - a[1])]; s -= d; } return [route[0][0], route[0][1], 0]; };
   const defs = LOW ? NPC_DEF.filter((d, i) => d.spot || i % 3 !== 2) : NPC_DEF;
+  W.routes = ROUTES; // 給驗收：居民路線不會和計程車道交叉
   W.npcs = defs.map((d, i) => {
     const m = npcMesh(d), n = { d, m, x: 0, z: 0, yaw: 0, ph: rnd(0, 6), stop: 0, talk: 0, walk: 0, hy: 0 };
     if (d.spot) { [n.x, n.z] = d.spot; const f = d.face || [0, PLAZA.z]; n.yaw = n.home = Math.atan2(f[0] - n.x, f[1] - n.z); }
@@ -6768,22 +6923,410 @@ function mktBuy(o) {
   if (W.goo) W.goo.emit(new THREE.Vector3(CITY.x + 28, 1.3, CITY.z + PLAZA.z - 4), o.id === 'gel' ? 9 : 6, o.c || '#e2e8f0', { collect: true }); // 買到的東西從攤子飛進手心（跟採集凝膠同一種光點）
   return [{ t: '好眼光！這可是這週才有的喔。', emo: 'star' }];
 }
-// 計程車：司機從你站的那一側的前座車窗說話；「上車」免費、可反悔，所以 E 就能選；接著交給 taxiRide（那一段路由計程車組負責）
-function taxiWho() { const g = inCity() ? W.taxiC : W.taxiV; if (!g) return spotWho('taxi', '司機大叔', [P.x, 2.2, P.z], [P.x, 1.5, P.z]);
-  g.updateMatrixWorld(); const s = g.worldToLocal(tkV.set(P.x, 1, P.z)).z < 0 ? -1 : 1, L = (x, y, z) => g.localToWorld(new THREE.Vector3(x, y, z)).toArray();
-  return spotWho('taxi', '司機大叔', L(.35, 2.15, s * .85), L(.35, 1.4, s * .8), { col: '#fde047', vo: [.85, 30], bye: '要搭車再叫我～' }); }
+/* ============================================================
+   計程車與月光隧道（第 4 堂）：叫車之後到下車之間的那一段路——沒有卡片、沒有黑幕、沒有字卡，鏡頭一路連續，世界照常在動
+   - 叫車：talk.js 的泡泡＋回話卡（taxiAsk）；同時你那一側的後門打開、福伯轉頭看你、車頂燈閃兩下（taxiHail）
+   - 上車（board）：鏡頭走到門外、彎腰鑽進去、坐下（從靠花島的左門上來再挪到右座），門「砰」地關上、方向燈、起步
+   - 開車（drive）：沿碎石路／大街開進月光隧道，在第 3 盞燈正下方、最暗的那一刻換到另一頭（rideSwap），出洞就是目的地
+   - 下車（alight）：靠邊停、右門打開、鏡頭側身挪出去站起來，操作交還；空車自己開回招呼站（taxiStep 的 return）
+   ============================================================ */
+const TAXI_LEGS = []; // 路段編號（網路與存檔用）：1 V_OUT、2 C_IN、3 C_INF（凍僵）、4 C_OUT、5 V_IN、6 V_PARK、7 C_PARK（空車開回站位）
+const TUN_FOG = new THREE.Color('#1b1712'), TUN_HS = new THREE.Color('#ffd9a0'), TUN_HG = new THREE.Color('#2a2420'), CARD_C = new THREE.Color(), RP = {}, RQ = new THREE.Quaternion(), RQ2 = new THREE.Quaternion(), RE = new THREE.Euler(0, 0, 0, 'YXZ'), RO = { y: 0, p: 0 }, RV = new THREE.Vector3(), RV2 = new THREE.Vector3(), AX_Z = new THREE.Vector3(0, 0, 1);
+const Q_SEAT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2); // 鏡頭（往 −z 看）轉成朝車頭（+x）
+let TUBES = [];
+// 路段：控制點 → Catmull–Rom（每段 14 點）→ 重新取樣（約 0.5 m，最後一點剛好是終點）；速度三遍法：曲率限速 √(aLat/κ) → 加速 → 減速；時間表 T（毫秒）給 legS 反查
+function taxiCR(pts, n = 14) { const out = []; for (let i = 0; i < pts.length - 1; i++) { const a = pts[Math.max(0, i - 1)], b = pts[i], c = pts[i + 1], d = pts[Math.min(pts.length - 1, i + 2)]; for (let k = 0; k < n; k++) { const t = k / n, t2 = t * t, t3 = t2 * t; out.push([0, 1].map(j => .5 * (2 * b[j] + (-a[j] + c[j]) * t + (2 * a[j] - 5 * b[j] + 4 * c[j] - d[j]) * t2 + (-a[j] + 3 * b[j] - 3 * c[j] + d[j]) * t3))); } } out.push(pts[pts.length - 1]); return out; }
+const taxiArc = (cx, cz, r, f, n = 20) => Array.from({ length: n + 1 }, (_, i) => f(cx, cz, r, i / n * Math.PI));
+function taxiLeg(dense, city, cap, o = {}) {
+  const acc = [0]; for (let i = 1; i < dense.length; i++) acc.push(acc[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]));
+  const L = acc[acc.length - 1], n = Math.ceil(L / .5) + 1, st = L / (n - 1), F = () => new Float64Array(n), X = F(), Z = F(), Hd = F(), K0 = F(), Ka = F(), Ks = F(), V = F(), T = F();
+  for (let i = 0, j = 0; i < n; i++) { const s = Math.min(L, i * st); while (j < acc.length - 2 && acc[j + 1] < s) j++; const f = (s - acc[j]) / Math.max(1e-9, acc[j + 1] - acc[j]); X[i] = dense[j][0] + (dense[j + 1][0] - dense[j][0]) * f; Z[i] = dense[j][1] + (dense[j + 1][1] - dense[j][1]) * f; }
+  X[n - 1] = dense[dense.length - 1][0]; Z[n - 1] = dense[dense.length - 1][1]; // 終點剛好在 u＝15：換邊的那一點不能差一點點
+  for (let i = 0; i < n; i++) { const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1); Hd[i] = Math.atan2(X[b] - X[a], Z[b] - Z[a]); }
+  for (let i = 1; i < n - 1; i++) { const d = Math.atan2(X[i + 1] - X[i], Z[i + 1] - Z[i]) - Math.atan2(X[i] - X[i - 1], Z[i] - Z[i - 1]); K0[i] = Math.atan2(Math.sin(d), Math.cos(d)) / st; }
+  for (let i = 0; i < n; i++) { let sa = 0, ss = 0, c = 0; for (let j = Math.max(0, i - 6); j <= Math.min(n - 1, i + 6); j++) { sa += Math.abs(K0[j]); ss += K0[j]; c++; } Ka[i] = sa / c; Ks[i] = ss / c; }
+  const aL = o.aLat || 6, ac = o.acc || 3.5, de = o.dec || 4;
+  for (let i = 0; i < n; i++) V[i] = Math.min(cap(X[i], Z[i]), Ka[i] > 1e-4 ? Math.sqrt(aL / Ka[i]) : 99);
+  V[0] = Math.min(V[0], o.v0 || 0); V[n - 1] = Math.min(V[n - 1], o.v1 || 0);
+  for (let i = 1; i < n; i++) V[i] = Math.min(V[i], Math.sqrt(V[i - 1] ** 2 + 2 * ac * st));
+  for (let i = n - 2; i >= 0; i--) V[i] = Math.min(V[i], Math.sqrt(V[i + 1] ** 2 + 2 * de * st));
+  for (let i = 1; i < n; i++) T[i] = T[i - 1] + 2 * st / (Math.max(V[i - 1], .3) + Math.max(V[i], .3)) * 1000;
+  return { X, Z, H: Hd, K: Ks, V, T, n, st, L, city, dur: T[n - 1] };
+}
+function taxiLegs() {
+  if (TAXI_LEGS.length) return TAXI_LEGS; const U = TAXI.U, vz = TAXI.V.z, cx = TAXI.C.x, capV = () => 16, capC = x => x < cx ? 16 : 14, cap5 = () => 5, park = { aLat: 3.5, acc: 2, dec: 2.5 }; // 管子裡 16 m/s：出發那段在 u≈10 前加速完、目的地那段 u≈8 之後才煞車，換邊那一點前後都是等速（頭和車身不會點一下）
+  const uturn = (x0, z0, r) => taxiArc(x0, z0, r, (a, b, rr, t) => [a + rr * Math.sin(t), b + rr * Math.cos(t)]);
+  TAXI_LEGS[1] = taxiLeg(taxiCR([[-19.6, 19], [-19.6, 23], [-18.8, 28], [-18.9, 34.5], [-23.2, 44.4], [-29, 53], [-32.8, 60.5], [-33.75, 66], [-33.75, vz], [-33.75, vz + U / 2], [-33.75, vz + U]]), false, capV, { v1: 16 });
+  TAXI_LEGS[2] = taxiLeg(taxiCR([[cx - U, 1.75], [cx - U / 2, 1.75], [cx, 1.75], [-70, 2], [-50, 2.2], [-36, 2.4], [-30, 3.6], [-26, 5.2], [-24, 5.4]]), true, capC, { v0: 16 });
+  TAXI_LEGS[3] = taxiLeg([...taxiCR([[cx - U, 1.75], [cx - U / 2, 1.75], [cx, 1.75], [-70, 2], [-50, 2.2], [-34, 2.2], [-26, 2.2], [-22, 2.2]]), ...uturn(-22, -1.6, 3.8).slice(1), ...taxiCR([[-22, -5.4], [-25, -5.4], [-28.5, -5.4]], 6).slice(1)], true, capC, { v0: 16 });
+  TAXI_LEGS[4] = taxiLeg(taxiCR([[-28.5, -5.4], [-34, -5.2], [-40, -3.2], [-46, -2.3], [-60, -2.2], [-76, -1.85], [cx, -1.75], [cx - U / 2, -1.75], [cx - U, -1.75]]), true, capC, { v1: 16 });
+  TAXI_LEGS[5] = taxiLeg(taxiCR([[-30.25, vz + U], [-30.25, vz + U / 2], [-30.25, vz], [-30.25, 66], [-29.6, 61], [-26.3, 55.5], [-20.3, 46.6], [-15.1, 37.4], [-12.2, 30.5], [-9.4, 25.5], [-8.9, 22.5], [-8.9, 20]]), false, capV, { v0: 16 });
+  TAXI_LEGS[6] = taxiLeg([...taxiCR([[-8.9, 20], [-8.9, 18.5], [-8.9, 17]], 4), ...taxiArc(-14.25, 17, 5.35, (a, b, r, t) => [a + r * Math.cos(t), b - r * Math.sin(t)]).slice(1), [-19.6, 18], [-19.6, 19]], false, cap5, park);
+  TAXI_LEGS[7] = taxiLeg([...taxiCR([[-24, 5.4], [-22, 5], [-19.5, 4.4]], 6), ...uturn(-19.5, -.5, 4.9).slice(1), ...taxiCR([[-19.5, -5.4], [-24, -5.4], [-28.5, -5.4]], 6).slice(1)], true, cap5, park);
+  return TAXI_LEGS;
+}
+// 路段上第 s 公尺：位置、航向 hd（atan2(dx, dz)；車的 rotation.y＝hd − π/2）、帶正負號的曲率、速度與速度對距離的變化
+function legAt(l, s, o = {}) { const f0 = clamp(s / l.st, 0, l.n - 1), i = Math.min(l.n - 2, Math.floor(f0)), f = f0 - i; let dh = l.H[i + 1] - l.H[i]; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); o.x = l.X[i] + (l.X[i + 1] - l.X[i]) * f; o.z = l.Z[i] + (l.Z[i + 1] - l.Z[i]) * f; o.hd = l.H[i] + dh * f; o.k = l.K[i] + (l.K[i + 1] - l.K[i]) * f; o.v = l.V[i] + (l.V[i + 1] - l.V[i]) * f; o.dv = (l.V[i + 1] - l.V[i]) / l.st; o.s = s; return o; }
+// 時間（毫秒）→ 第幾公尺：沿時間表二分搜尋
+function legS(l, t) { const T = l.T; if (t <= 0) return 0; if (t >= l.dur) return l.L; let a = 0, b = l.n - 1; while (b - a > 1) { const m = (a + b) >> 1; if (T[m] <= t) a = m; else b = m; } return (a + (t - T[a]) / Math.max(1e-9, T[b] - T[a])) * l.st; }
+
+/* ---------- 月光隧道：兩根一模一樣的管子、谷口、城市那頭的洞口與小山 ---------- */
+const tubeArc = (m, n = 16) => Array.from({ length: n + 1 }, (_, i) => { const a = i / n * Math.PI; return [(TAXI.HW + m) * Math.cos(a), TAXI.WALL + (TAXI.TOP - TAXI.WALL + m) * Math.sin(a)]; }); // 拱：右（θ＝0）→ 頂 → 左
+// 管子（兩頭共用一份）：本地 x＝橫向、y＝上、z＝往山裡的深度 u。斷面每段一個顏色（磁磚、青綠腰帶、混凝土、柏油、白邊線），燈光沿 u 烘進頂點色（牆面亮度起伏 ≤ 15%）；
+// 燈在天花板正中、黃色中線每段 3 m 中心對準燈：u∈[0, 30] 對 (u＝15, x＝0) 點對稱（不對稱的東西只能放在 u ≥ 31）。最後 6 m 往黑色漸暗、盡頭封口
+function tubeGeo() {
+  const T = TAXI, arcN = LOW ? 6 : 12, du = LOW ? 1 : .5, CC = {}, pos = [], cols = [];
+  Object.entries({ road: '#3f4450', line: '#e5e7eb', curb: '#8f8a80', walk: '#a8a29e', tile: '#f3ead8', band: '#5fb8a8', conc: '#b9b2a6', mid: '#facc15' }).forEach(([k, v]) => { CC[k] = new THREE.Color(v); });
+  const half = [[.08, 0, 3.64, 0, 'road'], [3.64, 0, 3.76, 0, 'line'], [3.76, 0, 3.8, 0, 'road'], [3.8, 0, 3.8, .2, 'curb'], [3.8, .2, 4.4, .2, 'walk'], [4.4, .2, 4.4, 1.1, 'tile'], [4.4, 1.1, 4.4, 1.3, 'band'], [4.4, 1.3, 4.4, 2.2, 'tile'], [4.4, 2.2, 4.4, T.WALL, 'conc']];
+  for (let i = 0; i < arcN / 2; i++) { const a0 = i / arcN * Math.PI, a1 = (i + 1) / arcN * Math.PI; half.push([T.HW * Math.cos(a0), T.WALL + (T.TOP - T.WALL) * Math.sin(a0), T.HW * Math.cos(a1), T.WALL + (T.TOP - T.WALL) * Math.sin(a1), 'conc']); }
+  const segs = [...half, ...half.map(([x0, y0, x1, y1, c]) => [-x0, y0, -x1, y1, c]), [-.08, 0, .08, 0, 'mid']];
+  const lit = u => (.8 + .2 * T.LAMP.reduce((a, lu) => a + Math.exp(-(((u - lu) / 2.2) ** 2)), 0)) * (1 - smooth(30, 36, u)), put = (x, y, z, c, k) => { pos.push(x, y, z); cols.push(c.r * k, c.g * k, c.b * k); };
+  for (let u0 = 0; u0 < T.LEN - 1e-6; u0 += du) {
+    const u1 = Math.min(T.LEN, u0 + du), k0 = lit(u0), k1 = lit(u1), um = (u0 + u1) / 2 % 6, dash = um > 1.5 && um < 4.5;
+    for (const [x0, y0, x1, y1, ck] of segs) { const c = CC[ck === 'mid' && !dash ? 'road' : ck]; put(x0, y0, u0, c, k0); put(x1, y1, u0, c, k0); put(x1, y1, u1, c, k1); put(x0, y0, u0, c, k0); put(x1, y1, u1, c, k1); put(x0, y0, u1, c, k1); }
+  }
+  const lampC = new THREE.Color('#ffd28a'); T.LAMP.forEach(lu => { const g = new THREE.BoxGeometry(1, .12, .35).toNonIndexed().translate(0, T.TOP - .1, lu), p = g.attributes.position; for (let i = 0; i < p.count; i++) put(p.getX(i), p.getY(i), p.getZ(i), lampC, 1.8 * (1 - smooth(30, 36, lu))); g.dispose(); }); // 燈具
+  const rim = [[-T.HW, 0], [T.HW, 0], ...tubeArc(0)], blk = new THREE.Color('#000000'); for (let i = 0; i < rim.length; i++) { const a = rim[i], b = rim[(i + 1) % rim.length]; put(0, T.WALL * .6, T.LEN, blk, 1); put(a[0], a[1], T.LEN, blk, 1); put(b[0], b[1], T.LEN, blk, 1); } // 盡頭封口
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); geo.computeBoundingSphere(); return geo;
+}
+function tubeShape(m) { const s = new THREE.Shape(); s.moveTo(-(TAXI.HW + m), 0); s.lineTo(TAXI.HW + m, 0); tubeArc(m).forEach(([x, y]) => s.lineTo(x, y)); s.closePath(); return s; }
+// 兩根管子（第 0＋3 層：從外面看得到洞口裡面，鏡頭只畫第 3 層時也看得到）＋出口亮光卡（只在第 3 層，不搭車的人永遠看不到）＋谷口；光源也開第 3 層
+function buildTunnel() {
+  const geo = tubeGeo(), mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }), cardGeo = new THREE.ShapeGeometry(tubeShape(0));
+  mat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <fog_vertex>', '#ifdef USE_FOG\n\tvFogDepth = length( mvPosition.xyz );\n#endif'); }; mat.customProgramCacheKey = () => 'tubeFog'; // 霧用距離、不用深度：轉頭看側後方時，管子深處 14 m 外也是純霧色
+  TUBES = [['V', W.scene, TAXI.V, 'forest'], ['C', W.city, TAXI.C, 'coast']].map(([k, par, o, zone]) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(o.x, o.y, o.z); m.rotation.y = Math.atan2(o.dx, o.dz); m.layers.mask = 9; par.add(m);
+    const card = new THREE.Mesh(cardGeo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false, fog: false, toneMapped: false })); card.position.z = .2; card.layers.mask = 8; card.visible = false; card.renderOrder = 3; m.add(card);
+    return { k, m, card, o, zone, wx: o.x + (k === 'C' ? CITY.x : 0), wz: o.z + (k === 'C' ? CITY.z : 0) };
+  });
+  valleyPortal(); W.anim.push(taxiStep);
+  W.sun.layers.enable(3); W.hemi.layers.enable(3); // 光源也在第 3 層：鏡頭只畫第 3 層時光源數量不變，材質不會重新編譯
+}
+// 谷口：暖灰石塊的頭牆（中央 8.6 m 往兩側降到 5 m，順著山坡）、淺色拱框、頂上收邊、往外 30° 的翼牆、兩盞石燈籠與「月光隧道」石匾；洞口裡一道擋板
+function valleyPortal() {
+  const V = TAXI.V, g = new THREE.Group(); g.position.set(V.x, V.y, V.z); g.rotation.y = Math.atan2(V.dx, V.dz); W.scene.add(g);
+  const P0 = [], GL = [], rd = seeded(23), HW = TAXI.HW + .06, AH = TAXI.TOP - TAXI.WALL + .06, B = (w, h, d, c, x, y, z, rz = 0, j = 0) => P0.push([j ? jit(new THREE.BoxGeometry(1, 1, 1), j, rd() * 99 | 0) : new THREE.BoxGeometry(1, 1, 1), c, M4(x, y, z, 0, 0, rz, w, h, d)]);
+  const TOP = [[7, 5], [5, 6.6], [2.5, 8.1], [0, 8.6], [-2.5, 8.1], [-5, 6.6], [-7, 5]], topY = x => { const a = Math.abs(x); return a < 2.5 ? 8.6 - .2 * a : a < 5 ? 8.1 - .6 * (a - 2.5) : 6.6 - .8 * (a - 5); };
+  const inArch = (x, y, m) => y < TAXI.WALL ? Math.abs(x) < HW + m : (x / (HW + m)) ** 2 + ((y - TAXI.WALL) / (AH + m)) ** 2 < 1;
+  // 牆身：拱形缺口的外輪廓擠出 3.2 m 厚（後半段埋進山裡），縫隙看起來像灰縫
+  const sh = new THREE.Shape(); sh.moveTo(-7, -.6); sh.lineTo(-HW, -.6); [...tubeArc(.06)].reverse().forEach(([x, y]) => sh.lineTo(x, y)); sh.lineTo(HW, -.6); sh.lineTo(7, -.6); TOP.forEach(([x, y]) => sh.lineTo(x, y)); sh.closePath();
+  P0.push([new THREE.ExtrudeGeometry(sh, { depth: 3.2, bevelEnabled: false, curveSegments: 1 }).translate(0, 0, -.4), '#85776a', null]);
+  const SC = ['#c6b297', '#b5a185', '#d1bf9f', '#aa977e', '#bfab8e']; // 暖灰石塊（天光偏藍，顏色要比想像的再暖一點）
+  for (let r = 0; r < 16; r++) { const y0 = r * .55, y1 = y0 + .5, off = r % 2 ? .55 : 0; // 石塊（交丁砌），拱框與牆頂附近讓開
+    for (let x0 = -7 - off; x0 < 7; x0 += 1.1) { const xa = Math.max(-7, x0 + .03), xb = Math.min(7, x0 + 1.07), xc = (xa + xb) / 2; if (xb - xa < .3 || y1 > topY(xc) - .1 || [[xa, y0], [xb, y0], [xa, y1], [xb, y1]].some(([x, y]) => inArch(x, y, .78))) continue; B(xb - xa, .5, .14, SC[rd() * SC.length | 0], xc, y0 + .25, -.47, 0, .07); } }
+  for (let i = 0; i < 3; i++) [-1, 1].forEach(s => B(.7, .84, .22, '#efe4cf', s * (HW + .37), i * .87 + .42, -.51, 0, .05)); // 拱框：直牆的部分
+  const NA = 11, ax = HW + .37, ay = AH + .37;
+  for (let i = 0; i < NA; i++) { const a = (i + .5) / NA * Math.PI, key = i === (NA - 1) / 2; B(key ? 1 : 1.18, key ? .95 : .72, key ? .3 : .22, key ? '#f6ecd8' : '#efe4cf', ax * Math.cos(a), TAXI.WALL + ay * Math.sin(a), key ? -.55 : -.51, Math.atan2(ay * Math.cos(a), -ax * Math.sin(a)), .05); } // 拱框：拱石與拱心石
+  for (let i = 0; i < TOP.length - 1; i++) { const [x0, y0] = TOP[i], [x1, y1] = TOP[i + 1]; B(Math.hypot(x1 - x0, y1 - y0) + .25, .32, 3.5, '#ddd0b9', (x0 + x1) / 2, (y0 + y1) / 2 + .1, 1.2, Math.atan2(y1 - y0, x1 - x0)); } // 頂上收邊
+  [-1, 1].forEach(s => { const th = s > 0 ? Math.PI / 6 : 5 * Math.PI / 6, dx = Math.cos(th), dz = -Math.sin(th); // 翼牆：往外 30°、6 m 長、高度往外遞減
+    [4.6, 3.4, 2.2].forEach((h, j) => { const d = j * 2 + 1, x = s * 7 + dx * d, z = -.4 + dz * d; P0.push([jit(new THREE.BoxGeometry(1, 1, 1), .05, 40 + j + (s > 0 ? 9 : 0)), '#b4a189', M4(x, h / 2 - .3, z, 0, th, 0, 2.05, h + .6, .8)], [new THREE.BoxGeometry(1, 1, 1), '#ddd0b9', M4(x, h + .1, z, 0, th, 0, 2.1, .25, .95)]); addCol({ x: V.x + x, z: V.z + z, r: 1 }); }); });
+  [-1, 1].forEach(s => { const x = s * 5.3, z = -2.4; B(.55, .85, .55, '#9a8f80', x, .42, z, 0, .04); [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => P0.push([new THREE.BoxGeometry(.07, .42, .07), '#8a8072', M4(x + a * .2, 1.06, z + b * .2)])); // 石燈籠（自發光，不加光源）
+    P0.push([new THREE.ConeGeometry(.46, .34, 4), '#8a8072', M4(x, 1.45, z, 0, Math.PI / 4, 0)], [sphG(.07, 6, 4), '#8a8072', M4(x, 1.66, z)]); GL.push([new THREE.BoxGeometry(.34, .34, .34), '#ffd28a', M4(x, 1.06, z)]); addCol({ x: V.x + x, z: V.z + z, r: .4 }); });
+  const m = new THREE.Mesh(mergeParts(P0), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .92, metalness: 0 })); m.castShadow = !LOW; m.receiveShadow = true; g.add(m);
+  g.add(new THREE.Mesh(mergeParts(GL), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  const tex = artTex(512, 148, (c, w, h) => { const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#dcd5c6'); gr.addColorStop(1, '#c2b9a8'); c.fillStyle = gr; c.fillRect(0, 0, w, h); c.strokeStyle = '#8c8272'; c.lineWidth = 8; c.strokeRect(6, 6, w - 12, h - 12);
+    c.font = '700 92px ' + ART_FONT; c.fillStyle = 'rgba(255,255,255,.6)'; c.fillText('月光隧道', w / 2 + 2, 110, w - 60); c.fillStyle = '#4a4238'; c.fillText('月光隧道', w / 2, 107, w - 60); }); // 石匾：刻字（亮邊＋深色字）
+  const pq = mesh(new THREE.PlaneGeometry(3.3, .95), new THREE.MeshStandardMaterial({ map: tex, roughness: .9, metalness: 0 }), 0, 7.25, -.62, g); pq.rotation.y = Math.PI;
+  addCol({ box: [V.x - 7.2, V.z - .6, V.x - HW, V.z + 2.8] }); addCol({ box: [V.x + HW, V.z - .6, V.x + 7.2, V.z + 2.8] });
+  addCol({ box: [V.x - 4.6, V.z + .6, V.x + 4.6, V.z + 1.2], msg: '隧道很長，用走的會走到天黑——搭計程車吧。' }); // 行人擋板
+}
+// 城市那頭：大街西端盡頭的擋土牆（爬藤、青綠磁磚拱框、月牙與鐘塔的馬賽克）＋後面的小山（空心的殼，管子在裡面）。從廣場往西看，一直都看得到回家的路
+function cityTunnel(g) {
+  const C = TAXI.C, w = new THREE.Group(); w.position.set(C.x, 0, C.z); w.rotation.y = Math.atan2(C.dx, C.dz); g.add(w);
+  const P0 = [], rd = seeded(41), HW = TAXI.HW + .06, AH = TAXI.TOP - TAXI.WALL + .06, B = (ww, h, d, c, x, y, z, rz = 0, j = 0) => P0.push([j ? jit(new THREE.BoxGeometry(1, 1, 1), j, rd() * 99 | 0) : new THREE.BoxGeometry(1, 1, 1), c, M4(x, y, z, 0, 0, rz, ww, h, d)]);
+  const sh = new THREE.Shape(); sh.moveTo(-30, -.6); sh.lineTo(-HW, -.6); [...tubeArc(.06)].reverse().forEach(([x, y]) => sh.lineTo(x, y + C.y)); sh.lineTo(HW, -.6); sh.lineTo(30, -.6); sh.lineTo(30, 12); sh.lineTo(-30, 12); sh.closePath();
+  P0.push([new THREE.ExtrudeGeometry(sh, { depth: 1.4, bevelEnabled: false, curveSegments: 1 }).translate(0, 0, -.05), '#a69d8f', null]);
+  B(60.6, .45, 1.8, '#cfc7b8', 0, 12.1, .6); for (let x = -27; x <= 27; x += 6) if (Math.abs(x) > 7) B(.7, 12, .3, '#b4ab9c', x, 6, -.15); // 頂上收邊、壁柱
+  for (let i = 0; i < 4; i++) [-1, 1].forEach(s => B(.5, .62, .12, i % 2 ? '#5fb8a8' : '#f3ead8', s * (HW + .28), i * .66 + .33 + C.y, -.12)); // 拱框：直牆的磁磚
+  const NA = 17; for (let i = 0; i < NA; i++) { const a = (i + .5) / NA * Math.PI; B(.82, .55, .12, i % 2 ? '#5fb8a8' : '#f3ead8', (HW + .28) * Math.cos(a), TAXI.WALL + C.y + (AH + .28) * Math.sin(a), -.12, Math.atan2((AH + .28) * Math.cos(a), -(HW + .28) * Math.sin(a))); } // 拱框：拱上的磁磚
+  // 月牙與鐘塔的馬賽克（x 反過來排：這面牆的本地 +x 在看的人左手邊）
+  const MOS = ['.....r......', '....rrr..*..', '..y.ggg.....', '.yy.gwg.....', '.y..ggg..*..', '.y..ggg.....', '.yy.ggg.....', '..y.ggg.*...', '...ggggg....'], MC = { '.': '#24427a', r: '#e05a4f', y: '#fde68a', g: '#9aa5b5', w: '#f8fafc', '*': '#fff3b0' };
+  B(4.3, 3.36, .1, '#e9e2d2', 0, 8.6, -.1); MOS.forEach((row, r) => [...row].forEach((ch, c) => B(.3, .3, .06, MC[ch], (5.5 - c) * .32, 10.04 - .16 - r * .32, -.17)));
+  for (let i = 0; i < (LOW ? 8 : 14); i++) { const x = -28 + rd() * 56; if (Math.abs(x) < 7.5) continue; let y = 12, sx = x; const n = 3 + (rd() * 8 | 0); for (let j = 0; j < n; j++) { sx += (rd() - .5) * .3; P0.push([blobG(.34, i + j), ['#4f8a3e', '#5f9b48', '#3f7a35'][j % 3], M4(sx, y, -.12, 0, j, 0, 1, 1.1, .5)]); y -= .45; } } // 爬藤
+  const m = new THREE.Mesh(mergeParts(P0), new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .9, metalness: 0 })); m.receiveShadow = true; w.add(m);
+  // 小山：半橢球（中心 (−140, 0)、半軸 x 60、高 34、z 80），x > −84.2 的頂點壓平到牆面、整片壓平的三角面拿掉（被擋土牆蓋住）；外緣往下裙到 −1 m；顏色依坡度從草綠到岩石
+  const sg = new THREE.SphereGeometry(1, LOW ? 22 : 34, LOW ? 8 : 12, 0, PI2, 0, Math.PI / 2).toNonIndexed(), p = sg.attributes.position, keep = [];
+  for (let i = 0; i < p.count; i++) { const oy = p.getY(i); let x = p.getX(i) * 60 - 140, y = oy * 34; const z = p.getZ(i) * 80; y = oy < 1e-3 ? -1 : y * (.9 + .2 * vnoise(x * .06, z * .06, 61)); if (x > -84.2) x = -84.2; p.setXYZ(i, x, y, z); }
+  for (let i = 0; i < p.count; i += 3) if (!(p.getX(i) >= -84.21 && p.getX(i + 1) >= -84.21 && p.getX(i + 2) >= -84.21)) keep.push(i);
+  const pos = new Float32Array(keep.length * 9), col = new Float32Array(keep.length * 9), c1 = new THREE.Color('#7cb35f'), c2 = new THREE.Color('#5e8f4a'), c3 = new THREE.Color('#8d877b'), tc = new THREE.Color();
+  keep.forEach((i, k) => { for (let j = 0; j < 3; j++) pos.set([p.getX(i + j), p.getY(i + j), p.getZ(i + j)], k * 9 + j * 3); }); sg.dispose();
+  const hg = new THREE.BufferGeometry(); hg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); hg.computeVertexNormals(); const nr = hg.attributes.normal;
+  for (let i = 0; i < nr.count; i++) { tc.copy(c2).lerp(c1, hashN(i / 3 | 0, 7, 3)).lerp(c3, smooth(.75, .45, nr.getY(i))); col.set([tc.r, tc.g, tc.b], i * 3); }
+  hg.setAttribute('color', new THREE.BufferAttribute(col, 3)); hg.computeBoundingSphere();
+  const hill = new THREE.Mesh(hg, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: .95, metalness: 0 })); hill.receiveShadow = true; g.add(hill);
+}
+// 開機時把隧道與車內的著色器先編譯好（載入畫面蓋住卡頓）：鏡頭暫時看全部圖層、亮光卡打開
+function taxiWarm() {
+  const m0 = W.cam.layers.mask; try { W.cam.layers.mask = 15; TUBES.forEach(T => { T.card.visible = true; }); W.r.compile(W.scene, W.cam); } catch (e) { } TUBES.forEach(T => { T.card.visible = false; }); W.cam.layers.mask = m0;
+  // 陰影的深度著色器（雙面的樹叢、會隨風擺的植物）只在第一次畫進陰影貼圖時才編譯：從城市出發的話，第一次在月光谷出洞那一格會卡一下。
+  // 開機時在兩頭的洞口與下車處各畫一格（compile 不會編譯陰影用的材質；shadowMap.render 不能單獨呼叫），載入畫面蓋著看不到
+  if (LOW || !W.sun.castShadow) return; const cp = W.cam.position.clone(), cq = W.cam.quaternion.clone(), cv = W.city.visible;
+  try { for (const [x, z, city] of [[TAXI.V.x, TAXI.V.z - 10, false], [-8.9, 20, false], [CITY.x + TAXI.C.x + 10, CITY.z, true], [CITY.x - 24, CITY.z + 5, true]]) {
+    cullChunks({ x, z }); W.city.visible = city; const y = city ? 0 : H(x, z); W.sun.target.position.set(x, y, z); W.sun.position.copy(W.sun.target.position).addScaledVector(SUN_D, 66); W.sun.updateMatrixWorld(); W.sun.target.updateMatrixWorld();
+    W.cam.position.set(x, y + 1.6, z); W.cam.lookAt(x + 1, y + 1.4, z + 1); W.cam.updateMatrixWorld(); W.r.shadowMap.needsUpdate = true; W.r.render(W.scene, W.cam); } } catch (e) { console.warn(e); }
+  W.cam.position.copy(cp); W.cam.quaternion.copy(cq); W.city.visible = cv; cullChunks(P); W.r.shadowMap.needsUpdate = true;
+}
+// 第一次叫車：目的地那一頭的貼圖排隊，taxiStep 每格上傳一張（出洞那一格不會因為上傳貼圖卡住）
+function taxiPrewarm(toCity) {
+  if (!W.r.initTexture || (W.twarm = W.twarm || {})[toCity]) return; W.twarm[toCity] = 1; const q = W.taxiWarmQ = W.taxiWarmQ || [], seen = new Set();
+  const take = o => { if (!toCity && o === W.city) return false; [].concat(o.material || []).forEach(m => ['map', 'emissiveMap', 'alphaMap', 'roughnessMap'].forEach(k => { const t = m[k]; if (t && t.isTexture && !seen.has(t)) { seen.add(t); q.push(t); } })); return true; };
+  const walk = o => { if (take(o)) o.children.forEach(walk); }; walk(toCity ? W.city : W.scene);
+}
+// 每格（W.anim）：車內與司機掛在玩家那一頭的車上、近遠切換、玻璃、燈箱、門、司機的頭、下車後關門與空車開回站位
+function taxiStep(dt, t) {
+  if (!W.taxiV || !W.taxiC || !INNER.g || !P) return; const now = performance.now(), cp = W.cam.position, cityP = inCity(TITLE.on || INTRO.on ? cp.x : P.x);
+  if (W.taxiWarmQ && W.taxiWarmQ.length) { try { W.r.initTexture(W.taxiWarmQ.shift()); } catch (e) { } }
+  for (const cab of [W.taxiV, W.taxiC]) {
+    const u = cab.userData, ride = RIDE.on && RIDE.cab === cab, mine = ride || (!RIDE.on && u.city === cityP);
+    if (mine && INNER.g.parent !== cab) cab.add(INNER.g);
+    if (u.next && now >= u.at) { const k = u.next; u.next = ''; // 下車之後：門在身後關上、0.7 秒後空車開回站位（凍僵時已經停在醫院門口）
+      if (k === 'close') { u.doors.forEach(d => { if (d.a1) cabDoor(cab, d.s, false, 250); }); rideSnd.door(false); u.next = 'go'; u.at = now + 700; }
+      else { const st = u.city ? TAXI.cStand : TAXI.vStand; if (Math.hypot(cab.position.x - st[0], cab.position.z - st[1]) < .5) cabPark(cab); else { u.st = 'return'; u.leg = TAXI_LEGS[u.city ? 7 : 6]; u.lt = 0; u.it.off = true; } } }
+    if (u.st === 'return' && u.leg) { const dx = P.x - u.wx, dz = P.z - u.wz, lx = dx * u.c - dz * u.s, lz = dx * u.s + dz * u.c; // 擋在車頭前 3 m 內：等你走開
+      if (!(lx > 1.6 && lx < 4.95 && Math.abs(lz) < 1.2)) u.lt += dt * 1000; if (u.lt >= u.leg.dur) cabPark(cab); else placeCab(cab, legAt(u.leg, legS(u.leg, u.lt), u.p), null); }
+    const d = Math.hypot(u.wx - cp.x, u.wz - cp.z); if (!mine || (d > 60 && !ride)) continue;
+    const near = ride || d < (LOW ? 12 : 18); INNER.g.visible = near; // 遠了：車內與司機整組藏起來、玻璃不透明
+    u.glass.visible = !(ride && RIDE.inside); u.glassM.opacity = LOW || !near ? .85 : .35 + .5 * smooth(14, 18, d);
+    const bk = now - u.blink, bl = bk < 400 ? (Math.sin(bk / 400 * Math.PI * 4) > 0 ? .9 : -.6) : 0; u.signM.emissiveIntensity = Math.max(.05, ((ride ? .25 : .9) + bl) * (1 + DN.night)); // 空車亮、有人暗；叫車時閃兩下
+    u.doors.forEach(dr => { if (dr.a !== dr.a1 && now >= dr.t0) { const q = clamp((now - dr.t0) / dr.d, 0, 1); dr.a = dr.a0 + (dr.a1 - dr.a0) * out3(q); dr.g.rotation.y = dr.s * dr.a * 1.2217; } });
+    if (near) taxiDriver(cab, dt, t, now);
+  }
+}
+// 司機的頭：叫車、說話、上下車時轉向你（±.6）並點頭；開車時看前方、偶爾瞄一下後照鏡；到站揮手
+function taxiDriver(cab, dt, t, now) {
+  const fu = INNER.fu, u = cab.userData, R = RIDE, ride = R.on && R.cab === cab, talking = TK.on && TK.who && TK.who.id === 'taxi', cp = W.cam.position; let want = 0;
+  if (ride ? R.ph !== 'drive' || now < R.talkT : u.hail || talking || Math.hypot(P.x - u.wx, P.z - u.wz) < 6) { fu.head.getWorldPosition(RV); RV2.copy(cp).sub(RV); const lx = RV2.x * u.c - RV2.z * u.s, lz = RV2.x * u.s + RV2.z * u.c; want = clamp(Math.atan2(-lz, lx), -.6, .6); }
+  else if (ride && R.fz == null) { if (now > INNER.mir) INNER.mir = now + 6000 + Math.random() * 7000; if (INNER.mir - now < 600) want = -.25; } // 瞄後照鏡的時間記在 INNER（跟著司機換邊，不會因為換車頭一轉）；測試停住時間時不瞄
+  fu.head.rotation.y += (want - fu.head.rotation.y) * Math.min(1, dt * 5); fu.head.rotation.x = talking || (ride && now < R.talkT) ? Math.sin(t * 6) * .06 : 0;
+  const wv = (now - u.wave) / 1000; fu.aR.rotation.z = wv >= 0 && wv < 1 ? 1.2 * Math.sin(Math.PI * wv) : .05;
+}
+// 叫車（talk 開始／結束）：你那一側的後門打開、福伯轉頭看你、車頂燈閃兩下；走開或「再逛逛」就關門
+function taxiHail(on) {
+  const cab = inCity() ? W.taxiC : W.taxiV; if (!cab || RIDE.on) return; const u = cab.userData; if (u.st !== 'park') return;
+  u.hail = on; if (on) { const s = cabSide(cab); u.blink = performance.now(); cabDoor(cab, s, true, 320, 300); setTimeout(() => { if (u.hail) rideSnd.door(true); }, 300); taxiPrewarm(!u.city); }
+  else u.doors.forEach(d => { if (d.a1) cabDoor(cab, d.s, false, 350); });
+}
+// 司機（talk.js 的說話者）：泡泡錨在頭上、尾巴指著嘴；每格重算，車在動也跟得上。叫車時也是他（taxiWho）
+function driverWho() {
+  return INNER.who || (INNER.who = { id: 'taxi', k: 'say', name: '福伯', role: '計程車司機', col: '#fde047', vo: [.85, 30], r: 8, bye: '要搭車再叫我～',
+    at: v => INNER.fu.head.getWorldPosition(v).add(RV2.set(0, .62, 0)), mouth: v => INNER.fu.head.localToWorld(v.set(0, .1, .17)),
+    xz: () => { const e = INNER.fu.head.matrixWorld.elements; return [e[12], e[14]]; }, tg: t => !!t && !!t.it && t.it.id === 'taxi' });
+}
+const taxiWho = () => driverWho();
+const RIDE_SAY = { sit: '坐穩囉～', sitF: '暖氣開最大囉，撐一下～', fast: '好咧，抓穩囉！', city: '到囉，慢慢逛～', home: '到家囉，路上小心。', hosp: '醫院到了，快進去吧！', wait: '到囉，慢慢來～' };
+function rideSay(k) { const R = RIDE; if (R.said[k] || typeof bark !== 'function') return; R.said[k] = 1; if (bark(driverWho(), RIDE_SAY[k])) R.talkT = performance.now() + 900 + 90 * [...RIDE_SAY[k]].length; }
+// 叫車：司機的泡泡＋回話卡（E＝上車：免費、可反悔）；同時開門、轉頭。對話系統還沒載入時 E 直接上車，不會有確認卡片
 function taxiAsk() {
+  if (typeof talk !== 'function') return taxiRide();
   const toCity = !inCity(), who = taxiWho(), q = S.frozen ? (toCity ? '哎呀，你在發抖耶！我載你去城裡的醫院吧？' : '還是要回月光谷？') : toCity ? '要去大城市嗎？' : '要回月光谷了嗎？';
   const pre = [...(S.frozen && !toCity ? ['醫院就在路的北邊喔，先去看醫生吧。'] : []), ...(toCity && !W.taxiN ? ['城裡有機械行、器材行跟生活百貨，買機器都在那邊。'] : [])];
-  talk(who, [...pre, { t: q, opt: [{ t: '上車', e: 1, f: () => { W.taxiN = (W.taxiN || 0) + 1; tkEnd('ride', true); bark(who, '坐穩囉～'); taxiRide(); } }, { t: '再逛逛', f: () => ['好喔，要搭車再叫我～'] }] }]);
+  if (talk(who, [...pre, { t: q, opt: [{ t: '上車', e: 1, f: () => { W.taxiN = (W.taxiN || 0) + 1; tkEnd('ride', true); taxiRide(); } }, { t: '再逛逛', f: () => { taxiHail(false); return ['好喔，要搭車再叫我～']; } }] }], { end: why => { if (why !== 'ride') taxiHail(false); } })) taxiHail(true); // 再逛逛：福伯回話的同時就把門關上
 }
-function taxiRide() {
-  const toCity = !inCity(), f = $('#fade'); f.textContent = toCity ? '計程車駛向大城市…' : '計程車駛回月光谷…'; f.hidden = false; requestAnimationFrame(() => f.classList.add('on')); sfx.open();
-  setTimeout(() => {
-    if (toCity) { P.x = CITY.x + 3; P.z = CITY.z + 9; } else { P.x = BASE.taxi[0] + 3; P.z = BASE.taxi[1]; }
-    P.yaw = toCity ? Math.PI : 0; P.pitch = -.05; P.y = G(P.x, P.z); P.camY = P.y; P.vy = 0; W.camAway = false; save();
-  }, 700);
-  setTimeout(() => { f.classList.remove('on'); setTimeout(() => f.hidden = true, 500); toast(toCity ? '抵達大城市的中央廣場。商店在路的北側，咖啡館、週末市集與公告欄在廣場兩旁。' : '回到月光谷。'); }, 1500);
+function taxiRide() { rideStart(inCity() ? 'c2v' : 'v2c'); }
+
+/* ---------- 搭車本體 ---------- */
+// 上下車的曲線（車的本地座標，車停著）：位置 p＝[{ t, p }]，切線用前後兩點的時間差算（Hermite，起點終點速度 0）；朝向 q＝[{ t, y, p }]（車的本地 yaw／pitch）另外一組，
+// 每段 ease3、yaw 走最短的那一邊。朝向只用 yaw＋pitch 組出來，側傾永遠是 0；位置要繞過開著的門，朝向卻不必跟著每個轉折轉：走過去的那一段只轉一次、轉得慢
+function rideKnots(k) { const n = k.length; k.forEach((a, i) => { a.m = new THREE.Vector3(); if (i > 0 && i < n - 1) a.m.subVectors(k[i + 1].p, k[i - 1].p).divideScalar(k[i + 1].t - k[i - 1].t); }); return k; }
+function rideCurve(cv, t, op, oo) {
+  const P0 = cv.p, n = P0.length, Q = cv.q, m = Q.length;
+  if (t <= P0[0].t) op.copy(P0[0].p); else if (t >= P0[n - 1].t) op.copy(P0[n - 1].p);
+  else { let i = 0; while (i < n - 2 && t > P0[i + 1].t) i++; const a = P0[i], b = P0[i + 1], h = b.t - a.t, s = (t - a.t) / h, s2 = s * s, s3 = s2 * s; op.copy(a.p).multiplyScalar(2 * s3 - 3 * s2 + 1).addScaledVector(a.m, (s3 - 2 * s2 + s) * h).addScaledVector(b.p, 3 * s2 - 2 * s3).addScaledVector(b.m, (s3 - s2) * h); }
+  if (t <= Q[0].t) { oo.y = Q[0].y; oo.p = Q[0].p; } else if (t >= Q[m - 1].t) { oo.y = Q[m - 1].y; oo.p = Q[m - 1].p; } else { let i = 0; while (i < m - 2 && t > Q[i + 1].t) i++; const a = Q[i], b = Q[i + 1], e = ease3((t - a.t) / (b.t - a.t)); oo.y = a.y + wrapA(b.y - a.y) * e; oo.p = a.p + (b.p - a.p) * e; }
+}
+const rideQ = (lp, ly) => Q_SEAT.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(lp, ly, 0, 'YXZ'))); // 坐在車裡往前看、再轉 ly（正＝往左）、俯仰 lp（車的本地朝向）
+const seatO = (lp, ly) => ({ y: ly - Math.PI / 2, p: lp }), lookO = (a, b) => ({ y: Math.atan2(a.x - b.x, a.z - b.z), p: Math.atan2(b.y - a.y, Math.hypot(b.x - a.x, b.z - a.z)) }); // 同上，寫成車的本地 yaw／pitch；從 a 看向 b
+const mixO = (a, b, k) => ({ y: a.y + wrapA(b.y - a.y) * k, p: a.p + (b.p - a.p) * k }), distO = (a, b) => Math.hypot(wrapA(b.y - a.y), b.p - a.p);
+// 上車：鏡頭走到門外 D、彎腰到門檻 M、坐下 E（左門上來再挪到右座）。起點在門前（開著的門擋路）或車頭：先往外再繞到門後；在車尾：先橫移到門那一側
+function rideBoardCurve(cab, s, rm) {
+  const T = TAXI, V3 = (x, y, z) => new THREE.Vector3(x, y, z), inv = new THREE.Matrix4().copy(cab.matrixWorld).invert(), p0 = W.cam.position.clone().applyMatrix4(inv), e0 = new THREE.Euler().setFromQuaternion(cab.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(W.cam.quaternion), 'YXZ'), o0 = { y: e0.y, p: e0.x };
+  const D = V3(T.D[0], T.D[1], s * T.D[2]), M = V3(T.M[0], rm ? T.E[1] : T.M[1], s * T.M[2]), Es = V3(T.E[0], T.E[1], s * T.E[2]), ER = V3(...T.E), way = [];
+  if (p0.x > -.3) { if (Math.abs(p0.z) < 2.3) way.push(V3(Math.max(p0.x, -.2), 1.56, s * 2.4)); way.push(V3(-1.05, 1.56, s * 2.4)); } else if (p0.x < -2 || Math.abs(p0.z) < .95) way.push(V3(Math.max(p0.x, -2.4), 1.56, s * 1.8));
+  const pts = [...way, D], oIn = lookO(D, Es), oSeat = seatO(-.05, s * .1); let len = 0, prev = p0; pts.forEach(q => { len += Math.hypot(q.x - prev.x, q.z - prev.z); prev = q; });
+  const T1 = rm ? 300 : clamp(Math.max(len * 120, distO(o0, oIn) * 260), 420, 900), dl = rm ? 0 : T1 - 420, kp = [{ t: 0, p: p0 }], kq = [{ t: 0, ...o0 }, { t: T1, ...oIn }]; let acc = 0; prev = p0; // 轉頭角度大（背對車門）就走慢一點
+  way.forEach(q => { acc += Math.hypot(q.x - prev.x, q.z - prev.z); prev = q; kp.push({ t: T1 * acc / Math.max(.01, len), p: q }); });
+  if (rm) { kp.push({ t: 300, p: D }, { t: 600, p: M }, { t: 900, p: ER }); kq.push({ t: 600, ...mixO(oIn, oSeat, .5) }, { t: 900, ...seatO(-.05, .1) }); return { p: rideKnots(kp), q: kq, o0, end: 900, dl: 0 }; } // 減少動態：直線三段、不彎腰不挪座、不回彈
+  kp.push({ t: T1, p: D }, { t: 850 + dl, p: M }, { t: 1250 + dl, p: Es }); kq.push({ t: 850 + dl, ...mixO(oIn, oSeat, .6) }, { t: 1250 + dl, ...oSeat });
+  if (s < 0) { kp.push({ t: 1550 + dl, p: V3(T.E[0], T.E[1] - .03, 0) }, { t: 1800 + dl, p: ER }); kq.push({ t: 1550 + dl, ...seatO(-.05, 0) }, { t: 1800 + dl, ...seatO(-.05, .1) }); } // 從左門上來：屁股往右座挪過去（中段下沉 3 cm）
+  return { p: rideKnots(kp), q: kq, o0, end: (s < 0 ? 1900 : 1450) + dl, dl };
+}
+// 下車：右座 → 門檻 → 門外 → 站立點（最後一點換算自世界座標：交還操作那一刻剛好就是玩家的眼睛、朝最後的 yaw、俯仰 −.05）
+function rideAlightCurve(cab, st, rm) {
+  const T = TAXI, V3 = (x, y, z) => new THREE.Vector3(x, y, z), inv = new THREE.Matrix4().copy(cab.matrixWorld).invert(), pS = V3(st.x, st.y + 1.62, st.z).applyMatrix4(inv), oS = { y: wrapA(st.yaw - cab.rotation.y), p: -.05 }, oOut = seatO(-.12, -1.25), tt = rm ? [100, 320, 490, 650] : [250, 600, 820, 1050];
+  return { p: rideKnots([{ t: tt[0], p: RIDE.lpos.clone() }, { t: tt[1], p: V3(T.M[0], rm ? T.E[1] : T.M[1], T.M[2]) }, { t: tt[2], p: V3(...T.D) }, { t: tt[3], p: pS }]), q: [{ t: tt[0], y: RIDE.cy, p: RIDE.cp }, { t: tt[1], ...oOut }, { t: tt[2], ...mixO(oOut, oS, .5) }, { t: tt[3], ...oS }] };
+}
+// 下車站立點：月光谷在花島東側（看得到出生點）；城市在咖啡館前的人行道（面向目前的目標，沒有就面向廣場）；凍僵時在醫院門口、面向醫院
+function rideOutPt(cab) {
+  const T = TAXI, aim = (x, z, tx, tz) => Math.atan2(-(tx - x), -(tz - z));
+  if (!cab.userData.city) { const [x, z] = T.vOut; return { x, z, y: H(x, z), yaw: aim(x, z, T.vLook[0], T.vLook[1]) }; }
+  const fz = !!RIDE.legs && RIDE.legs[1] === TAXI_LEGS[3], [lx, lz] = fz ? T.cOutF : T.cOut, x = CITY.x + lx, z = CITY.z + lz; let tx = CITY.x + (fz ? T.cHosp : T.cLook)[0], tz = CITY.z + (fz ? T.cHosp : T.cLook)[1];
+  if (!fz) { const o = objective(); if (o && o.x != null && o.n !== '計程車招呼站' && inCity(o.x)) { tx = o.x; tz = o.z; } }
+  return { x, z, y: 0, yaw: aim(x, z, tx, tz) };
+}
+// 從選單直接坐進車裡時的「安全站位」：招呼站那台車右門外
+function rideSafe(cab) { const u = cab.userData, lz = u.city ? 2.15 : 1.85; return { x: u.wx - .75 * u.c + lz * u.s, z: u.wz + .75 * u.s + lz * u.c, yaw: P.yaw }; }
+function rideStart(dir, o = {}) {
+  if (RIDE.on || !W.ready || !P || TITLE.on || INTRO.on) return false; const LG = taxiLegs(), R = RIDE, v2c = dir === 'v2c', cab = v2c ? W.taxiV : W.taxiC, u = cab.userData, rm = RM(), seated = !!o.seated, now = performance.now();
+  if (u.st !== 'park') cabPark(cab); // 空車還在開回站位：直接放回站位（從選單回家時，人在筆記本後面看不到）
+  if (TK.on) tkEnd('ride', true); if (L.on) L.on = false; // 直播中走去搭車：保險再關一次
+  const s = seated ? 1 : cabSide(cab), st = u.city ? TAXI.cStand : TAXI.vStand; cab.add(INNER.g); INNER.g.visible = true; u.st = 'ride'; u.hail = false; u.it.off = true; u.it.wp = null;
+  u.doors.forEach(d => { if (d.s !== s && d.a1) cabDoor(cab, d.s, false); }); W.sun.layers.enable(3); W.hemi.layers.enable(3); // 山洞組若重設光源圖層也不會壞
+  Object.assign(R, { on: true, dir, ph: 'board', t: 0, t0: now, ei: 0, legs: v2c ? [LG[1], S.frozen ? LG[3] : LG[2]] : [LG[4], LG[5]], li: 0, rate: rm ? 1.5 : 1, cab, side: s, ly: .1, lp: -.05, k: 0, u: -99, ue: -99, f0: null, frozen: !!S.frozen, tq: [], said: {}, out: false, snap: 0, held: false, shut: seated, inside: seated, ffT: 0, wt: 0, bnc: -1e9, talkT: 0, v: 0, a: 0, alat: 0, s: 0, jn: -1, jt: -1e9, npcN: 0,
+    park: { x: st[0], z: st[1], hd: st[2] + Math.PI / 2 }, sus: { y: cab.position.y, vy: 0, p: cab.rotation.z, vp: 0, r: cab.rotation.x, vr: 0 }, head: { x: 0, vx: 0, z: 0, vz: 0, p: 0, vp: 0, r: 0, vr: 0 },
+    safe: seated ? rideSafe(cab) : { x: P.x, z: P.z, yaw: P.yaw }, log: R.logOn ? [] : null, lpos: new THREE.Vector3(...TAXI.E), lquat: rideQ(-.05, .1) });
+  R.hk.clear(); KEYS.clear(); IN.hold = IN.holdE = false; IN.jx = IN.jy = 0; if (IN.joy) { IN.joy = null; $('#joyKnob').style.transform = ''; $('#joyBase').classList.remove('on'); }
+  P.vx = P.vz = 0; P.running = P.sneak = false; P.eye = 1.62; R.lastYaw = P.yaw; document.body.classList.add('riding'); rideUI(true);
+  const e = []; if (seated) { R.cv = null; R.tb = 1450; R.t = 1440; e.push([1440, () => { rideSnd.start(); rideSnd.blink(1); rideSay(R.frozen ? 'sitF' : 'sit'); }]); }
+  else {
+    const c = rideBoardCurve(cab, s, rm), dl = c.dl, Lf = s < 0, tm = x => rm ? x * 900 / ((Lf ? 1900 : 1450) + dl) : x; R.cv = c; R.tb = c.end; R.cy = c.o0.y; R.cp = c.o0.p; R.lquat.setFromEuler(RE.set(R.cp, R.cy, 0, 'YXZ'));
+    if (!u.doors[s < 0 ? 0 : 1].a1) e.push([0, () => { cabDoor(cab, s, true, rm ? 200 : 300); rideSnd.door(true); }]); // 叫車時沒開門（例如對話系統沒載入）：現在開
+    e.push([tm(1150 + dl), () => cabDoor(cab, s, false, rm ? 150 : 290)], [tm(1420 + dl), () => { rideSnd.door(false); R.shut = true; }], [tm(1250 + dl), () => { rideSnd.seat(false); rideSnd.start(); if (!Lf && !rm) R.bnc = performance.now(); }]);
+    if (Lf) e.push([tm(1300 + dl), () => rideSnd.seat(true)], [tm(1650 + dl), () => { if (!rm) R.bnc = performance.now(); }]);
+    e.push([tm((Lf ? 1500 : 1300) + dl), () => rideSay(R.frozen ? 'sitF' : 'sit')], [tm((Lf ? 1700 : 1250) + dl), () => rideSnd.blink(2)]);
+  }
+  R.evs = e.sort((a, b) => a[0] - b[0]); save(); return true;
+}
+function rideDriveEv() {
+  const R = RIDE, T = R.legs[0].dur + R.legs[1].dur;
+  return [[0, rideHint], [T - 1700, () => rideSnd.blink(2)], [T - 1300, () => rideSay(R.dir === 'c2v' ? 'home' : R.frozen ? 'hosp' : 'city')]];
+}
+function rideEv() { const R = RIDE; while (R.on && R.evs && R.ei < R.evs.length && R.t >= R.evs[R.ei][0]) { const f = R.evs[R.ei++][1]; try { f(); } catch (e) { console.error(e); } } }
+function rideStep(dt) {
+  const R = RIDE; if (!R.on) return; const now = performance.now(), rm = RM();
+  // 開快一點：上車之後才按下、按住 0.25 秒以上的空白鍵／E／F／Enter、滑鼠左鍵、快轉圓鈕或在畫面上按住不動；點一下不算。管子裡最多 2 倍
+  let held = false; R.hk.forEach(t0 => { if (now - t0 >= 250) held = true; });
+  if ((IN.hold && IN.hT > R.t0 && now - IN.hT >= 250) || (R.ffT && now - R.ffT >= 250) || (IN.look && IN.look.moved < 12 && IN.look.t > R.t0 && now - IN.look.t >= 250)) held = true;
+  if (GUI.kind || mOpen) held = false; if (held && !R.held && R.ph === 'drive') rideSay('fast'); R.held = held;
+  const tgt = held ? (R.k > .5 ? 2 : 3) : rm ? 1.5 : 1; R.rate += (tgt - R.rate) * (1 - Math.exp(-(tgt > R.rate ? 14 : 12) * Math.min(dt, .1)));
+  const stop = R.ph === 'drive' && rideNpcAhead(); // 保險：車前 6 m 內有居民就停（路線不交叉，應該永遠不會發生）
+  if (R.fz != null) R.t = R.fz; else if (!stop) R.t += dt * 1000 * (R.ph === 'drive' ? R.rate : clamp(R.rate / (rm ? 1.5 : 1), 1, 2)); // 上下車：沒按住就是原速（減少動態的 1.5 倍只給開車），按住最多 2 倍
+  let swapped = false;
+  if (R.ph === 'board') { rideEv(); if (R.t >= R.tb) { R.ph = 'drive'; R.t = R.fz != null ? R.t : R.t - R.tb; R.ei = 0; R.evs = rideDriveEv(); } }
+  if (R.ph === 'drive') { const T1 = R.legs[0].dur, T2 = R.legs[1].dur; if (R.li === 0 && R.t >= T1) { rideSwap(); swapped = true; } rideEv(); if (R.t >= T1 + T2) { R.t = T1 + T2; R.park = legAt(R.legs[1], R.legs[1].L, {}); if (GUI.kind || mOpen) { R.ph = 'wait'; R.wt = 0; } else rideAlight(); } }
+  if (R.ph === 'wait' && !GUI.kind && !mOpen) { if (!R.wt) { R.wt = now; rideSay('wait'); } else if (now - R.wt > 120) rideAlight(); } // 到站時介面開著：停好怠速等你闔上，闔上後福伯說一句再開門（1.3 秒內交還操作）
+  if (R.ph === 'alight') { rideEv(); if (!R.on) return; }
+  const cab = R.cab;
+  if (R.ph === 'drive') { const T1 = R.legs[0].dur, l = R.legs[R.li], p = legAt(l, legS(l, R.li ? R.t - T1 : R.t), RP), v = p.v * R.rate; R.v = v; R.a = rm ? 0 : v * p.dv * R.rate; R.alat = rm ? 0 : -v * v * p.k; R.s = p.s; placeCab(cab, p, R.sus, dt, R.a, R.alat); }
+  else { R.v = R.a = R.alat = 0; placeCab(cab, R.park, R.sus, dt, 0, 0); }
+  rideCam(dt);
+  if (swapped) { W.quietZone = true; cullChunks(P); landmarkStep(); DRS.skip = 2; }
+  if (R.ph === 'drive' && !cab.userData.city && (R.sN = (R.sN || 0) + 1) % 4 === 0) rideSlimes(cab);
+  rideEnv(dt); rideSnd.step(R.v, R.k, !cab.userData.city && R.ue < 0, R.held);
+  if (R.log) R.log.push([+now.toFixed(1), R.ph, R.li, +R.t.toFixed(1), +W.cam.position.x.toFixed(4), +W.cam.position.y.toFixed(4), +W.cam.position.z.toFixed(4), +P.yaw.toFixed(5), +R.u.toFixed(4), W.cam.layers.mask, +R.rate.toFixed(3), W.r.info.programs.length]);
+}
+// 換邊（同一格內做完再畫）：出發那台放回站位、車內與司機搬到目的地那台、人換到另一根管子的 u＝15（鏡頭只畫第 3 層、兩頭點對稱，看不出來）
+function rideSwap() {
+  const R = RIDE, from = R.cab, to = from === W.taxiV ? W.taxiC : W.taxiV, tu = to.userData;
+  cabPark(from); if (tu.st !== 'park') cabPark(to); tu.st = 'ride'; tu.hail = false; tu.it.off = true; tu.glass.visible = false; // 目的地那台的玻璃這一格就藏起來
+  to.add(INNER.g); R.cab = to; R.li = 1; R.jn = -1; R.sus.y += (tu.city ? TAXI.C.y : TAXI.V.y) - (tu.city ? TAXI.V.y : TAXI.C.y); // 管子地板高度不同：彈簧只保留相對的起伏
+  R.safe = rideOutPt(to); R.snap = 2;
+}
+function rideAlight() {
+  const R = RIDE, cab = R.cab, rm = RM(); R.ph = 'alight'; R.t = 0; R.ei = 0; R.cy = R.ly - Math.PI / 2; R.cp = R.lp + R.head.p; R.park = legAt(R.legs[1], R.legs[1].L, {}); R.stand = rideOutPt(cab); R.cv = rideAlightCurve(cab, R.stand, rm); cab.userData.wave = performance.now();
+  R.evs = [[0, () => rideSnd.lock()], [rm ? 80 : 150, () => { cabDoor(cab, 1, true, rm ? 200 : 300); rideSnd.door(true); R.shut = false; }], [rm ? 650 : 1050, rideEnd]];
+}
+// 鏡頭：座位（頭部延遲＋路面震動）或上下車的曲線；轉頭的輸入收進相對車身的 ly、lp，P 一直跟著鏡頭（陰影、網路、存檔都直接能用）
+function rideCam(dt) {
+  const R = RIDE, cab = R.cab, cam = W.cam, rm = RM(), lp = R.lpos, lq = R.lquat, now = performance.now(), seat = R.ph === 'drive' || R.ph === 'wait' || (R.ph === 'board' && !R.cv);
+  let dy = P.yaw - R.lastYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  if (seat) {
+    if (!GUI.kind) { R.ly = clamp(R.ly + dy, -1.9, 1.9); R.lp = clamp(P.pitch, -.6, .45); }
+    const h = R.head, k = Math.min(dt, .05), z = rm ? 0 : 1, tr = clamp(.007 * R.alat, -.04 - R.sus.r, .04 - R.sus.r) * z;
+    [['x', clamp(-.0055 * R.a, -.025, .025) * z], ['z', clamp(-.0045 * R.alat, -.025, .025) * z], ['p', clamp(.006 * R.a, -.03, .03) * z], ['r', tr]].forEach(([q, tg]) => { const vq = 'v' + q; h[vq] += (49 * (tg - h[q]) - 9.8 * h[vq]) * k; h[q] += h[vq] * k; });
+    const city = cab.userData.city, tub = R.ue > 0, tv = R.fz != null ? R.fz / 1000 : W.t, amp = rm ? 0 : (tub || city ? .0007 : .0018) * Math.min(1, R.v / 8); // 路面震動：碎石 1.8 mm、柏油與管子 0.7 mm（17＋23 Hz）
+    let vib = amp * (.6 * Math.sin(tv * 106.8) + .4 * Math.sin(tv * 144.5 + 1.3)); if (!rm && R.v < .5) vib += .0005 * Math.sin(tv * 163.4); // 怠速 26 Hz
+    if (!rm && R.ph === 'drive' && (tub || city)) { const j = Math.floor(R.s / 12) * 1000 + Math.floor((R.s - 2.5) / 12); if (j !== R.jn) { if (R.jn !== -1) R.jt = now; R.jn = j; } } // 伸縮縫：每 12 m 一道，前後輪各咚一下
+    const jk = (now - R.jt) / 70, bk = (now - R.bnc) / 320; if (jk < 1) vib += .003 * Math.sin(Math.PI * jk); if (bk < 1) vib -= .015 * Math.sin(Math.PI * bk) * (1 - bk); // 座椅回彈 1.5 cm
+    lp.set(TAXI.E[0] + h.x, TAXI.E[1] + vib, TAXI.E[2] + h.z); lq.copy(Q_SEAT).multiply(RQ2.setFromEuler(RE.set(R.lp + h.p, R.ly, h.r, 'YXZ')));
+  } else if (R.cv) { rideCurve(R.cv, R.t, lp, RO); let dy = wrapA(RO.y - R.cy), dp = RO.p - R.cp; const d = Math.hypot(dy, dp), mx = 6.5 * Math.min(dt, .05); if (d > mx) { dy *= mx / d; dp *= mx / d; } R.cy += dy; R.cp += dp; lq.setFromEuler(RE.set(R.cp, R.cy, 0, 'YXZ')); } // 上下車：朝向每格最多轉 6.5 rad/s（原本看著另一邊的窗外也不會一格轉過頭）、不側傾
+  cab.updateMatrixWorld(true); cam.position.copy(lp).applyMatrix4(cab.matrixWorld); cab.getWorldQuaternion(RQ); cam.quaternion.copy(RQ).multiply(lq);
+  if (S.frozen) { cam.position.x += Math.sin(W.t * 47) * .0056; cam.position.y += Math.cos(W.t * 53) * .0056; if (!rm) cam.quaternion.multiply(RQ2.setFromAxisAngle(AX_Z, Math.sin(W.t * 41) * .0048)); } // 凍僵：車上照樣發抖，只剩走路時的 40%（減少動態時不側傾）
+  const fov = (W.fov0 || 72) + (R.ph === 'drive' && !rm ? 3 * clamp((R.rate - 1) / 2, 0, 1) : 0); if (Math.abs(cam.fov - fov) > .02) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
+  RV2.set(0, 0, -1).applyQuaternion(cam.quaternion); const wy = Math.atan2(-RV2.x, -RV2.z);
+  P.x = cam.position.x; P.z = cam.position.z; P.y = cam.position.y - P.eye; P.camY = P.y; P.yaw = R.lastYaw = wy; P.pitch = seat ? R.lp : Math.asin(clamp(RV2.y, -1, 1)); P.vx = P.vz = P.vy = 0; P.ground = true;
+  R.inside = Math.abs(lp.z) < .8 && lp.x > -1.25 && lp.x < .85;
+}
+// 史萊姆讓路：車前 6 m、左右 2.2 m 內的嚇一跳冒「!」（牠們本來就會往遠離 P 的方向逃）
+function rideSlimes(cab) { const u = cab.userData; for (const s of W.slimes) { const dx = s.x - u.wx, dz = s.z - u.wz; if (dx * dx + dz * dz > 144) continue; const lx = dx * u.c - dz * u.s, lz = dx * u.s + dz * u.c; if (lx > 0 && lx < 7.95 && Math.abs(lz) < 2.2) { s.flee = Math.max(s.flee || 0, 1.2); if (!emoteOn(s)) emote(s, 'bang', .9); } } }
+function rideNpcAhead() { const u = RIDE.cab.userData; if (!u.city || !W.npcs) return false; for (const n of W.npcs) { const dx = CITY.x + n.x - u.wx, dz = CITY.z + n.z - u.wz, lx = dx * u.c - dz * u.s, lz = dx * u.s + dz * u.c; if (lx > 1.5 && lx < 7.95 && Math.abs(lz) < 1.2) { RIDE.npcN++; return true; } } return false; }
+// 出口亮光卡的顏色：那一頭的霧色目標（月光谷＝森林、城市＝海岸，各自套黃昏／夜晚），不讀正在漸變的 scene.fog
+function tubeCardColor(zone) { return CARD_C.set(ZONE3D[zone].fog).lerp(DNC.duskFog, DN.dusk * .55).lerp(DNC.dawnFog, DN.dawn * .45).lerp(DNC.fog, DN.night * .9).multiplyScalar(1.4); }
+// 隧道環境（rideStep 最後；envStep／caveEnv 已經先跑完，這裡寫的值會蓋過去）：圖層、球形霧、光、曝光、出口亮光卡
+function rideEnv(dt) {
+  const R = RIDE, cp = W.cam.position, now = performance.now(), T = TUBES[inCity(cp.x) ? 1 : 0], u = (cp.x - T.wx) * T.o.dx + (cp.z - T.wz) * T.o.dz, k = smooth(-4, 8, u), dest = R.li === 1, rm = RM();
+  const cu = R.cab.userData, Tc = TUBES[cu.city ? 1 : 0], ue = (cu.wx - Tc.wx) * Tc.o.dx + (cu.wz - Tc.wz) * Tc.o.dz;
+  if (!dest && R.ph === 'drive' && R.ue < 0 && ue >= 0) rideSnd.whoosh(); R.u = u; R.k = k; R.ue = ue; // 鑽進洞口：風切
+  // 圖層：鏡頭進管子 6 m 之後只畫第 3 層（天空、文字精靈、粒子、地形、別的玩家一律不畫）；手上拿出來的筆記本也補上第 3 層
+  W.cam.layers.mask = u > TAXI.DEEP ? 8 : 9; if ((R.lyN = (R.lyN || 0) + 1) % 6 === 0) W.cam.children.forEach(ch => ch.traverse(o => o.layers.enable(3)));
+  const deep = u > TAXI.DEEP; if (deep === W.r.shadowMap.autoUpdate) { W.r.shadowMap.autoUpdate = !deep; if (!deep) W.r.shadowMap.needsUpdate = true; } // 深處不重畫陰影貼圖（不改 castShadow，材質不會重新編譯）
+  const f = W.scene.fog;
+  if (k > .001) {
+    if (!R.f0) R.f0 = [f.near, f.far]; f.color.copy(ENVC[0]).lerp(TUN_FOG, k); W.scene.background.copy(f.color); f.near = R.f0[0] + (1.5 - R.f0[0]) * k; f.far = R.f0[1] + (14 - R.f0[1]) * k;
+    W.sun.intensity *= 1 - k; W.hemi.color.lerp(TUN_HS, k); W.hemi.groundColor.lerp(TUN_HG, k); W.hemi.intensity += (.55 - W.hemi.intensity) * k;
+    let pulse = .5; if (!rm && R.rate < 1.3) { pulse = 0; for (const lu of TAXI.LAMP) pulse += Math.exp(-(((u - lu) / 1.6) ** 2)); pulse = Math.min(1, pulse); } W.hemi.intensity *= 1 + .08 * (pulse - .5) * k; // 車內燈光輕掃 ±4%（減少動態、開快一點時不掃）
+  } else if (R.f0) { f.near = R.f0[0]; R.f0 = null; applyQuality(); }
+  CAB_M.body.envMapIntensity = 1 - .85 * k; // 車身的環境反射：隧道裡變暗（不換環境貼圖，避免重新編譯）
+  if (k > .5 && !R.out) W.envT = now; // 深處不重新烘焙天空環境光：換邊前後車身反射的是同一張；出洞那一格再放行（曝光正在閃，看不出來）
+  if (R.snap > 0 && --R.snap === 0) { W.sky.material.uniforms.bot.value.copy(ENVC[0]); W.sky.material.uniforms.top.value.copy(ENVC[1]); W.sun.color.copy(ENVC[2]); } // 換邊後天空直接換成這一頭的顏色（深處看不到天空）
+  // 曝光：管子裡眼睛適應黑暗、快到出口越來越亮；衝出洞口那一格「豁然開朗」，之後交給 caveEnv 每格往 1 拉
+  if (dest && !R.out && u < 0 && R.ph === 'drive') { R.out = true; CV.flash = rm ? .6 : 1; rideSnd.whoosh(); W.envT = now - 900; if (cu.city && !(S.seenZone && S.seenZone.city) && typeof caveReveal === 'function') { caveReveal('大城市', '穿過月光隧道，大街就在眼前'); (S.seenZone = S.seenZone || {}).city = true; } } // 天空環境光 0.6 秒後才重新烘焙（不擠在出洞那一格）
+  if (k > .001 && !R.out) { const rem = dest ? ue : 2 * TAXI.U - ue; W.r.toneMappingExposure = 1 - .1 * k + .35 * smooth(14, 2, rem) * k; }
+  for (const X of TUBES) { let a = 0; if (X === T) a = smooth(14, 5, u) * (1 - smooth(3.5, .8, u)); X.card.visible = a > .003; if (X.card.visible) { X.card.material.opacity = a; X.card.material.color.copy(tubeCardColor(X.zone)); } } // 出口亮光卡
+  DRS.good = 0; // 隧道裡畫得少：不要趁機升解析度，出洞那一格會掉幀
+}
+function rideEnd() {
+  const R = RIDE, st = R.stand, cab = R.cab, u = cab.userData; if (!R.on) return;
+  R.on = false; R.ph = ''; document.body.classList.remove('riding'); document.body.classList.add('ride-done'); setTimeout(() => document.body.classList.remove('ride-done'), 450); rideUI(false); // HUD 0.3 秒淡回
+  P.x = st.x; P.z = st.z; P.y = G(st.x, st.z); P.camY = P.y; P.eye = 1.62; P.vx = P.vz = P.vy = 0; P.yaw = st.yaw; P.pitch = -.05; P.roll = 0; P.dip = P.dipV = 0; P.ground = true; W.camAway = true;
+  W.cam.layers.mask = 1; W.r.shadowMap.autoUpdate = true; W.r.shadowMap.needsUpdate = true; CAB_M.body.envMapIntensity = 1; TUBES.forEach(T => { T.card.visible = false; }); KEYS.clear(); R.hk.clear(); IN.hold = IN.holdE = false;
+  if (R.f0) { W.scene.fog.near = R.f0[0]; R.f0 = null; applyQuality(); }
+  rideSnd.stop(); S.rideN = (S.rideN || 0) + 1; u.st = 'stop'; u.next = 'close'; u.at = performance.now() + 50; save();
+  R.tq.splice(0).forEach((m, i) => setTimeout(() => toast(m), 500 + i * 600)); // 搭車中排隊的訊息：下車後每 600 ms 補一則
+}
+// 搭車中回主選單、切換存檔：人放回安全的站位、兩台車回站位、霧光曝光圖層還原
+function rideAbort() {
+  const R = RIDE; if (!R.on) return; const sf = R.safe || { x: 0, z: 16, yaw: 0 };
+  R.on = false; R.ph = ''; document.body.classList.remove('riding'); rideSnd.stop(); rideUI(false); [W.taxiV, W.taxiC].forEach(c => { if (c) cabPark(c); });
+  P.x = sf.x; P.z = sf.z; P.yaw = sf.yaw; P.y = G(P.x, P.z); P.camY = P.y; P.vx = P.vz = 0; P.pitch = -.05; W.camAway = false; R.tq = [];
+  W.cam.layers.mask = 1; if (R.f0) { W.scene.fog.near = R.f0[0]; R.f0 = null; applyQuality(); } W.r.toneMappingExposure = 1; W.r.shadowMap.autoUpdate = true; W.r.shadowMap.needsUpdate = true; CAB_M.body.envMapIntensity = 1; W.envT = 0; TUBES.forEach(T => { T.card.visible = false; });
+  KEYS.clear(); R.hk.clear(); if (W.cam.fov !== W.fov0) { W.cam.fov = W.fov0; W.cam.updateProjectionMatrix(); }
+}
+// 觸控的 快轉圓鈕（按住開快一點）與桌機的提示字（前 3 趟）：建在 body，同 #introSkip 的作法（dom.html 不用改）
+function rideUI(on) {
+  let ff = document.getElementById('rideFF');
+  if (!ff) {
+    ff = document.createElement('button'); ff.id = 'rideFF'; ff.type = 'button'; ff.setAttribute('aria-label', '按住開快一點'); ff.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5l8 5.5-8 5.5zM12 6.5l8 5.5-8 5.5z"/></svg>';
+    ff.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); RIDE.ffT = performance.now(); }); ['pointerup', 'pointercancel', 'pointerleave'].forEach(k => ff.addEventListener(k, () => { RIDE.ffT = 0; })); ff.addEventListener('contextmenu', e => e.preventDefault());
+    document.body.appendChild(ff); const h = document.createElement('div'); h.id = 'rideHint'; h.textContent = '按住 空白鍵：開快一點'; document.body.appendChild(h);
+  }
+  if (!on) { RIDE.ffT = 0; const h = document.getElementById('rideHint'); if (h) h.classList.remove('on'); }
+}
+function rideHint() { if (TOUCH || (S.rideN || 0) >= 3) return; const h = document.getElementById('rideHint'); if (!h) return; h.classList.add('on'); clearTimeout(h._t); h._t = setTimeout(() => h.classList.remove('on'), 4000); }
+// 搭車的聲音：引擎（兩個鋸齒波＋低通）、路面（循環雜訊＋帶通，隧道裡悶一點、轟一點）常駐；開關門、坐下、方向燈、門鎖、進出洞口的風切是一次性的
+const rideSnd = {
+  n: null,
+  start() { if (this.n || !S.sound) return; try { const ac = audio(), t = ac.currentTime, g = ac.createGain(), lp = ac.createBiquadFilter(), o1 = ac.createOscillator(), o2 = ac.createOscillator(), rs = ac.createBufferSource(), bp = ac.createBiquadFilter(), rl = ac.createBiquadFilter(), rg = ac.createGain();
+    g.gain.value = 0; lp.type = 'lowpass'; lp.Q.value = .8; lp.frequency.value = 220; o1.type = o2.type = 'sawtooth'; o1.frequency.value = 46; o2.frequency.value = 72; o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
+    rs.buffer = NB; rs.loop = true; bp.type = 'bandpass'; bp.Q.value = .7; bp.frequency.value = 300; rl.type = 'lowpass'; rl.frequency.value = 8000; rg.gain.value = 0; rs.connect(bp); bp.connect(rl); rl.connect(rg); rg.connect(master);
+    o1.start(t); o2.start(t); rs.start(t); this.n = { g, lp, o1, o2, rs, bp, rl, rg }; } catch (e) { this.n = null; } },
+  step(v, k, gravel, fast) {
+    const n = this.n; if (!n || !AC) return; const t = AC.currentTime, on = S.sound ? 1 : 0, f1 = (46 + 3.1 * v) * (fast ? 1.25 : 1), idle = v < .5 ? 1 + .2 * Math.sin(t * 56.5) : 1; // 怠速 9 Hz、20% 顫音
+    n.o1.frequency.setTargetAtTime(f1, t, .05); n.o2.frequency.setTargetAtTime(f1 * 1.5 + 3, t, .05); n.lp.frequency.setTargetAtTime(220 + 18 * v, t, .05); n.g.gain.setTargetAtTime(on * (.014 + .0006 * v) * idle, t, .03);
+    n.bp.frequency.setTargetAtTime((300 + 25 * v) * (gravel ? 1.2 : 1), t, .05); n.rl.frequency.setTargetAtTime(8000 - 6800 * k, t, .08); n.rg.gain.setTargetAtTime(on * (.003 + .001 * v) * (gravel ? 1.4 : 1) * (1 + .6 * k), t, .05);
+  },
+  stop() { const n = this.n; if (!n) return; this.n = null; try { const t = AC.currentTime; n.g.gain.setTargetAtTime(0, t, .2); n.rg.gain.setTargetAtTime(0, t, .2); setTimeout(() => { try { n.o1.stop(); n.o2.stop(); n.rs.stop(); n.g.disconnect(); n.rg.disconnect(); } catch (e) { } }, 900); } catch (e) { } },
+  fx(f) { if (!S.sound || !AC || AC.state !== 'running') return; try { f(AC, AC.currentTime); } catch (e) { } },
+  door(open) { this.fx((ac, t) => { if (open) { noise(ac, t, .025, 1800, 1.5, .05, 'bandpass'); sweep(900, 1300, t + .02, .12, .015, 'triangle'); } else { noise(ac, t, .09, 160, .8, .12, 'lowpass'); noise(ac, t, .03, 1400, 1, .04, 'bandpass'); } }); },
+  seat(slide) { this.fx((ac, t) => { noise(ac, t, .12, 300, .8, .04, 'lowpass'); if (slide) { noise(ac, t + .05, .12, 1800, 1.2, .02, 'bandpass'); noise(ac, t + .25, .12, 1800, 1.2, .02, 'bandpass'); } }); },
+  blink(n = 2) { this.fx((ac, t) => { for (let i = 0; i < n; i++) { tone(1900, t + i * .625, .012, .02, 'triangle'); tone(1400, t + i * .625 + .31, .012, .02, 'triangle'); } }); },
+  lock() { this.fx((ac, t) => noise(ac, t, .03, 2400, 2, .04, 'bandpass')); },
+  whoosh() { this.fx((ac, t) => { noise(ac, t, .7, 600, .8, .05, 'bandpass', .8); noise(ac, t + .1, .6, 1800, 1.2, .025, 'bandpass', 1.3); }); },
+};
+// 月光谷、山洞的「回到中央平地」：筆記本還擋在眼前的那一刻換位置（不跳 toast），模糊多留一下（下一輪改成穿越機式的低空滑翔）
+function homeStamp() {
+  closeGui(); const gm = $('#game'); if (!LOW) gm.classList.add('gblur');
+  setTimeout(() => { P.x = 0; P.z = 16; P.yaw = 0; P.pitch = -.05; P.y = G(0, 16); P.camY = P.y; P.vx = P.vz = P.vy = 0; CV.scanNow = 1; W.camAway = false; }, HC.fade + 30);
+  setTimeout(() => gm.classList.remove('gblur'), HC.fade + 280);
 }
 /* ---------- 商店 ---------- */
 function buyOwn(k) {
@@ -6834,7 +7377,7 @@ function bindTouch(cv) {
     if (GUI.kind || TITLE.on) return; e.preventDefault(); try { audio(); } catch (_) { }
     for (const t of e.changedTouches) {
       const x = t.clientX, y = t.clientY;
-      if (!IN.joy && x < innerWidth * .45 && y > innerHeight * .4) { IN.joy = { id: t.identifier, x0: x, y0: y }; jb.style.left = (x - 60) + 'px'; jb.style.top = (y - 60) + 'px'; jb.classList.add('on'); }
+      if (!IN.joy && !RIDE.on && x < innerWidth * .45 && y > innerHeight * .4) { IN.joy = { id: t.identifier, x0: x, y0: y }; jb.style.left = (x - 60) + 'px'; jb.style.top = (y - 60) + 'px'; jb.classList.add('on'); } // 搭車中不建搖桿：整個畫面都是轉頭／按住開快一點
       else if (!IN.look) IN.look = { id: t.identifier, x, y, sx: x, sy: y, t: performance.now(), moved: 0 };
     }
   }, { passive: false });
@@ -7061,7 +7604,7 @@ function heldStep(dt) {
 function viewModelStep(dt) {
   if (!VM.g) initViewModel();
   if (heldStep(dt)) return; // 正在拿起／收回手持道具：手跟著道具走
-  const show = !GUI.kind && !TITLE.on && !W.camAway && !INTRO.on; VM.g.visible = show; if (!show) { VM.key = ''; return; }
+  const show = !GUI.kind && !TITLE.on && !W.camAway && !INTRO.on && !RIDE.on; VM.g.visible = show; if (!show) { VM.key = ''; return; } // 搭車中手先藏起來（下一輪放在膝上）
   const it = held(), key = it ? (it.t === 'prod' ? 'p' + it.p.id : 'g' + it.sp) : '';
   if (key !== VM.key) { VM.key = key; VM.swing = Math.max(VM.swing, .3); if (it) { const sp = SP[it.t === 'prod' ? it.p.sp : it.sp]; if (it.t === 'prod') { jellyColors(VM.J, sp); jellyCut(VM.J, it.p); } else VM.gel.material.color.set(sp.color); } }
   VM.swing = Math.max(0, VM.swing - dt * 2.2); VM.sq = Math.max(0, VM.sq - dt);
@@ -7192,20 +7735,20 @@ function qualityStep(dt) {
 }
 function worldStep(dt) {
   musicStep(dt); ambStep(dt); qualityStep(dt); if (!TITLE.on && (W.clkN = (W.clkN || 0) + 1) % 10 === 0) renderClock();
-  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on) playerStep(dt); if (!INTRO.on) warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數；開場期間也不倒數
+  W.t += dt; W.wind.value = W.t; if (!GUI.kind && !INTRO.on && !RIDE.on) playerStep(dt); if (!INTRO.on) warmStep(GUI.kind && GUI.kind !== 'line' ? 0 : dt); // 介面開著時世界照樣在動，但雪原體溫不倒數；開場期間也不倒數
   if (++W.cullN % 8 === 0 || W.cullN === 1) cullChunks(INTRO.on ? W.cam.position : P);
   giantStep(); if (COOP.on && Date.now() - COOP.last > 8000) coopHide();
   deliverStep(dt); if ((W.phN = (W.phN || 0) + 1) % 30 === 0) photoCheck();
-  const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else cameraStep(dt); viewModelStep(dt); avatarsStep(dt);
+  const hs = W.hitstop > 0; if (hs) W.hitstop -= dt; slimeStep(hs ? dt * .06 : dt, W.t); lineStep(dt); W.anim.forEach(f => f(dt, W.t)); envStep(dt); if (INTRO.on) introStep(dt); else if (RIDE.on) rideStep(dt); else cameraStep(dt); viewModelStep(dt); avatarsStep(dt); // 搭計程車：鏡頭交給 rideStep（在 envStep／caveEnv 之後，隧道的霧、光、曝光會蓋過去）
   if ((W.propN = (W.propN || 0) + 1) % 20 === 0) refreshProps(); stageStep(); upgradeFx(dt);
   if (W.goo) { const got = W.goo.update(dt, VM.palm && VM.g.visible ? VM.palm.getWorldPosition(tmpV) : W.cam.localToWorld(tmpV.set(.3, -.26, -.72))); if (got) { VM.jv = (VM.jv || 0) + 2.5 * got; VM.swing = Math.max(VM.swing, .12); if (performance.now() - (W.colT || 0) > 90) { W.colT = performance.now(); sfx.collect(); } } }
   for (const s of W.labels) { s.getWorldPosition(tmpV); const o = GUI.kind === 'line' ? 0 : (s.userData.keep ? 1 : smooth(2.4, 5, tmpV.distanceTo(W.cam.position))); s.material.opacity = o; s.visible = o > .02; }
   renderCoach();
   // 準心對到會說話的對象時，改由他頭上的「…」提示，畫面中央不顯示文字（talk.js 的 tkLabel）
-  if (!GUI.kind && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
-  else if (GUI.kind) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
+  if (!GUI.kind && !RIDE.on && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
+  else if (GUI.kind || RIDE.on) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）
-  if ((IN.hold || IN.holdE) && !GUI.kind && !TK.on) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
+  if ((IN.hold || IN.holdE) && !GUI.kind && !TK.on && !RIDE.on) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
   if (W.sneakUI !== !!P.sneak) { W.sneakUI = !!P.sneak; $('#vig').classList.toggle('on', W.sneakUI); $('#btnSneak').classList.toggle('on', W.sneakUI); if (W.sneakUI && !S.tipSneak) { S.tipSneak = true; toast('潛行中：腳步變輕，怕生的稀有史萊姆比較不會發現你'); } }
   W.r.render(W.scene, W.cam);
 }
@@ -7222,7 +7765,7 @@ function loop(now) {
     const g = GUI.kind;
     if (W.lost) { /* 顯示資源遺失期間暫停繪製，恢復後自動繼續 */ }
     else if (W.ready && TITLE.on) { titleStep(dt); drsStep(dt); }
-    else if (W.ready && (!g || g === 'line' || gxBusy())) { worldStep(dt); renderCompass(); drsStep(dt); bgAcc = 0; }
+    else if (W.ready && (!g || g === 'line' || gxBusy() || RIDE.on)) { worldStep(dt); renderCompass(); drsStep(dt); bgAcc = 0; } // 搭車中窗外一直在動：介面開著也全速重畫
     else if (W.ready) {
       // 介面開著：世界照樣在背後動、照樣有聲音，只是降低重繪頻率省電（玩家不能移動、準心不互動由 worldStep 依 GUI.kind 判斷）。
       // 降頻時不讓畫質自動調整與動態解析度把它誤判成掉幀
@@ -7262,7 +7805,7 @@ function ui(name) { window.dispatchEvent(new CustomEvent('slime:ui', { detail: n
 window.SlimeGame = {
   get S() { return S; }, get M() { return M; }, get BN() { return BN; }, get NET() { return NET; }, get trend() { return trend; },
   get invSel() { return invSel; }, get tab() { return tab; }, get kind() { return GUI.kind; }, likeT: () => W.likeT || {},
-  get title() { return TITLE; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
+  get title() { return TITLE; }, get inCity() { return !!P && inCity(); }, get riding() { return RIDE.on; }, saveCount: () => savesInfo().length, MAX_SAVES, hasSave: () => !!lsGet(SAVE_KEY) && S.seen, fmtTime, SENS_N, XP_LV,
   MG, STEPS, MKEY, ownAny, TOUCH,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,

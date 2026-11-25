@@ -18,7 +18,7 @@ type Own = { name: string; cost: number; shop: string; desc: string };
 export type Game = {
   S: State; M: { sp: string | null }; BN: { busy: boolean }; NET: { on: boolean; me: string; players: Map<string, { name: string; color: string; show?: { sp: string; cut?: string; cr: number }[] }> };
   trend: { sp: string | null }; invSel: number | null; tab: string; kind: string | null; likeT: () => Record<string, number>;
-  title: { on: boolean; mp?: boolean }; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
+  title: { on: boolean; mp?: boolean }; inCity?: boolean; riding?: boolean; hasSave: () => boolean; saveCount?: () => number; fmtTime: (t?: number) => string; SENS_N: string[]; XP_LV: number[]; xpLevel: (xp: number) => number;
   SP: Record<string, Species>; SPECIES: Species[]; ZONES: { id: string; name: string; acc: string }[]; RAR: ({ n: string; c: string } | null)[];
   UPS: Record<string, Up>; OWN: Record<string, Own>; PACKS: Record<string, { name: string; cost: number }>;
   DECO: Record<string, { n: string; c: string; pack: string }>; CUTS: Record<string, { n: string; col: string; desc: string }>;
