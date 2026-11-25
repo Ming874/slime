@@ -332,23 +332,23 @@ function musicStep(dt) {
 const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
 const SONGS = {
   // 森林：F 大調，午後陽光；卡林巴琴分解和弦＋木琴旋律＋很輕的沙鈴
-  base: { bpm: 72, swing: .04, cut: 2600, rev: .32,
+  base: { bpm: 72, swing: .04, cut: 2600, rev: .32, tonic: 5,
     ch: [[41, [57, 60, 64, 67]], [38, [57, 60, 62, 65]], [46, [57, 58, 62, 65]], [36, [55, 60, 62, 67]], [45, [55, 60, 64, 67]], [38, [57, 60, 64, 65]], [43, [58, 62, 65, 67]], [36, [55, 60, 65, 67]]],
     sc: [65, [0, 2, 4, 7, 9]], lo: 65, hi: 84, mel: 'marimba', arp: 'kalimba', arpP: [0, 2, 1, 3, 2, 1, 3, 2], pad: { type: 'triangle', cut: 900, v: .022 }, bass: [0, 10], shaker: .012, dens: .55 },
   // 海岸：A 大調，海風與巴薩諾瓦的律動；尼龍弦旋律、電鋼琴切分和弦、沙鈴十六分音符
-  coast: { bpm: 84, swing: .08, cut: 3200, rev: .28,
+  coast: { bpm: 84, swing: .08, cut: 3200, rev: .28, tonic: 9,
     ch: [[45, [56, 61, 64, 69]], [42, [57, 61, 64, 66]], [38, [57, 61, 62, 66]], [40, [57, 59, 62, 64]], [45, [56, 61, 64, 69]], [37, [56, 59, 61, 64]], [47, [57, 59, 62, 66]], [40, [56, 59, 62, 64]]],
     sc: [69, [0, 2, 4, 7, 9]], lo: 66, hi: 86, mel: 'pluck', comp: [0, 6, 10], pad: { type: 'sine', cut: 1400, v: .016 }, bass: [0, 6, 8, 14], shaker: .016, sh16: true, dens: .6 },
   // 火山：D 多利安，溫暖帶點神祕；低沉長音、木琴低音域旋律、很輕的手鼓
-  volcano: { bpm: 64, swing: 0, cut: 1800, rev: .38,
+  volcano: { bpm: 64, swing: 0, cut: 1800, rev: .38, tonic: 0, // D 多利安用的是 C 大調的七個音：Do＝C
     ch: [[38, [53, 57, 60, 64]], [40, [55, 59, 62, 64]], [41, [53, 57, 59, 64]], [38, [53, 57, 62, 64]], [45, [55, 60, 64, 67]], [48, [55, 59, 60, 64]], [43, [55, 59, 62, 67]], [38, [53, 57, 62, 64]]],
     sc: [62, [0, 2, 3, 5, 7, 9, 10]], lo: 57, hi: 76, mel: 'marimba', pad: { type: 'sawtooth', cut: 520, v: .02 }, drone: true, bass: [0], drum: [0, 7, 10], dens: .42 },
   // 雪原：E 大調（利底亞色彩），音樂盒＋鐘琴，空氣感的長音，沒有打擊樂
-  snow: { bpm: 60, swing: 0, cut: 4200, rev: .45, bars: 2,
+  snow: { bpm: 60, swing: 0, cut: 4200, rev: .45, bars: 2, tonic: 4,
     ch: [[40, [56, 59, 63, 66]], [37, [56, 59, 63, 64]], [45, [56, 61, 63, 64]], [47, [59, 61, 63, 66]]],
     sc: [76, [0, 2, 4, 7, 9]], lo: 74, hi: 93, mel: 'musicbox', arp: 'bell', arpP: [3, -1, 2, -1, 1, -1, 2, -1], pad: { type: 'triangle', cut: 2400, v: .014 }, bass: [0], dens: .5 },
   // 大城市：C 大調 lo-fi，窗邊咖啡店；電鋼琴和弦、輕鼓、黑膠底噪
-  city: { bpm: 78, swing: .12, cut: 2200, rev: .22,
+  city: { bpm: 78, swing: .12, cut: 2200, rev: .22, tonic: 0,
     ch: [[36, [59, 62, 64, 67]], [45, [55, 59, 60, 64]], [38, [57, 60, 64, 65]], [43, [53, 57, 59, 64]]],
     sc: [72, [0, 2, 4, 7, 9]], lo: 67, hi: 84, mel: 'epiano', comp: [0, 6], compLong: true, pad: { type: 'sine', cut: 900, v: .01 }, bass: [0, 10], kit: true, crackle: true, dens: .45 },
 };
@@ -440,6 +440,9 @@ function genMusic(dt, key, vol) {
   }
 }
 const genKey = () => { const z = TITLE.on ? 'forest' : (W.zoneNow || 'forest'); return z === 'forest' ? 'base' : SONGS[z] ? z : 'base'; };
+// 這一區配樂的「Do」（首調唱名）：採集三下的 Do-Mi-Sol、完美和弦、升級琶音都從這裡移調。tonic＝主音比 C 高幾個半音，移到 C5 上下半個八度內（F#4～F5），換區時拍點的高度不會一下跳太多
+// 內建配樂和效果音走不同的匯流排（genBus 不經過 master），只比對效果音彼此不會發現：固定 C 大調的和弦疊在海岸（A 大調）、雪原（E 大調）上會有 C 對 C#、G 對 G# 的小二度
+const keyDo = () => 523.25 * Math.pow(2, ((((SONGS[genKey()] || SONGS.base).tonic || 0) + 6) % 12 - 6) / 12);
 // 環境音：程式合成（不需要音樂檔），白天鳥叫、夜裡蟲鳴、海浪、火山低鳴、雪原的風、城市車流
 function swell(t, dur, f, q, vol, type = 'lowpass') {
   const ac = AC, src = ac.createBufferSource(); src.buffer = NB; src.loop = true; src.playbackRate.value = rnd(.7, 1.1);
@@ -473,7 +476,7 @@ const sfx = {
   },
   boing(pitch = 1, v = 1) { if (!S.sound || v <= .02) return; const ac = audio(), t = ac.currentTime; sweep(380 * pitch, 150 * pitch, t, .14, .045 * v); noise(ac, t, .07, 600 * pitch, 1, .05 * v, 'lowpass'); },
   notice(v = 1) { if (!S.sound) return; const t = audio().currentTime; tone(1180, t, .06, .025 * v, 'triangle'); tone(1760, t + .05, .09, .025 * v, 'triangle'); },
-  collect() { if (!S.sound) return; const t = audio().currentTime; sweep(300, 900, t, .12, .06); tone(1568, t + .08, .18, .04, 'triangle'); },
+  collect() { if (!S.sound) return; const t = audio().currentTime; sweep(300, 900, t, .12, .06); tone(keyDo() * 2.99661, t + .08, .18, .04, 'triangle'); }, // 凝膠飛進手裡：叮一聲高音 Sol，和採集三下一樣跟著配樂的調（原本固定 G6，海岸、雪原的配樂裡是 G#）
   jump() { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, .12, 700, .7, .04, 'lowpass'); },
   land(k = .5, kind = 'grass') { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, .16, 180, .8, .08 + k * .14, 'lowpass'); sfx.step(kind, 1.2 + k); },
   pop() { if (!S.sound) return; const t = audio().currentTime; [660, 880, 1320].forEach((f, i) => tone(f, t + i * 0.07, 0.25, 0.16)); },
@@ -493,8 +496,23 @@ const sfx = {
   },
   open() { if (!S.sound) return; const t = audio().currentTime; tone(520, t, .12, .08, 'triangle'); tone(780, t + .06, .15, .08, 'triangle'); },
   coin() { if (!S.sound) return; const t = audio().currentTime; tone(1318.5, t, .12, .1, 'triangle'); tone(1975.5, t + .07, .3, .1, 'triangle'); },
-  level() { if (!S.sound) return; const t = audio().currentTime; [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, t + i * .07, .28, .09, 'triangle')); },
+  // 升級：Do-Mi-Sol-Do 琶音，跟著配樂移調（keyDo）。和採集第 3 下同一刻（收成剛好升級）時晚 0.6 秒才響：不然這四個音和完美和弦一模一樣、還比較大聲，沒完美的收成聽起來也像完美
+  level() { if (!S.sound) return; const t0 = audio().currentTime, t = t0 + (t0 - sfx.beatT < .05 ? .6 : 0), D = keyDo(); [1, 1.25992, 1.49831, 2].forEach((r, i) => tone(D * r, t + i * .07, .28, .09, 'triangle')); },
+  beatT: -9, // 上一次 beat 的時間（AudioContext 的秒數），給 level 判斷是不是同一刻
   perfect() { if (!S.sound) return; const t = audio().currentTime; tone(1046.5, t, .2, .08); tone(1568, t + .08, .4, .08); },
+  // 採集的三下：Do→Mi→Sol，跟著這一區配樂的調（keyDo：森林 F、海岸 A、火山 C、雪原 E、城市 C），疊在背景音樂上不會有小二度；一下比一下大聲。疊在 squish 上面，史萊姆大小只改 squish 的音高、音階不跟著變，拍點才聽得出來
+  // on＝這一下落在完美窗：多一聲高八度的鈴；full＝三下都完美：第 3 下疊上 Do-Mi-Sol-Do 和弦泛音（1.4 秒）、往上灑三顆星光
+  // 沒完美的第 3 下：Sol 之後接短短的 Do'→Do''（和原本收成的 pop 一樣往上跳，但沒有 Mi，聽不出和弦；也不用 Sol'，那是完美窗的鈴）
+  beat(n, on, full) {
+    if (!S.sound) return; const ac = audio(), t = ac.currentTime, D = keyDo(), i = clamp(n | 0, 1, 3), f = D * [1, 1.25992, 1.49831][i - 1], v = .06 + i * .016; sfx.beatT = t;
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(f * .84, t); o.frequency.exponentialRampToValueAtTime(f, t + .035); // 從低一點滑上主音：像手指按進果凍的「啵」
+    g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .008); g.gain.exponentialRampToValueAtTime(.0008, t + .34); o.connect(g); g.connect(master); o.start(t); o.stop(t + .4);
+    tone(f * 2, t + .005, .16, v * .25, 'triangle'); // 一點點高八度的泛音：squish 的低頻噪音蓋不掉音高
+    if (on) { tone(f * 2, t + .02, .55, .05); tone(f * 4, t + .045, .38, .014); }
+    if (i < 3) return;
+    if (full) { [1, 1.25992, 1.49831, 2].forEach((r, j) => tone(D * r, t + .03 + j * .012, 1.4, .034)); [2.51984, 2.99661, 4].forEach((r, j) => tone(D * r, t + .1 + j * .065, .6, .024, 'triangle')); }
+    else { tone(D * 2, t + .08, .24, .06, 'triangle'); tone(D * 4, t + .15, .2, .022, 'triangle'); }
+  },
   bad() { if (!S.sound) return; const t = audio().currentTime; tone(240, t, .2, .07, 'triangle'); },
   machine(i) {
     if (!S.sound) return; const ac = audio(), t = ac.currentTime;
@@ -4031,12 +4049,12 @@ function slimeHitCore(sl, who) {
     if ([...sl.gh.values()].filter(t => now - t < 1500).length < 2) return { res: 'need2' };
     sl.gh.clear(); sl.hits++; if (sl.hits >= 3) { sl.hits = 0; sl.cool = 45; sl.happy = .6; giantWin(sl); return { res: 'giant' }; } return { res: 'hit', hits: sl.hits };
   } sl.hits++; sl.sq = 1; sl.since = 0; if (sl.hits >= 3) { sl.cool = sl.tut ? 2.5 : 6; sl.hits = 0; sl.happy = .6; return { res: 'harvest' }; } return { res: 'hit', hits: sl.hits }; }
-function slimeReact(sl, local, kind) {
+function slimeReact(sl, local, kind, f = 1) { // f：這一下的力道（applyHit 依第幾下給，只影響凹陷與壓扁的大小）
   const dx = sl.x - P.x, dz = sl.z - P.z, d = Math.hypot(dx, dz) || 1, U = sl.U;
   if (local) U.uDent.value.set(local.x, local.y, local.z, U.uDent.value.w); else U.uDent.value.set(0, .75, .95, U.uDent.value.w);
   sl.noticed = true;
   if (kind === 'shy') { sl.dentV += 1.4; sl.sqV -= 1.2; sl.rip = 0; sl.ripA = .02; sl.sur = .45; if (!emoteOn(sl)) emote(sl, 'zz', 1.4); return; }
-  sl.dentV += 3.6; sl.rip = 0; sl.ripA = .05; sl.sqV -= 3.4; sl.lvx += dx / d * 1.8; sl.lvz += dz / d * 1.8; sl.sur = 1;
+  sl.dentV += 3.6 * f; sl.rip = 0; sl.ripA = .05; sl.sqV -= 3.4 * f; sl.lvx += dx / d * 1.8; sl.lvz += dz / d * 1.8; sl.sur = 1;
   if (kind === 'harvest') { sl.hap = 1.6; sl.sur = 0; if (!(sl.air > 0)) { sl.vy = 4.5; sl.air = .001; sl.hvx = sl.hvz = 0; sl.sqV += 4; } emote(sl, 'heart'); }
   else if (!(sl.air > 0)) { sl.vy = 2; sl.air = .001; if (!sl.mirror) { sl.hvx = dx / d * 1.4; sl.hvz = dz / d * 1.4; } }
 }
@@ -4044,31 +4062,43 @@ function hitSlime(sl, pt) {
   const now = performance.now() / 1000, gap = now - (sl.lastHit || 0); sl.lastHit = now;
   sl.perf = sl.hits > 0 && sl.cool <= 0 && gap > .24 && gap < .46 ? (sl.perf || 0) + 1 : 0;
   const local = pt ? sl.m.userData.body.worldToLocal(pt.clone()) : null;
-  if (sl.mirror) { netSend({ t: 'hit', id: sl.id }); slimeReact(sl, local, sl.cool > 0 ? 'shy' : 'hit'); sl.sq = 1; sfx.squish(.6, slPitch(sl)); splashAt(sl, pt, 6); return; }
+  if (sl.mirror) { netSend({ t: 'hit', id: sl.id }); slimeReact(sl, local, sl.cool > 0 ? 'shy' : 'hit'); sl.sq = 1; sfx.squish(.6, slPitch(sl)); splashAt(sl, pt, 6); const bn = mirrorBeat(sl, now); vmPress(sl.cool > 0 ? 0 : bn || Math.min(3, (sl.hits || 0) + 1)); return; } // 多人的客戶端：第幾下以房主回覆（hitr）為準，音階與手的力道先照畫面上的進度猜
   applyHit(sl, slimeHitCore(sl, NET.me), local, pt);
 }
+// 多人的客戶端：房主的回覆（hitr）要等一個網路來回，Do/Mi/Sol 如果等回覆才放，會比手和捏的聲音慢半拍，節奏就聽不準了。
+// 所以捏下去當下先照畫面上的進度（房主同步來的 hits，加上自己剛剛猜過的第幾下：同步可能還沒追上）猜著放；完美與否用的是本機算的 sl.perf，和回覆後 applyHit 用的同一個值。
+// 每次送出的 hit 都排一筆猜測（不放音也排 n＝0），hitr 依序對回去：猜對就不再放，猜錯才補正確的那一聲。巨型史萊姆要兩個人一起捏，猜不準，照舊等回覆
+function mirrorBeat(sl, now) {
+  const q = sl.bq || (sl.bq = []), last = sl.bpT && now - sl.bpT < 1.2 ? sl.bpN : 0;
+  const n = sl.cool > 0 || sl.giant || last >= 3 ? 0 : Math.min(3, Math.max(sl.hits || 0, last) + 1);
+  q.push({ n, t: now }); if (q.length > 6) q.shift(); if (!n) return 0;
+  sl.bpN = n; sl.bpT = now; sfx.beat(n, sl.perf > 0, n === 3 && sl.perf >= 2); return n;
+}
+function mirrorBeatTake(sl) { const q = sl.bq, now = performance.now() / 1000; if (!q) return null; while (q.length && now - q[0].t > 2) q.shift(); return q.shift() || null; } // 太久沒回覆的（房主沒收到、離太遠）丟掉
 function splashAt(sl, pt, n) {
   if (!W.goo) return; const p = pt ? pt.clone() : sl.m.position.clone().setY(sl.m.position.y + .7 * sl.sc), dx = sl.x - P.x, dz = sl.z - P.z, d = Math.hypot(dx, dz) || 1;
   W.goo.emit(p, n, sl.sp.color, { gy: sl.m.position.y + .02, dx: -dx / d * .8, dz: -dz / d * .8 });
 }
 function applyHit(sl, r, local, pt, remote) {
-  const top = sl.m.position.clone().setY(sl.m.position.y + (SL_H + .35) * sl.sc);
+  const top = sl.m.position.clone().setY(sl.m.position.y + (SL_H + .35) * sl.sc), pb = remote && sl.mirror ? mirrorBeatTake(sl) : null; // pb：捏下去當下已經先放過的那一聲（mirrorBeat）
   if (r.res === 'need2') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, '巨型史萊姆要兩個人一起捏！（1.5 秒內）', '#fbbf24'); sfx.squish(.7, .6); return; }
-  if (r.res === 'giant') { if (!remote) slimeReact(sl, local, 'harvest'); splashAt(sl, pt, 20); fx3(top, '合力捏開了！', '#f0abfc', 'big'); sfx.perfect(); return; }
+  if (r.res === 'giant') { if (!remote) { slimeReact(sl, local, 'harvest', 1.15); vmPress(3); } splashAt(sl, pt, 20); fx3(top, '合力捏開了！', '#f0abfc', 'big'); sfx.beat(3, false, true); return; } // 合力捏開＝第 3 下＋和弦
   if (r.res === 'curl') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, '縮成一團了……別一直盯著牠，從側面慢慢靠近', '#c4b5fd'); sfx.squish(.3, slPitch(sl) * 1.1); return; }
   if (r.res === 'shy') { if (!remote) slimeReact(sl, local, 'shy'); fx3(top, `休息中，${Math.max(1, Math.ceil(sl.cool || 0))} 秒後恢復`, '#93c5fd'); sfx.squish(.35, slPitch(sl) * .9); ringPulse('cool'); return; }
-  if (!remote) { slimeReact(sl, local, r.res); splashAt(sl, pt, r.res === 'harvest' ? 12 : 7); sfx.squish(.85, slPitch(sl)); }
-  if (navigator.vibrate) navigator.vibrate(r.res === 'harvest' ? [10, 30, 14] : 8);
-  const perfect = sl.perf > 0;
+  // 第幾下（1～3）：音高 Do→Mi→Sol、手與史萊姆被壓的力道、震動都一下比一下大；perfect＝這一下落在完美窗（hitSlime 的 sl.perf，判定與獎勵照舊）
+  const bn = r.res === 'harvest' ? 3 : clamp(r.hits | 0, 1, 3), perfect = sl.perf > 0;
+  if (!remote) { slimeReact(sl, local, r.res, [1, .8, 1, 1.15][bn]); splashAt(sl, pt, r.res === 'harvest' ? 12 : 7); sfx.squish(.85, slPitch(sl)); vmPress(bn); }
+  if (navigator.vibrate) navigator.vibrate(r.res === 'harvest' ? [10, 30, 14] : bn === 1 ? 6 : 10);
+  if (!pb || pb.n !== bn) sfx.beat(bn, perfect, r.res === 'harvest' && sl.perf >= 2); // 原本完美時另外響的 perfect、收成的 pop（E-A-E，和 Sol 打架）都併進這一聲；多人客戶端猜對的就不再放第二次
   if (r.res === 'harvest') {
     W.hitstop = .09;
     const bonus = sl.perf >= 2 ? 1 : 0, n = Math.max(1 + S.up.net + bonus, S.tutDone ? 0 : 2); sl.happy = .6; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); gainXP(XP_HARV[sl.sp.rar] + bonus);
-    fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big'); sfx.pop();
-    if (bonus) { setTimeout(() => fx3(top.clone().setY(top.y + .5), '完美節奏！額外 +1', '#f0abfc', 'big'), 220); sfx.perfect(); if (!emoteOn(sl) || sl.emo.k !== 'star') emote(sl, 'star'); }
+    fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big');
+    if (bonus) { setTimeout(() => fx3(top.clone().setY(top.y + .5), '完美節奏！額外 +1', '#f0abfc', 'big'), 220); if (!emoteOn(sl) || sl.emo.k !== 'star') emote(sl, 'star'); }
     if (W.goo) W.goo.emit(sl.m.position.clone().setY(sl.m.position.y + .7 * sl.sc), 3 + n * 3, sl.sp.color, { collect: true, size: .07, up: 3.5, speed: 1.2 });
     toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠${bonus ? '（完美節奏加成）' : ''}`); if (!S.tutDone) coachFlash(`凝膠飛進你的手裡了！（+${n}）`, 2600); renderHotbar(true); sl.perf = 0;
-    if (!S.tipRhythm) { S.tipRhythm = true; setTimeout(() => toast('小技巧：每一下之間抓穩節奏（約 0.3 秒）連續捏，三下都完美可多得 1 份凝膠'), 1500); }
-  } else { fx3(top, `${short(sl.sp.id)} ${r.hits}/3${perfect ? ' 完美！' : ''}`, perfect ? '#f0abfc' : RAR[sl.sp.rar].c); if (perfect) sfx.perfect(); }
+    if (!S.tipRhythm) { S.tipRhythm = true; setTimeout(() => toast('小技巧：捏一下之後，準心外圈亮一圈的時候再捏（約 0.3 秒）；Do、Mi、Sol 三下都完美會響起和弦、多得 1 份凝膠'), 1500); }
+  } else { fx3(top, `${short(sl.sp.id)} ${r.hits}/3${perfect ? ' 完美！' : ''}`, perfect ? '#f0abfc' : RAR[sl.sp.rar].c); }
   ringPulse(perfect ? 'perf' : 'hit');
 }
 
@@ -4399,6 +4429,8 @@ function coachText() {
 function renderCoach() {
   const h = coachText(); if (h === COACH.sig) return; COACH.sig = h; const el = $('#coach'); if (!el) return;
   el.hidden = !h; if (h) el.innerHTML = h; el.classList.toggle('flash', h.includes('class="st ok"'));
+  // 矮的橫向畫面卡片放左下（app/game.css），訊息列要往上讓出卡片的高度：換字、轉向、折行時都重量一次
+  document.body.classList.toggle('coach', !!h); if (!COACH.ro && window.ResizeObserver) { COACH.ro = new ResizeObserver(() => document.body.style.setProperty('--coachH', el.offsetHeight + 'px')); COACH.ro.observe(el); }
 }
 /* 第一個捏捏完成：不跳彈窗。手作台開著＝奶奶的便條從凝膠罐那排底下滑出（桌上，Bench.tsx），已經關了＝從切割墊拿起同一張（手上）；
    奶奶送的舊切片機蓋著帆布在北邊產線等你看見才掀開（GIFT）；「賣掉 → 存錢 → 買機器」交給目標面板 */
@@ -5564,7 +5596,7 @@ function showHelp() {
   const keys = TOUCH
     ? '<div class="keys"><kbd>左下</kbd><span>拖曳虛擬搖桿移動</span><kbd>右側</kbd><span>滑動轉動視角，輕點物件即可互動</span><kbd>手掌</kbd><span>對準準心的物件互動（採集、使用工作站），按住可連續捏</span><kbd>箭頭</kbd><span>跳躍</span><kbd>閃電</kbd><span>切換奔跑</span><kbd>腳印</kbd><span>切換潛行：腳步變輕，靠近怕生的稀有史萊姆</span><kbd>右上</kbd><span>背包、選單</span></div>'
     : '<div class="keys"><kbd>WASD</kbd><span>移動</span><kbd>滑鼠</kbd><span>環顧四周（點擊畫面鎖定滑鼠）</span><kbd>E / 左鍵</kbd><span>互動：採集史萊姆、使用工作站、調查線索（按住可連續捏）</span><kbd>空白鍵</kbd><span>跳躍（切片時下刀、裹糖時按住加速）</span><kbd>Shift</kbd><span>奔跑（史萊姆會更早發現你）</span><kbd>C（按住）</kbd><span>潛行：腳步變輕，怕生的稀有史萊姆不容易察覺</span><kbd>1–9 / 滾輪</kbd><span>選擇快捷列</span><kbd>I / Tab</kbd><span>背包與探索日誌</span><kbd>Alt</kbd><span>暫時放開滑鼠（遊戲不暫停），再按一次或點擊畫面回到操控</span><kbd>Esc</kbd><span>關閉介面／選單</span></div>';
-  modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。每一下之間抓穩約 0.3 秒的節奏，連續「完美」可以多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。拿著捏捏對準網站貨架就能上架；站上直播舞台就開直播。多人時：巨型史萊姆要兩人一起捏、拿著凝膠對準朋友可以送給對方、朋友站在產線旁會幫你裹糖。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
+  modal(`<h2>操作說明</h2>${keys}<p class="small" style="color:var(--sub);margin-top:10px">採集技巧：準心外圈的三格代表採集進度。捏一下之後約 0.3 秒，外圈會亮一圈，亮著的時候捏下一下就是「完美」；三下是 Do、Mi、Sol，三下都完美會響起和弦、多得 1 份凝膠。稀有史萊姆很怕生，會逃跑，要潛行慢慢靠近。<br>遊戲循環：採集凝膠 → 工坊加工 → 裝飾 → 直播或網站販售 → 升級。拿著捏捏對準網站貨架就能上架；站上直播舞台就開直播。多人時：巨型史萊姆要兩人一起捏、拿著凝膠對準朋友可以送給對方、朋友站在產線旁會幫你裹糖。山脊上的能量門要解開前一區的謎題才會開啟。</p>`);
 }
 
 
@@ -8605,6 +8637,8 @@ function initViewModel() {
   g.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false; } });
   g.visible = false;
 }
+// 採集時這一下的力道：第 1 下輕按、第 2 下壓深一點、第 3 下用力擠到底（applyHit 呼叫；act 照舊決定要不要擠，這裡只加深擠的幅度）
+function vmPress(n) { VM.pw = [0, .35, .65, 1][n] || 0; VM.pt = 0; }
 // 吸取器與指示燈：n＝亮幾顆（0＝沒有吸取器）
 function vmGad(n) { VM.gad.scale.setScalar(n > 0 ? .6 : 0); VM.gadL.forEach((b, i) => b.scale.setScalar(i < n ? 1 : 0)); }
 function heldKey() { const it = held(); return it ? (it.t === 'prod' ? 'p' : 'g') + SPECIES.indexOf(SP[it.t === 'prod' ? it.p.sp : it.sp]) : ''; }
@@ -9143,7 +9177,9 @@ function viewModelStep(dt) {
   // 伸手或擠壓時，手上的東西先收進掌心（縮小），避免手指張開時穿模
   const keep = it && !tp && pose !== 'reach' && pose !== 'squeeze' ? 1 : 0; VM.holdK += (keep - VM.holdK) * k;
   VM.J.group.visible = !!it && it.t === 'prod' && VM.holdK > .03; VM.gel.visible = !!it && it.t === 'gel' && VM.holdK > .03; VM.hold.scale.setScalar(Math.max(.001, VM.holdK));
-  vmPose(p);
+  // 擠壓的力道（vmPress）：50 ms 壓下去、0.28 秒鬆回來；手指多握一點、手腕往前往下按。疊在這一格的手勢上（VM.pp），不寫回 VM.p，不影響其他手勢的過渡
+  let pr = 0; if (VM.pw > 0 && !tp) { VM.pt += dt; const u = VM.pt; pr = VM.pw * (u < .05 ? u / .05 : Math.max(0, 1 - (u - .05) / .28) ** 2); if (u > .33) VM.pw = 0; }
+  if (pr > 0) { const q = VM.pp || (VM.pp = {}); Object.assign(q, p); q.c += pr * .14; q.t += pr * .12; q.x -= pr * .04; q.y += pr * .015; q.z -= pr * .11; q.rx -= pr * .32; q.rz -= pr * .12; vmPose(q); } else vmPose(p);
   // 凍僵：空手時手指冷得縮起來，整隻手細細地抖（約 9～15 Hz；減少動態時只縮手指、不抖）。看完醫生跟著 FZ 慢慢放鬆
   const ck = FZ.cold, fs = FZ.rm ? 0 : FZ.sh, tx = fs * .0045 * (Math.sin(W.t * 59) + .5 * Math.sin(W.t * 97)), ty = fs * .0038 * Math.cos(W.t * 71);
   if (ck > .01 && pose === 'empty') { VM.fingers.forEach((f, i) => { f.k1.rotation.x += ck * .24 + fs * .06 * Math.sin(W.t * (31 + i * 6)); f.k2.rotation.x += ck * .14; }); VM.thumb.tk.rotation.x += ck * .12; }
@@ -9155,20 +9191,33 @@ function viewModelStep(dt) {
   // 手上的凝膠會隨走路、揮動與吸收凝膠而 Q 彈晃動
   VM.jv = (VM.jv || 0) + ((-(VM.j || 0)) * 220 - (VM.jv || 0) * 9) * dt + (by * 40 + sw * 4) * dt; VM.j = clamp((VM.j || 0) + VM.jv * dt, -.35, .35);
   const grip = pose === 'squeeze' ? 0 : p.c * .06; // 手指握緊時凝膠被壓扁一點
-  VM.g.scale.setScalar(sc); VM.g.position.set(ax + bx + tx, ay - by - sw * .04 - (P.sneak ? .03 : 0) + ty, -d + sw * .03); VM.g.rotation.set(sw * .35 + ty * 4, 0, -sw * .15 + P.roll * 2 + tx * 5);
+  VM.g.scale.setScalar(sc); VM.g.position.set(ax + bx + tx, ay - by - sw * .04 - (P.sneak ? .03 : 0) + ty - pr * .015 * sc, -d + sw * .03 - pr * .06 * sc); VM.g.rotation.set(sw * .35 + ty * 4 - pr * .12, 0, -sw * .15 + P.roll * 2 + tx * 5);
   VM.J.group.rotation.y += dt * .5; VM.gel.rotation.y += dt * .5; VM.gel.scale.set((1 - VM.j * .5) * (1 - grip), .72 * (1 + VM.j) * (1 + grip * .6), (1 - VM.j * .5) * (1 - grip));
 }
 /* ---------- 準心環：對準史萊姆時顯示採集進度（3 格）或休息倒數 ---------- */
 function initRing() {
   const r = $('#ring'); if (!r || r._init) return; r._init = true;
   const arc = (a0, a1) => { const p = a => [24 + 19 * Math.cos(a), 24 + 19 * Math.sin(a)], [x0, y0] = p(a0), [x1, y1] = p(a1); return `M${x0.toFixed(2)} ${y0.toFixed(2)}A19 19 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`; };
-  r.innerHTML = [0, 1, 2].map(i => { const c = -Math.PI / 2 + i * PI2 / 3 - PI2 / 3; return `<path class="seg" d="${arc(c - .9, c + .9)}"/>`; }).join('') + '<circle class="cool" cx="24" cy="24" r="19" pathLength="100"/>';
+  r.innerHTML = [0, 1, 2].map(i => { const c = -Math.PI / 2 + i * PI2 / 3 - PI2 / 3; return `<path class="seg" d="${arc(c - .9, c + .9)}"/>`; }).join('') + '<circle class="cool" cx="24" cy="24" r="19" pathLength="100"/><circle class="beat" cx="24" cy="24" r="22.6"/>';
 }
 function renderRing() {
   const r = $('#ring'); if (!r) return; initRing(); const t = TARGET, on = !!(t && t.type === 'slime') && !GUI.kind; r.classList.toggle('on', on); if (!on) { r._sig = ''; return; }
   const s = t.sl, sig = s.cool > 0 ? 'c' + Math.ceil(s.cool * 5) : 'h' + s.hits + (s.flee > 0 ? 'f' : ''); if (r._sig === sig) return; r._sig = sig;
   $$('#ring .seg').forEach((e, i) => e.setAttribute('class', 'seg' + (s.cool > 0 ? ' off' : i < s.hits ? ' f' : '')));
-  const cc = $('#ring .cool'); cc.style.strokeDasharray = s.cool > 0 ? `${(s.cool / 6 * 100).toFixed(1)} 100` : '0 100'; r.classList.toggle('flee', s.flee > 0);
+  const cc = $('#ring .cool'); cc.style.strokeDasharray = s.cool > 0 ? `${(s.cool / 6 * 100).toFixed(1)} 100` : '0 100'; cc.style.visibility = s.cool > 0 ? 'visible' : 'hidden'; r.classList.toggle('flee', s.flee > 0); // 不在休息時整圈藏起來：長度 0 的虛線加圓頭會在正上方畫出一個藍點，剛好壓在第 2 格上
+}
+// 拍點：捏了第 1、2 下之後，下一下的完美窗（hitSlime 的 0.24～0.46 秒，用同一個 sl.lastHit 算，和判定一致）準心環外圈亮一圈；窗開之前一圈細線等速從外面縮進來，縮到外圈那一刻就是拍點
+// 每格呼叫：沒有拍點時第一行就回去；只改 DOM（SVG），不增加任何 3D 繪製
+const RB = { el: null, ring: null, k: '' };
+function ringBeat() {
+  const t = TARGET, s = t && t.type === 'slime' && !GUI.kind ? t.sl : null, g = s && s.hits > 0 && !(s.cool > 0) ? performance.now() / 1000 - (s.lastHit || 0) : 1;
+  if (g >= .46 && !RB.k) return;
+  if (!RB.el) { initRing(); RB.el = $('#ring .beat'); RB.ring = $('#ring'); if (!RB.el) return; }
+  const win = g > .24 && g < .46, k = g >= .46 ? '' : win ? 'w' : 'a', e = RB.el.style;
+  if (k !== RB.k) { RB.k = k; RB.rm = RM(); RB.ring.classList.toggle('win', win); RB.el.classList.toggle('w', win); if (!k) { e.opacity = '0'; e.transform = ''; return; } }
+  // 減少動態（RB.rm，每次換段才查一次）：細線不縮、窗內不鼓，只留亮度由暗變亮、窗內整圈亮起來與光暈——拍點一樣看得到，畫面上沒有東西在動
+  if (k === 'a') { const u = g / .24; e.opacity = (.15 + u * .5).toFixed(3); e.transform = RB.rm ? '' : `scale(${(1.6 - .6 * u).toFixed(3)})`; }
+  else { e.opacity = '1'; e.transform = RB.rm ? '' : `scale(${(1 + .06 * Math.sin((g - .24) / .22 * Math.PI)).toFixed(3)})`; } // 窗內輕輕鼓一下
 }
 function ringPulse(k) { const r = $('#ring'); if (!r) return; r.classList.remove('hit', 'perf', 'cool'); void r.offsetWidth; r.classList.add(k); r._sig = ''; }
 
@@ -9234,7 +9283,7 @@ function warmStep(dt) {
   }
   let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
   const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen;
-  if (sig === warmSig) return; warmSig = sig; el.hidden = !show; if (!show) return;
+  if (sig === warmSig) return; warmSig = sig; el.hidden = !show; document.body.classList.toggle('warmon', show); if (!show) return; // body.warmon：左邊的訊息列與（矮畫面時）教學小卡往右讓出體溫條（app/game.css）
   el.classList.toggle('low', !S.frozen && pct < .25); el.classList.toggle('frozen', S.frozen);
   el.querySelector('i').style.height = pct * 100 + '%'; el.querySelector('span').textContent = S.frozen ? '凍僵了' : Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
@@ -9433,6 +9482,7 @@ function worldStep(dt) {
   // 準心對到會說話的對象時，改由他頭上的「…」提示，畫面中央不顯示文字（talk.js 的 tkLabel）
   if (!GUI.kind && !RIDE.on && ++pickN % 3 === 0) { TARGET = pickAt(0, 0); const lbl = WARE.h ? wareLabel(TARGET) : tkLabel(TARGET); setHTML($('#prompt'), lbl); $('#cross').classList.toggle('on', !!TARGET); renderRing(); }
   else if (GUI.kind || RIDE.on) { setHTML($('#prompt'), ''); if (TARGET) { TARGET = null; renderRing(); } }
+  ringBeat();
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）
   if ((IN.hold || IN.holdE) && !GUI.kind && !TK.on && !RIDE.on) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
   if (W.sneakUI !== !!P.sneak) { W.sneakUI = !!P.sneak; $('#vig').classList.toggle('on', W.sneakUI); $('#btnSneak').classList.toggle('on', W.sneakUI); if (W.sneakUI && !S.tipSneak) { S.tipSneak = true; toast('潛行中：腳步變輕，怕生的稀有史萊姆比較不會發現你'); } }
