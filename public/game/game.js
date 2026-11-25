@@ -890,6 +890,8 @@ function H0(x, z) {
   // 雪原：起伏更大的丘陵
   h += smooth(62, 84, -x) * fbm(x * .05, z * .05, 21) * 10;
   // 小場景的地形：池塘與溫泉挖出碗、冰湖與冰屋整平（只動場景附近，見 NOOK_DIG）
+  // 各區的地形多元化（regions.js 與 region-*.js）：在小場景挖池塘、山洞口整平之前，讓這兩者的形狀不被蓋掉
+  h = regionShape(x, z, h);
   h = nookH(x, z, h);
   // 山洞口：洞口前整平成小平台、洞口後方墊高成山壁（caves.js 的 caveShape）
   if (typeof caveShape === 'function') h = caveShape(x, z, h);
@@ -946,7 +948,7 @@ function initWorld() {
     vertexShader: 'varying vec3 vd; void main(){ vd = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform float night; varying vec3 vd; float h3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); } void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); vec3 sc = mix(vec3(1.0, 0.93, 0.78), vec3(0.78, 0.84, 1.0), night); c += sc * (pow(s, 700.0) * 3.5 * (1.0 - night * 0.3) + pow(s, 48.0) * 0.28 * (1.0 - night * 0.5) + pow(s, 6.0) * 0.07 * (1.0 - night)) * smoothstep(-0.05, 0.05, d.y); float st = step(0.9965, h3(floor(d * 230.0))) * night * smoothstep(0.03, 0.3, d.y); c += vec3(0.85, 0.9, 1.0) * st; c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
-  buildTerrain(); buildCaves(); buildWater(); buildProps(); buildLandmarks(); buildFauna(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
+  buildTerrain(); buildCaves(); buildWater(); buildProps(); buildLandmarks(); buildRegions(); buildFauna(); buildWorkshop(); buildCity(); buildVolcanoFx(); buildGates(); buildPuzzles(); buildParticles(); buildClouds();
   W.goo = makeGoo(sc); skyEnv(true);
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); W.ready = true; return true;
 }
@@ -1270,6 +1272,7 @@ function buildProps() {
   const rd = seeded(77), rc = seeded(991), lists = {}, push = (k, o) => (lists[k] = lists[k] || []).push(o);
   const avoid = (x, z) => {
     if (Math.hypot(x, z) < 26) return true;
+    if (regionAvoided(x, z)) return true; // 各區的新場景自己會放東西
     if (Math.abs(z) < 10 * K && Math.abs(Math.abs(x) - 54 * K) < 14 * K) return true;
     if (Math.abs(x) < 10 * K && Math.abs(z + 54 * K) < 14 * K) return true;
     if (Math.abs(x - 7 * K) < 8 * K && Math.abs(z - 46 * K) < 8 * K) return true; // 月光洞窟的裂縫

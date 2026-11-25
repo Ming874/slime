@@ -19,7 +19,7 @@ const versioned = (p: string) => `/${p}?v=${crypto.createHash('sha256').update(f
 
 export default function Game() {
   const html = fs.readFileSync(path.join(ROOT, 'game', 'dom.html'), 'utf8');
-  const scripts = ['vendor/three.min.js', 'vendor/peerjs.min.js', 'game/caves.js', 'game/talk.js', 'game/game.js'].map(versioned); // caves.js（第 4 堂山洞）、talk.js（世界裡的對話）都要在 game.js 之前
+  const scripts = ['vendor/three.min.js', 'vendor/peerjs.min.js', 'game/caves.js', 'game/talk.js', 'game/regions.js', 'game/region-plain.js', 'game/region-coast.js', 'game/region-volcano.js', 'game/region-snow.js', 'game/game.js'].map(versioned); // caves.js（第 4 堂山洞）、talk.js（世界裡的對話）、regions.js 與各區檔案都要在 game.js 之前
   for (const s of scripts) preload(s, { as: 'script' }); // 登入的同時就開始下載
   return (
     <>
