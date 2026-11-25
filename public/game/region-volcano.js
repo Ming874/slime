@@ -655,4 +655,65 @@
     // 灰裡的小花：走到旁邊、低頭看
     if (!away && V.flower && P.pitch < -.45 && Math.hypot(V.flower[0] - P.x, V.flower[2] - P.z) < 2.6) eggHit('volcano_flower', '灰裡開著一朵小小的花，花瓣上還有一點火山灰，卻開得好用力。');
   });
+
+  /* ============================================================
+     9.1「30 秒一個地點」補點（另外一組在改熔岩河，這一塊只新增、不動上面的場景）
+     用走路速度實際走過小徑與常走的路線（熔岩隧道出口 → 火山口、溫泉、黑曜石林、熔岩湖、灰原…），記下每個地點出現的時間：
+     從小徑盡頭繞火山西側走到火山背面（北端），過了熔岩丘之後一路是火山的西坡，近距離算有 40 秒、一般距離也有 20 幾秒沒有新東西。補兩個小地點：
+     - 西坡腳下：一張玄武岩天然長椅（兩根矮矮的六角柱撐著一塊石板），面向火山；旁邊一塊被地熱烤得發紅的平石上溫著一只銅水壺，石板上兩個小杯子。
+       夜裡石頭的裂縫透出橘紅的光，坐在這裡看得到火山口與山坡上的岩漿光
+     - 火山背面的盡頭：裂開的黑色岩板中間長出一棵圓圓的小樹，岩板的裂縫透著地熱的橘光，旁邊一座小石堆綁著紅布條（有人走到這裡做的記號）
+       小樹不開花、腳下只有乾草：西邊灰原那朵「灰裡唯一的小花」彩蛋離這裡不到 40 公尺，旁邊多一棵開花的樹會沖淡它（原本開著粉紅色的小花）
+     - 火山背面的山谷（熔岩湖往西、到小樹之前）：一顆裂成兩半的晶洞，切面一圈白色的瑪瑙紋、裡面滿滿的紫水晶映著地熱的光，一隻藍綠色的小蜥蜴趴在旁邊曬暖
+       （驗收時熔岩湖 → 小樹、熔岩河 → 火山背面這兩段量到 25～30 秒，剛好卡在門檻上；山谷裡只有暗色的石頭與玄武岩柱，要一個顏色跳出來的東西）
+     效能：三個地點的不動零件合成一個網格、發光的部分（水壺下的裂縫、小樹腳下岩板的裂縫、晶洞裡的紫水晶）合成一個網格，總共兩次繪製；都不投影、不加光源；夜光只用既有的 lamp 材質（同一個著色器）
+     ============================================================ */
+  const REST = { x: -39.5, z: -121 }, SAP = { x: -29, z: -154 }, GEO = { x: 4.3, z: -165.1 }; // 小樹放在沒有隨機石頭、黑曜石的一小塊平地上；GEO：火山背面山谷靠北側山壁的谷底，避開隨機散落的石頭與玄武岩柱
+  const PACE = [];
+  regionBuild(() => {
+    const c00 = W.chunks.length, M = nookMats(), FM = M.flat.clone(), rd = seeded(9301), kt = nookKit(), kg = nookKit(); FM.userData = { shadow: false };
+    // 玄武岩長椅（面向火山口）
+    { const X = REST.x * K, Z = REST.z * K, face = Math.atan2(-(0 - REST.x), -(-130 - REST.z)), y = Math.min(H(X, Z), H(X + .8, Z), H(X - .8, Z), H(X, Z + .8), H(X, Z - .8)) - .05, a = kt.at(X, Z, 0, face, y);
+      [-.62, .62].forEach((x, i) => a(FM, hexCol(.26, .5, SIDE[i], CAP[i], .3 + i), null, x, 0, 0));
+      a(FM, new THREE.BoxGeometry(1.75, .13, .52), '#8a859c', 0, .55, 0, 0, 0, .02); a(FM, new THREE.BoxGeometry(1.6, .02, .44), '#a29db2', 0, .625, 0, 0, 0, .02); // 石板與磨亮的座面
+      a(FM, new THREE.CylinderGeometry(.045, .035, .07, 8), '#f8fafc', .52, .66, .05); a(FM, new THREE.CylinderGeometry(.045, .035, .07, 8), '#fde68a', .66, .66, -.08); // 兩個小杯子
+      addCol({ x: X, z: Z, r: .9 });
+      // 長椅右邊：地熱烤暖的平石上溫著銅水壺（壺身、壺嘴、提把、蓋子），石頭邊緣的裂縫透著光
+      const sx = X + Math.cos(face) * 1.45, sz = Z - Math.sin(face) * 1.45, sy = H(sx, sz), b = kt.at(sx, sz, 0, face, sy);
+      b(FM, rk(9310), '#3a2c28', 0, .08, 0, 0, .4, 0, .48, .2, .42); b(FM, new THREE.CylinderGeometry(.36, .4, .06, 7), '#4a3a36', 0, .2, 0);
+      b(FM, new THREE.SphereGeometry(.17, 10, 7), '#c2702d', 0, .37, 0, 0, 0, 0, 1, .82, 1); b(FM, new THREE.CylinderGeometry(.09, .12, .05, 10), '#a85a22', 0, .5, 0); b(FM, new THREE.SphereGeometry(.035, 6, 4), '#7c3f17', 0, .54, 0);
+      b(FM, new THREE.CylinderGeometry(.018, .035, .2, 6), '#c2702d', .2, .42, 0, 0, 0, -.9); b(FM, new THREE.TorusGeometry(.12, .014, 4, 10, Math.PI), '#7c3f17', 0, .5, 0, 0, 0, 0);
+      [0, 2.1, 4.2].forEach((r, i) => crack(kg, M.lamp, .5 + i * .12, .03, .05, i % 2 ? '#ff8a3d' : '#ff6a1f', sx + Math.cos(r) * .52, sz + Math.sin(r) * .52, -r + Math.PI / 2)); // 平石下的地熱裂縫（夜裡亮）
+      addCol({ x: sx, z: sz, r: .45 });
+      // 長椅腳下的幾叢耐旱植物與小石頭
+      for (let i = 0; i < 4; i++) { const t = rd() * PI2, r = 1.3 + rd() * .9; plant(kt, { flat: FM }, X + Math.cos(t) * r, Z + Math.sin(t) * r, i % 3, .8 + rd() * .4, rd); }
+      for (let i = 0; i < 5; i++) { const t = rd() * PI2, r = 1.2 + rd() * 1.4; rock(kt, { flat: FM }, X + Math.cos(t) * r, Z + Math.sin(t) * r, .12 + rd() * .14, pk(['#3a383f', '#47434f', '#2f2c33'], rd), 9320 + i, rd); } }
+    // 火山背面的盡頭：岩板裂縫裡的小樹、綁著紅布條的石堆
+    { const X = SAP.x * K, Z = SAP.z * K, y = H(X, Z);
+      [[-.5, .3, .9, .2], [.55, -.2, .8, -.25], [.1, .75, .6, .5]].forEach(([dx, dz, s, r], i) => kt.add(FM, hexCol(s, .12, SIDE[i], CAP[i], r), null, M4(X + dx, H(X + dx, Z + dz) - .06, Z + dz, 0, r, .04 * (i - 1)))); // 裂成三塊的岩板
+      kt.add(FM, new THREE.CylinderGeometry(.07, .11, 1.1, 6), '#6b4d33', M4(X, y + .5, Z, .06, 0, -.05)); kt.seg(FM, new THREE.Vector3(X, y + .8, Z), new THREE.Vector3(X + .35, y + 1.15, Z + .1), .035, '#6b4d33', 5, .025);
+      [[0, 1.45, 0, .62], [.38, 1.25, .12, .45], [-.3, 1.3, -.15, .42]].forEach(([cx, cy, cz, s], i) => kt.add(FM, jit(new THREE.IcosahedronGeometry(1, 0), .25, 9330 + i), ['#6cb556', '#5aa64b', '#4c9a45'][i], M4(X + cx, y + cy, Z + cz, 0, i, 0, s, s * .85, s)));
+      [[.5, .8], [2.6, .7], [4.4, .62]].forEach(([r, l], i) => crack(kg, M.lamp, l, .025, .05, i % 2 ? '#ff8a3d' : '#ff6a1f', X + Math.cos(r) * (l / 2 + .12), Z + Math.sin(r) * (l / 2 + .12), -r, .075)); // 樹根把岩板撐裂的三道縫（從樹幹往外）：和水壺下的裂縫同一個發光網格，夜裡黑漆漆的火山背面看得到一點橘光
+      addCol({ x: X, z: Z, r: .25, tree: 1 });
+      const cx = X + 1.4, cz = Z - .7; let cy = H(cx, cz) - .04; [[.34, .2], [.27, .17], [.2, .15], [.13, .12]].forEach(([r, h], i) => { kt.add(FM, rk(9340 + i), i % 2 ? '#47434f' : '#5b5664', M4(cx + (i % 2 - .5) * .04, cy + h / 2, cz, 0, i, 0, r, h * .8, r * .9)); cy += h; });
+      kt.add(FM, new THREE.BoxGeometry(.05, .26, .015), '#dc2626', M4(cx + .14, cy - .2, cz + .05, 0, .4, .35)); kt.add(FM, new THREE.BoxGeometry(.05, .2, .015), '#ef4444', M4(cx + .1, cy - .22, cz + .11, 0, -.3, -.25)); addCol({ x: cx, z: cz, r: .35 });
+      for (let i = 0; i < 3; i++) plant(kt, { flat: FM }, X + (rd() - .5) * 3.4, Z + (rd() - .5) * 3, 0, .8 + rd() * .3, rd); } // 只有乾草（不放開小花的墊狀植物，理由見上）
+    // 火山背面山谷裡裂成兩半的大晶洞（併進上面兩個網格，不多繪製）：直徑兩公尺多（谷底到處是一公尺多的落石與玄武岩柱，小了會被擋住），外殼是灰色的岩石半球，兩半像翻開的書、切面一個朝東南一個朝西南、往後仰 30 度（先仰、再轉向）（從熔岩湖往西、從灰原往東走過來都看得到切面），一圈白瑪瑙、中間紫色，長滿會發光的紫水晶
+    { const X = GEO.x * K, Z = GEO.z * K;
+      [[-1.25, 0, -.85], [1.3, .15, .95]].forEach(([dx, dz, ry], h) => { const x = X + dx, z = Z + dz, G = new THREE.Matrix4().compose(new THREE.Vector3(x, H(x, z) + .75, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(-.4, ry, 0, 'YXZ')), new THREE.Vector3(1, 1, 1).multiplyScalar(1.85 - h * .2)), g = (mat, geo, col, px, py, pz, ex = 0, ey = 0, ez = 0, sx = 1, sy = sx, sz = sx) => (mat === FM ? kt : kg).add(mat, geo, col, G.clone().multiply(M4(px, py, pz, ex, ey, ez, sx, sy, sz)));
+        g(FM, new THREE.SphereGeometry(.7, 10, 5, 0, PI2, 0, Math.PI / 2), '#57534e', 0, 0, 0, -Math.PI / 2); g(FM, new THREE.CircleGeometry(.7, 12), '#e7e5e4', 0, 0, .005); g(FM, new THREE.CircleGeometry(.6, 12), '#a8a29e', 0, 0, .01); // 外殼、白瑪瑙、灰色的一圈
+        g(M.lamp, new THREE.CircleGeometry(.5, 12), '#5b21b6', 0, 0, .015); for (let i = 0; i < 11; i++) { const t = i * 2.4 + h, r = i ? .12 + (i % 4) * .09 : 0; g(M.lamp, new THREE.OctahedronGeometry(.075, 0), i % 3 ? '#a78bfa' : '#c4b5fd', Math.cos(t) * r, Math.sin(t) * r, .05, t, t * .7, 0, 1, 1, 1.7); } }); // 紫色的晶洞與一顆顆紫水晶
+      const lz = [], L = (geo, col, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => lz.push([geo, col, M4(x, y, z, rx, ry, rz, sx, sy, sz)]);
+      L(new THREE.SphereGeometry(.09, 7, 5), '#2dd4bf', 0, .05, 0, 0, 0, 0, 1, .55, 2.1); L(new THREE.SphereGeometry(.07, 7, 5), '#5eead4', 0, .06, .21, 0, 0, 0, 1, .7, 1.3); L(new THREE.ConeGeometry(.05, .38, 5), '#2dd4bf', .04, .04, -.35, -Math.PI / 2, 0, 0, 1, 1, .6); // 小蜥蜴：身體、頭、尾巴
+      [-1, 1].forEach(s => { L(new THREE.SphereGeometry(.018, 5, 4), '#111827', s * .04, .09, .25); [-.09, .1].forEach(z => L(new THREE.BoxGeometry(.11, .02, .035), '#14b8a6', s * .09, .015, z, 0, s * (z > 0 ? .6 : -.6), 0)); }); // 眼睛、四隻小腳
+      [-.08, .02, .12].forEach(z => L(new THREE.SphereGeometry(.022, 5, 4), '#fde047', 0, .095, z)); // 背上的黃點點
+      { const x = X + .2, z = Z + 1.5; kt.add(FM, nookMerge(lz), null, M4(x, H(x, z) + .01, z, 0, 2.6, 0, 1.3)); } // 趴在晶洞前面的地上曬暖（頭朝著晶洞）
+      addCol({ x: X - 1.25, z: Z, r: 1.2 }); addCol({ x: X + 1.3, z: Z + .15, r: 1.1 }); }
+    kt.done(LOW ? 90 : 130); kg.done(LOW ? 60 : 90);
+    PACE.push(...W.chunks.slice(c00)); PACE.forEach(o => { o.userData.far0 = o.userData.far; });
+  });
+  // 在中央平地（山脊圍住的那塊）時，這些東西都被山脊擋住、一個像素也看不到，但 cullChunks 只看距離：直接當成超出距離（同火山的 V.hid）
+  const paceHide = list => { const c = W.cam && W.cam.position; if (!c) return; const h = Math.max(Math.abs(c.x), Math.abs(c.z)) < 44 * K && c.y < 20 && !(typeof CV !== 'undefined' && CV.c);
+    if (h !== list.h) { list.h = h; list.forEach(o => { o.userData.far = h ? -1 : o.userData.far0; }); } };
+  regionStep(() => paceHide(PACE));
 })();

@@ -847,4 +847,127 @@
     if (OWLH.m) { const vx = OWLH.x - px, vz = OWLH.z - pz, d = Math.hypot(vx, vz); if (d < 10 && d > .5 && (-Math.sin(P.yaw) * vx - Math.cos(P.yaw) * vz) / d > .93 && eggHit('snow_owl', '歪樹的樹枝上，一隻圓滾滾的小貓頭鷹眨了眨眼睛。')) fx3(new THREE.Vector3(OWLH.x, OWLH.y + .4, OWLH.z), '♪', '#fde68a'); }
   }
   regionStep(step);
+
+  /* ============================================================
+     9.1「30 秒一個地點」補點（另外一組在改冰橋，這一塊只新增、不動上面的場景）
+     用走路速度實際走過每條小徑與常走的路線（冰洞出口 → 冰晶塔、冰湖、冰瀑、守林人小屋、冰河…），記下每個地點出現的時間：
+     - 冰洞出口往南走去小屋那一段，過了洞口的雪人之後有 25～30 秒只有雪地和雪松。在雪兔的窩和溪谷之間的空地補一個小地點：
+       一棵掛滿紅果的花楸樹、樹下一張積雪的長椅（面向西南的深谷與冰橋）、一隻在雪地上跳來跳去啄落果的紅腹灰雀（白天找落果、你走太近就飛上樹枝、夜裡縮成一團在樹枝上睡覺）
+     - 從觀景台地下來往北走到風蝕蘑菇岩，一路是光禿禿的風吹雪丘，有 31～32 秒沒有新東西。在半路一道雪丘的頂上立一座小小的氣象站：
+       木柱頂上的風杯一直轉（風大的時候轉得快）、紅白條紋的風向袋指著下風處（和雪丘的背風面同一個方向）、白色的百葉箱、迎風面堆著雪；從台地上就看得到它的剪影
+     - 從冰晶塔往西走到雪原的盡頭，穿過兩片雪松林，近距離算有 30 秒沒有新東西。在西邊雪松林裡、往盡頭走會經過的一小塊空地補一個小地點：
+       一隻蜷成一團、尾巴蓋著鼻子睡覺的小狐狸，窩在一截積雪的樹樁旁邊，一串狐狸的腳印從東邊走過來（往西走的人先看到腳印、跟著找到牠）；牠的肚子一起一伏，走近了會冒出 Zzz；沒躡手躡腳、靠得太近，牠會抖一下身子（還是繼續睡）
+     效能：每個地點不動的零件一個網格、會動的（小鳥、風杯、小狐狸）一個網格（離開 45～80 公尺就不算），各兩次繪製；都不投影（樹下壓一圈淡淡的雪影代替），不加光源
+     ============================================================ */
+  const ROWAN = { x: -96.6, z: 44.2, bird: null }, MET = { x: -107.6, z: -63.6, cups: null, a: 0 }, FOX = { x: -153.2, z: 2.2, m: null, zz: 0 };
+  // 在中央平地（山脊圍住的那塊）時，這些東西都被山脊擋住、一個像素也看不到，但 cullChunks 只看距離：直接當成超出距離（同火山的 V.hid）
+  const paceHide = list => { const c = W.cam && W.cam.position; if (!c) return; const h = Math.max(Math.abs(c.x), Math.abs(c.z)) < 44 * K && c.y < 20 && !(typeof CV !== 'undefined' && CV.c);
+    if (h !== list.h) { list.h = h; list.forEach(o => { o.userData.far = h ? -1 : o.userData.far0; }); } };
+  const PACE = [];
+  regionBuild(() => {
+    const c00 = W.chunks.length, M = nookMats(), FM = M.flat.clone(), kt = nookKit(), rdm = seeded(9101), V3 = (x, y, z) => new THREE.Vector3(x, y, z); FM.userData = { shadow: false };
+    const X = ROWAN.x * K, Z = ROWAN.z * K, face = Math.atan2(-(GORGE.x - ROWAN.x), -(GORGE.z - ROWAN.z)), fx = -Math.sin(face), fz = -Math.cos(face), rx = Math.cos(face), rz = -Math.sin(face); // 長椅正面朝深谷
+    // 長椅：和台地上那張同一種，座面與椅背積著雪，座面上掉了一隻紅色的毛線手套
+    { const a = kt.at(X, Z, 0, face);
+      a(FM, new THREE.BoxGeometry(1.7, .08, .48), '#a07850', 0, .48, 0); a(FM, new THREE.BoxGeometry(1.7, .42, .06), '#8b6544', 0, .8, .23, .15, 0, 0);
+      [-.7, .7].forEach(x => { a(FM, new THREE.BoxGeometry(.08, .48, .42), '#5b4030', x, .24, 0); a(FM, new THREE.BoxGeometry(.08, .52, .06), '#5b4030', x, .74, .25, .15, 0, 0); });
+      a(FM, new THREE.BoxGeometry(1.3, .07, .5), '#f8fafc', -.18, .555, 0); a(FM, new THREE.BoxGeometry(1.74, .06, .12), '#f8fafc', 0, 1.03, .27, .15, 0, 0); // 雪：座面右邊被人坐過、掃掉了一塊
+      a(FM, new THREE.SphereGeometry(.09, 7, 5), '#ef4444', .6, .55, .02, 0, .4, 0, 1, .45, 1.35); a(FM, new THREE.SphereGeometry(.04, 6, 4), '#ef4444', .66, .55, .1, 0, .4, 0, 1, .6, 1.2); a(FM, new THREE.BoxGeometry(.19, .04, .06), '#fef2f2', .6, .555, -.11, 0, .4, 0);
+      addCol({ x: X, z: Z, r: .85 }); }
+    // 花楸樹：長椅左後方，細細的樹幹分成三枝，樹冠積著雪、底下一串串紅果垂下來；樹下一圈淡藍的雪影與幾顆掉在雪上的果子、小鳥的腳印
+    const TX = X - rx * 1.5 + fx * -1.4, TZ = Z - rz * 1.5 + fz * -1.4, ty = H(TX, TZ) - .08;
+    { const gd = new THREE.RingGeometry(.001, 1, 14, 3).rotateX(-Math.PI / 2), p = gd.attributes.position; // 雪影：貼著地形的一片（斜坡上平的圓片會一邊浮起來）
+      for (let i = 0; i < p.count; i++) { const x = TX + .3 + p.getX(i) * 2.2, z = TZ + .2 + p.getZ(i) * 1.8; p.setXYZ(i, x, H(x, z) + .035, z); } kt.add(FM, gd, '#dbe7f3'); }
+    kt.add(FM, new THREE.SphereGeometry(.55, 8, 4, 0, PI2, 0, Math.PI / 2), '#f8fafc', M4(TX, ty, TZ, 0, 0, 0, 1, .4, 1));
+    kt.add(FM, new THREE.CylinderGeometry(.14, .22, 1.5, 7), '#5b4030', M4(TX, ty + .75, TZ, .04, 0, -.05));
+    const BR = [[1, 2.25, .25], [-.85, 2.35, -.35], [.1, 2.6, -.65]].map(([bx, by, bz]) => { const a = V3(TX, ty + 1.35, TZ), b = V3(TX + bx, ty + by, TZ + bz); kt.seg(FM, a, b, .075, '#5b4030', 6, .045); return b; });
+    ROWAN.perch = BR[0].clone().lerp(V3(TX, ty + 1.35, TZ), .25); ROWAN.perch.y += .08; // 小鳥站的樹枝（最長那一枝的外側）
+    [[0, 2.95, 0, 1.2], [.95, 2.6, .3, .9], [-.85, 2.7, -.35, .92], [.1, 3.25, -.6, .8], [-.2, 2.5, .75, .76]].forEach(([cx, cy, cz, s], i) => {
+      kt.add(FM, jit(new THREE.IcosahedronGeometry(1, 0), .28, 9110 + i), i % 2 ? '#e2e8f0' : '#f1f5f9', M4(TX + cx, ty + cy, TZ + cz, 0, i, 0, s, s * .72, s)); // 雪做的樹冠
+      kt.add(FM, jit(new THREE.IcosahedronGeometry(1, 0), .2, 9120 + i), '#6b7f72', M4(TX + cx, ty + cy - s * .28, TZ + cz, 0, i + 1, 0, s * .9, s * .45, s * .9)); // 底下露出來的深色枝葉（雪只積在上面）
+      for (let k = 0; k < 4; k++) { // 一串紅果：從樹冠底下垂下來
+        const a = rdm() * PI2, r = s * (.55 + rdm() * .3), bx = TX + cx + Math.cos(a) * r, bz = TZ + cz + Math.sin(a) * r, by = ty + cy - s * .45 - rdm() * .15;
+        kt.seg(FM, V3(bx, by + .2, bz), V3(bx, by, bz), .008, '#7c2d12', 3);
+        for (let j = 0; j < 6; j++) kt.add(FM, new THREE.OctahedronGeometry(.075, 0), j % 3 ? '#dc2626' : '#f97316', M4(bx + Math.cos(j * 2.4) * .08, by - (j % 3) * .06, bz + Math.sin(j * 2.4) * .08, 0, j, 0)); // 八面體：一顆 8 個三角形（二十面體 20 個），遠看一樣是一顆紅果
+      }
+    });
+    addCol({ x: TX, z: TZ, r: .3, tree: 1 });
+    // 雪上的落果與小鳥的腳印（三根細線的小箭頭），從樹下一路跳到長椅前
+    const RX = X + rx * 1.3 - fx * .7, RZ = Z + rz * 1.3 - fz * .7, SPOT = []; // 小鳥找落果的地方：樹下一圈，避開長椅與石頭
+    for (let i = 0; i < 40 && SPOT.length < 5; i++) { const a = rdm() * PI2, r = 1.1 + rdm() * 1.5, x = TX + Math.cos(a) * r, z = TZ + Math.sin(a) * r; if (Math.hypot(x - X, z - Z) < 1.35 || Math.hypot(x - RX, z - RZ) < .9 || SPOT.some(([qx, qz]) => Math.hypot(qx - x, qz - z) < .8)) continue; SPOT.push([x, z]);
+      for (let j = 0; j < 3; j++) kt.add(FM, new THREE.OctahedronGeometry(.055, 0), '#dc2626', M4(x + (rdm() - .5) * .4, H(x, z) + .02, z + (rdm() - .5) * .4)); }
+    for (let i = 0; i < SPOT.length - 1; i++) { const [ax, az] = SPOT[i], [bx, bz] = SPOT[i + 1], d = Math.hypot(bx - ax, bz - az), ry = Math.atan2(bx - ax, bz - az);
+      for (let s = .3; s < d - .2; s += .4) { const x = ax + (bx - ax) * s / d, z = az + (bz - az) * s / d, y = H(x, z) + .015; [-.5, 0, .5].forEach(o => kt.add(FM, new THREE.PlaneGeometry(.014, .075), '#94a3b8', M4(x, y, z, -Math.PI / 2, 0, ry + o))); } } // 三根細線的小箭頭（平面，一根兩個三角形）
+    snowRock(kt, { flat: FM }, RX, RZ, .42, 9131, rdm);
+    flowers(kt, FM, X + rx * 2, Z + rz * 2, LOW ? 2 : 4, rdm, .9); // 長椅右邊一撮冰晶花（平面材質：白天看得到、夜裡不亮，這個地點只用兩次繪製）
+    kt.done(LOW ? 90 : 130);
+    // 紅腹灰雀：灰背、黑頭、紅臉頰與紅肚子，翅膀一道白斑（往 +z 看）
+    const g = nookMerge([[new THREE.SphereGeometry(.11, 8, 6), '#64748b', M4(0, .13, -.01, 0, 0, 0, 1, .9, 1.25)], [new THREE.SphereGeometry(.095, 8, 6), '#f87171', M4(0, .11, .04, 0, 0, 0, 1, .9, 1.1)],
+      [new THREE.SphereGeometry(.078, 8, 6), '#1e293b', M4(0, .23, .08)], ...[-1, 1].flatMap(s => [[new THREE.SphereGeometry(.045, 6, 4), '#f87171', M4(s * .04, .205, .115)], [new THREE.BoxGeometry(.03, .07, .13), '#334155', M4(s * .1, .14, -.02, 0, 0, s * .2)], [new THREE.BoxGeometry(.032, .015, .1), '#f8fafc', M4(s * .102, .12, -.01, 0, 0, s * .2)], [new THREE.CylinderGeometry(.008, .008, .06, 3), '#334155', M4(s * .03, .03, 0)]]),
+      [new THREE.ConeGeometry(.026, .05, 4), '#111827', M4(0, .225, .16, Math.PI / 2, 0, 0)], [new THREE.BoxGeometry(.06, .02, .13), '#1e293b', M4(0, .14, -.16, -.45, 0, 0)]]);
+    const bm = new THREE.Mesh(g, FM); bm.scale.setScalar(1.4); bm.castShadow = false; chunkObj(bm, 60, false, [TX, TZ, 4]);
+    const [sx, sz] = SPOT[0]; Object.assign(ROWAN, { bird: bm, SPOT, x: sx, z: sz, y: H(sx, sz), ry: 0, st: 'peck', t: 1.5, i: 0, hop: 0, from: null, to: null, calm: 0 }); bm.position.set(sx, ROWAN.y, sz);
+
+    // 雪丘頂上的氣象站：局部 +x 是下風（風往 (cos WIND, sin WIND) 吹，同 duneScene 的 RW），柱子在原點
+    { const mk = nookKit(), MX = MET.x * K, MZ = MET.z * K, gy = Math.min(H(MX, MZ), H(MX + .6, MZ), H(MX - .6, MZ), H(MX, MZ + .6), H(MX, MZ - .6)) - .1, S = 1.35, a = mk.at(MX, MZ, 0, -WIND, gy, S); // 整座放大 1.35 倍：從台地北緣看過去才認得出來
+      a(FM, new THREE.CylinderGeometry(.06, .08, 2.9, 6), '#6b4d33', 0, 1.45, 0); a(FM, new THREE.CylinderGeometry(.09, .09, .05, 6), '#475569', 0, 2.92, 0); // 柱子、頂上的軸承
+      a(FM, new THREE.SphereGeometry(.5, 8, 4, 0, PI2, 0, Math.PI / 2), '#f8fafc', -.18, 0, 0, 0, 0, 0, 1.3, .55, 1); // 柱腳的雪堆：迎風那一面堆得多
+      // 風向袋：側臂伸到下風那一邊，紅白相間的四節，越往外越細、往下垂一點
+      a(FM, new THREE.CylinderGeometry(.02, .02, .7, 4), '#475569', .35, 2.45, 0, 0, 0, Math.PI / 2); a(FM, new THREE.TorusGeometry(.13, .018, 4, 10), '#475569', .72, 2.45, 0, 0, Math.PI / 2, 0);
+      for (let i = 0; i < 4; i++) { const r0 = .13 - i * .022, r1 = r0 - .022, L = .24; a(FM, new THREE.CylinderGeometry(r1, r0, L, 9, 1, true), i % 2 ? '#f8fafc' : '#ef4444', .72 + L * (i + .5), 2.45 - .02 * (i + .5) * (i + .5), 0, 0, 0, -Math.PI / 2 - .08 * i); }
+      // 百葉箱：白色的小木箱架在四根腳上，正面一道道橫的百葉、斜斜的小屋頂（頂上積著雪）
+      { const bx = -.15, bz = .95; [[-.24, -.2], [.24, -.2], [-.24, .2], [.24, .2]].forEach(([x, z]) => a(FM, new THREE.BoxGeometry(.05, 1.15, .05), '#e2e8f0', bx + x, .55, bz + z));
+        a(FM, new THREE.BoxGeometry(.62, .55, .5), '#f8fafc', bx, 1.35, bz); for (let k = 0; k < 4; k++) a(FM, new THREE.BoxGeometry(.56, .035, .03), '#cbd5e1', bx, 1.16 + k * .12, bz + .26, -.5, 0, 0);
+        a(FM, new THREE.BoxGeometry(.74, .05, .64), '#94a3b8', bx, 1.66, bz, 0, 0, .12); a(FM, new THREE.BoxGeometry(.66, .06, .58), '#f8fafc', bx - .02, 1.71, bz, 0, 0, .12); addCol({ x: MX + (Math.sin(-WIND) * bz + Math.cos(-WIND) * bx) * S, z: MZ + (Math.cos(-WIND) * bz - Math.sin(-WIND) * bx) * S, r: .45 * S }); }
+      // 柱子上的溫度計：白底、一條細細的紅線
+      a(FM, new THREE.BoxGeometry(.08, .34, .02), '#f8fafc', 0, 1.6, .07); a(FM, new THREE.BoxGeometry(.016, .22, .025), '#ef4444', 0, 1.56, .07);
+      snowRock(mk, { flat: FM }, MX - Math.cos(-WIND) * 1.3 + Math.sin(-WIND) * -.6, MZ + Math.sin(-WIND) * 1.3 + Math.cos(-WIND) * -.6, .38, 9141, rdm);
+      addCol({ x: MX, z: MZ, r: .2 }); mk.done(LOW ? 110 : 170); // 立在雪丘頂上：從觀景台地就看得到
+      // 風杯：三根橫臂、三個半球形的杯子，整組繞著柱子轉
+      const cg = nookMerge([0, 1, 2].flatMap(k => { const t = k / 3 * PI2, c = Math.cos(t), s2 = Math.sin(t); return [[new THREE.CylinderGeometry(.012, .012, .36, 4), '#475569', M4(c * .18, 0, s2 * .18, 0, -t, Math.PI / 2)], [new THREE.SphereGeometry(.075, 8, 6), k ? '#f8fafc' : '#ef4444', new THREE.Matrix4().makeRotationY(-t).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)).multiply(new THREE.Matrix4().makeScale(1, .6, 1)).setPosition(c * .37, 0, s2 * .37)]]; }).concat([[new THREE.ConeGeometry(.05, .1, 6), '#475569', M4(0, .06, 0)]])); // 杯子：壓扁的球，扁的那一面朝著轉的方向
+      const cm = new THREE.Mesh(cg, FM); cm.position.set(MX, gy + 3.02 * S, MZ); cm.scale.setScalar(S); cm.castShadow = false; chunkObj(cm, 80, false, [MX, MZ, 1]); MET.cups = cm; MET.x = MX; MET.z = MZ; }
+
+    // 林間空地裡睡覺的小狐狸：積雪的樹樁擋著風、身體底下壓出一個淺淺的雪窩、一串腳印從東邊（冰晶塔那一側、往盡頭走會經過的地方）走過來
+    { const fk = nookKit(), X = FOX.x * K, Z = FOX.z * K, y = H(X, Z), sx = X - 1, sz = Z - .5, ry = .7;
+      fk.add(FM, new THREE.CylinderGeometry(.34, .42, .55, 8), '#6b4d33', M4(sx, H(sx, sz) + .2, sz)); fk.add(FM, new THREE.CylinderGeometry(.3, .3, .02, 8), '#c8a27a', M4(sx, H(sx, sz) + .48, sz)); fk.add(FM, new THREE.SphereGeometry(.36, 8, 4, 0, PI2, 0, Math.PI / 2), '#f8fafc', M4(sx, H(sx, sz) + .49, sz, 0, 0, 0, 1, .4, 1)); addCol({ x: sx, z: sz, r: .45 });
+      fk.add(FM, new THREE.TorusGeometry(.62, .14, 4, 12), '#e2e8f0', M4(X, y + .02, Z, Math.PI / 2, 0, 0, 1.15, 1, .45)); // 雪窩的邊
+      for (let i = 0; i < 9; i++) { const t = i / 8, x = X + 1.1 + t * 6.5 + Math.sin(i * 1.7) * .15, z = Z + .6 + t * 4.2, yy = H(x, z) + .015; fk.add(FM, new THREE.CircleGeometry(.06, 6), '#94a3b8', M4(x + (i % 2 - .5) * .14, yy, z, -Math.PI / 2, 0, 0, 1, 1.4, 1)); } // 狐狸走成一直線的腳印
+      for (let i = 0; i < 2; i++) fk.add(FM, new THREE.ConeGeometry(.05, .13, 6), '#7c5a3a', M4(X - .3 + i * 1.6, y + .05, Z + 1.2 - i * .4, Math.PI / 2 - .2, i, 0)); // 掉在雪上的松果
+      fk.done(LOW ? 80 : 110);
+      // 小狐狸（往 +z 看）：橘色的身體蜷成一圈、白色的胸口、頭靠在身上、閉著眼睛，大尾巴從後面繞過來蓋住鼻子、尾巴尖是白的
+      const OR = '#f97316', OR2 = '#fb923c', WH = '#fff7ed', DK = '#7c2d12', pts = [[new THREE.SphereGeometry(.32, 10, 7), OR, M4(0, .17, 0, 0, 0, 0, 1.15, .55, 1)], [new THREE.SphereGeometry(.2, 8, 6), WH, M4(.02, .16, .2, 0, 0, 0, 1.1, .7, .6)],
+        [new THREE.SphereGeometry(.15, 10, 7), OR2, M4(.08, .27, .2)], [new THREE.ConeGeometry(.08, .17, 7), WH, M4(.16, .25, .33, Math.PI / 2 - .2, 0, -.4)], [new THREE.SphereGeometry(.025, 6, 4), '#1f2937', M4(.2, .27, .41)],
+        ...[-1, 1].flatMap(s => [[new THREE.ConeGeometry(.055, .14, 4), OR, M4(.08 + s * .07, .41, .17, -.2, 0, -s * .25)], [new THREE.ConeGeometry(.03, .06, 4), DK, M4(.08 + s * .085, .47, .17, -.2, 0, -s * .25)], [new THREE.TorusGeometry(.025, .008, 3, 6, Math.PI), '#1f2937', M4(.08 + s * .055, .3, .33, 0, 0, Math.PI)]])];
+      for (let i = 0; i < 7; i++) { const t = i / 6, a = -2.3 + t * 3.1, r = .3 + t * .08, s = .14 + Math.sin(t * Math.PI) * .07; pts.push([new THREE.SphereGeometry(s, 8, 6), i === 6 ? WH : OR, M4(Math.cos(a) * r + .05, .14 + t * .05, Math.sin(a) * r * .85 + .02, 0, 0, 0, 1, .8, 1)]); } // 大尾巴繞過來蓋住鼻子
+      const m = new THREE.Mesh(nookMerge(pts), FM); m.position.set(X, y - .02, Z); m.rotation.y = ry; m.scale.setScalar(1.3); m.castShadow = false; chunkObj(m, 60, false, [X, Z, 1]); addCol({ x: X, z: Z, r: .5 }); FOX.m = m; FOX.y = y - .02; FOX.x = X; FOX.z = Z; } // 放大 1.3 倍：真的狐狸大小在雪地上太不起眼
+    PACE.push(...W.chunks.slice(c00)); PACE.forEach(o => { o.userData.far0 = o.userData.far; });
+  });
+  // 小鳥：白天在雪上一跳一跳地找落果、低頭啄兩下、左右張望；你沒躡手躡腳走到 3 公尺內就飛上樹枝，走遠一會兒才下來；夜裡在樹枝上縮成一團睡覺
+  regionStep((dt, t) => {
+    paceHide(PACE);
+    if (FOX.m && FOX.m.visible && P) { const d = Math.hypot(P.x - FOX.x, P.z - FOX.z); FOX.m.scale.set(1.3, 1.3 * (1 + Math.sin(t * 1.6) * .035), 1.3 * (1 + Math.sin(t * 1.6) * .015)); // 睡著的呼吸
+      if (d < 4.5 && (FOX.zz -= dt) < 0) { FOX.zz = 2.8; fx3(new THREE.Vector3(FOX.x, FOX.y + .8, FOX.z), 'Zzz', '#fdba74'); }
+      if (d > 3.5) FOX.near = false; else if (d < 2.2 && !P.sneak && !FOX.near) { FOX.near = true; FOX.sh = .7; } // 太吵了：抖一下（走開再靠近才會再抖）
+      if (FOX.sh > 0) { FOX.sh -= dt; FOX.m.rotation.z = Math.sin(FOX.sh * 40) * .06 * FOX.sh; } else FOX.m.rotation.z = 0; }
+    if (MET.cups && MET.cups.visible) { MET.a += dt * (3.2 + 1.6 * Math.sin(t * .31) + .9 * Math.sin(t * 1.13)); MET.cups.rotation.y = MET.a; } // 一陣一陣的風：時快時慢（cullChunks 不畫的時候也不用轉）
+    const B = ROWAN; if (!B.bird || !P || Math.abs(P.x - B.x) > 45 || Math.abs(P.z - B.z) > 45 || inCity() || (typeof CV !== 'undefined' && CV.c)) return;
+    const m = B.bird, d = Math.hypot(P.x - B.x, P.z - B.z), night = DN.night > .6, fly = (to, dur) => { B.st = 'fly'; B.from = [B.x, B.y, B.z]; B.to = to; B.t = 0; B.dur = dur; };
+    if (B.st !== 'fly') {
+      if (B.st === 'perch') { B.calm = d > 6 ? B.calm + dt : 0; if (!night && B.calm > 2.5) { const [x, z] = B.SPOT[Math.floor(Math.random() * B.SPOT.length)]; fly([x, H(x, z), z], .8); } }
+      else if (night || (d < 3 && !P.sneak)) fly([B.perch.x, B.perch.y, B.perch.z], night ? 1.6 : .7);
+    }
+    let rx = 0, sy = 1, sw = 1;
+    if (B.st === 'fly') { // 拍著翅膀飛成一道弧線
+      B.t += dt / B.dur; const u = Math.min(1, B.t), e = u * u * (3 - 2 * u); B.x = B.from[0] + (B.to[0] - B.from[0]) * e; B.z = B.from[2] + (B.to[2] - B.from[2]) * e; B.y = B.from[1] + (B.to[1] - B.from[1]) * e + Math.sin(Math.PI * u) * .7;
+      if (Math.hypot(B.to[0] - B.from[0], B.to[2] - B.from[2]) > .05) B.ry = Math.atan2(B.to[0] - B.from[0], B.to[2] - B.from[2]); sw = 1 + Math.sin(t * 40) * .25; if (u >= 1) { B.st = B.to[1] > H(B.x, B.z) + .5 ? 'perch' : 'peck'; B.t = 1; B.calm = 0; }
+    } else if (B.st === 'perch') { if (night) { sy = .88; sw = 1.12; rx = .15; } else B.ry += Math.sin(t * .9) * dt * .8; } // 睡覺：縮成一顆圓球、頭埋進羽毛
+    else if (B.st === 'hop') { // 一小步一小步跳到下一個落果的地方
+      B.hop += dt / .24; const [ax, az] = B.from, [bx, bz] = B.to, L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.round(L / .3)), k = Math.min(n, B.hop), u = k / n;
+      B.x = ax + (bx - ax) * u; B.z = az + (bz - az) * u; B.y = H(B.x, B.z) + Math.abs(Math.sin(Math.PI * k)) * .12; if (k >= n) { B.st = 'peck'; B.t = 1.2 + Math.random() * 2; }
+    } else { // 啄兩下、抬頭看看，再跳去下一個地方
+      B.t -= dt; const c = (B.t * 2.2) % 1; rx = B.t > .6 && c < .3 ? Math.sin(c / .3 * Math.PI) * .7 : 0; B.ry += Math.sin(t * 1.7) * dt * 1.2;
+      if (B.t <= 0) { B.i = (B.i + 1 + Math.floor(Math.random() * 2)) % B.SPOT.length; B.from = [B.x, B.z]; B.to = B.SPOT[B.i]; B.hop = 0; B.st = 'hop'; B.ry = Math.atan2(B.to[0] - B.x, B.to[1] - B.z); }
+    }
+    m.position.set(B.x, B.y, B.z); m.rotation.set(rx, B.ry, 0, 'YXZ'); m.scale.set(1.4 * sw, 1.4 * sy, 1.4);
+  });
 })();

@@ -684,4 +684,111 @@
     // 沙窩裡的小史萊姆
     if (Math.hypot(px - NEST[0], pz - NEST[1]) < 1.7) eggHit('coast_prints', '跟著小腳印走到底，原來是一隻抱著貝殼睡著的小史萊姆。');
   });
+
+  /* ============================================================
+     9.1「30 秒一個地點」補點（只新增、不動上面的場景）
+     用走路速度實際走過小徑與常走的路線（海蝕洞出口 → 燈塔、海角觀景台、南邊沙丘、海岸南端…），記下每個地點出現的時間：
+     - 從南邊的沙丘（吊椅、小腳印、沙窩）往回走向棕櫚林小丘，沿著靠山那一側的沙丘後面有 20 幾秒、到海岸南端那一段超過 30 秒沒有新東西。
+       在靠山那一排沙丘的背風處補一個小地點：有人堆到一半的沙堡（四座小塔、護城河、貝殼裝飾、插在頂上的小紅旗），旁邊倒扣著粉紅色的小桶、插著一把小鏟子，
+       還有一支插在沙裡、被海風吹得一直轉的彩色風車（從沙丘頂上遠遠就看得到它在轉）
+     - 從洞口往北、沿著小湖西邊走上海角台地的北半邊，過了小湖之後有將近 30 秒（近距離算 40 幾秒）沒有新東西。
+       在台地頂的北邊補一個放風箏的地方：草地上插著一根木樁、繞著線的線軸、一條摺好的格子野餐墊，一只彩色的菱形風箏被風吹得高高的、
+       拖著一串蝴蝶結尾巴在海崖外輕輕晃（風箏在木樁往海那一側：走上台地時一直在正前方，走到木樁旁邊也不用抬頭）；
+       上台地之前貼著山壁的那段草坡（從小湖走到觀景台牌子之間）只有草和岩壁：山壁腳下補一塊突出來的岩台，上面站著一隻小山羊，你走過去時牠會轉頭看你
+     效能：每個地點不動的零件一個網格、會動的（風車葉片、風箏連線、山羊的頭）一個網格（離開 60～150 公尺就不動），各兩次繪製；不投影、不加光源；LOW 照樣有。
+     風箏用既有的夜光材質（nookMats().night）：夜裡在台地上空還看得到一只微微發亮的風箏
+     ============================================================ */
+  const CASTLE = { x: 96.5, z: 75.5, wheel: null, a: 0 }, KITE = { x: 130.5, z: -106.5, m: null }, GOAT = { x: 100.3, z: -85.1, head: null, face: 0, yaw: 0 }; // GOAT：山壁腳下（基礎座標），岩台再往山壁裡面一點
+  // 在中央平地（山脊圍住的那塊）時，這些東西都被山脊擋住、一個像素也看不到，但 cullChunks 只看距離：直接當成超出距離（同火山的 V.hid）
+  const paceHide = list => { const c = W.cam && W.cam.position; if (!c) return; const h = Math.max(Math.abs(c.x), Math.abs(c.z)) < 44 * K && c.y < 20 && !(typeof CV !== 'undefined' && CV.c);
+    if (h !== list.h) { list.h = h; list.forEach(o => { o.userData.far = h ? -1 : o.userData.far0; }); } };
+  const PACE = [];
+  regionBuild(() => {
+    const c00 = W.chunks.length, kt = nookKit(), rd = seeded(9201), x0 = CASTLE.x * K, z0 = CASTLE.z * K, y0 = H(x0, z0) - .02, face = Math.atan2(64.6 - CASTLE.x, 2.4 - CASTLE.z) + .5; // 城門大概朝著從洞口過來的方向
+    const a = kt.at(x0, z0, 0, face, y0, 1.25), SA = ['#d4b47c', '#cba873', '#dcbf8a', '#c59f68']; // 整座放大 1.25 倍（玩具尺寸太小，遠看只是一團沙）；沙堡是用濕沙堆的，比四周的乾沙深一階才分得出來
+    // 沙堡蓋在沙丘背風的斜坡上（直徑 4 公尺內高低差將近半公尺）：只有沙堡本體（底座以上）用同一個高度，旁邊的零件各自貼著自己腳下的沙
+    // （原本全部共用一個高度：粉紅小桶、桶形小塔與護城河整個埋進沙裡、浴巾和草帽在下坡那側浮起來 15 公分）
+    const B = M4(x0, y0, z0, 0, face, 0, 1.25), tv = new THREE.Vector3(), gy = (px, pz, r = 0) => { tv.set(px, 0, pz).applyMatrix4(B); return ((r ? lowAt(tv.x, tv.z, r * 1.25) : H(tv.x, tv.z)) - y0) / 1.25; }; // 本地 (px, pz) 腳下的沙換回本地單位，加在 a() 的 py 上（r：取周圍最低的地方，放在斜坡上不懸空）
+    const drape = (geo, col, px, py, pz, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx, skirt) => { // 攤在沙上的東西（護城河、浴巾、帽沿、淺坑）：每個頂點各自貼著地形，py＝離沙面多高；skirt：只把本地 y 低於它的頂點（底座的下緣）壓進沙裡
+      const g = geo.index ? geo.toNonIndexed() : geo, p = g.attributes.position, lo = skirt == null ? null : Array.from({ length: p.count }, (_, i) => p.getY(i) < skirt);
+      g.applyMatrix4(B.clone().multiply(M4(px, py, pz, rx, ry, rz, sx, sy, sz)));
+      for (let i = 0; i < p.count; i++) { const h = H(p.getX(i), p.getZ(i)); if (!lo) p.setY(i, p.getY(i) - y0 + h); else if (lo[i]) p.setY(i, h - .06); }
+      kt.add(FM, g, col, null); };
+    drape(new THREE.CylinderGeometry(1.15, 1.4, .34, 14), '#d8bb85', 0, .1, 0, 0, 0, 0, 1, 1, 1, 0); // 沙堆起來的底座：頂面是平的、下緣順著斜坡埋進沙裡（上坡那側也還露出十幾公分）
+    drape(new THREE.RingGeometry(1.36, 1.72, 28, 1).rotateX(-Math.PI / 2), '#bd9d6a', 0, .02, 0); // 一圈挖出來的護城河（濕濕的深色沙，貼著斜坡）
+    { const mo = new THREE.TorusGeometry(1.82, .1, 4, 28); mo.rotateX(Math.PI / 2); drape(mo, '#d8bb85', 0, .01, 0, 0, 0, 0, 1, 1, .5); } // 挖出來的沙堆在河外側，一道矮矮的沙埂
+    a(FM, new THREE.CylinderGeometry(.46, .52, .62, 8), SA[0], 0, .58, 0); a(FM, new THREE.BoxGeometry(.24, .32, .06), '#a8916a', 0, .42, .5); // 主塔與城門
+    for (let k = 0; k < 8; k += 2) a(FM, new THREE.BoxGeometry(.14, .13, .12), SA[1], Math.cos(k / 8 * PI2) * .41, .95, Math.sin(k / 8 * PI2) * .41, 0, -k / 8 * PI2, 0); // 塔頂的城垛
+    [[.85, .85], [-.85, .85], [.85, -.85], [-.85, -.85]].forEach(([x, z], i) => { const h = .45 + (i % 2) * .12; a(FM, new THREE.CylinderGeometry(.2, .24, h, 7), SA[(i + 2) % 4], x * .8, .18 + h / 2, z * .8); if (i !== 3) a(FM, new THREE.ConeGeometry(.26, .32, 7), SA[3], x * .8, .2 + h + .14, z * .8); }); // 四座小塔（最後一座還沒堆好頂）
+    a(FM, new THREE.BoxGeometry(1.1, .2, .2), SA[2], 0, .3, .62, 0, 0, 0); // 城門前的矮牆
+    for (let k = 0; k < 10; k++) { const t = k / 10 * PI2 + .2; a(FM, new THREE.SphereGeometry(.06, 6, 3, 0, PI2, 0, Math.PI / 2), ['#fbcfe8', '#fde7d6', '#fed7aa', '#e0f2fe'][k % 4], Math.cos(t) * 1.2, .26, Math.sin(t) * 1.2, -Math.PI / 2 + .3, t, 0, 1, 1, .5); } // 底座邊上一圈貝殼
+    kt.seg(FM, new THREE.Vector3(x0, y0 + 1.1, z0), new THREE.Vector3(x0, y0 + 1.95, z0), .015, '#f8fafc', 4); kt.add(FM, new THREE.ConeGeometry(.19, .46, 3), '#ef4444', M4(x0 + .21, y0 + 1.8, z0, 0, 0, -Math.PI / 2, 1, 1, .2)); // 頂上的小紅旗
+    // 倒扣的粉紅色小桶（旁邊還有一座剛倒出來的桶形小塔）、插在沙裡的黃色小鏟子：各自坐在自己腳下的沙上，略略壓進去一點
+    { const bx = 1.75, bz = -.35, g = gy(bx, bz, .14) - .03, g2 = gy(bx - .1, bz + .55, .14) - .03; a(FM, new THREE.CylinderGeometry(.17, .22, .32, 10), '#f472b6', bx, .16 + g, bz); a(FM, new THREE.CylinderGeometry(.23, .23, .04, 10), '#ec4899', bx, .02 + g, bz); a(FM, new THREE.TorusGeometry(.19, .012, 4, 10, Math.PI), '#fdf2f8', bx, .2 + g, bz, 0, .4, Math.PI);
+      a(FM, new THREE.CylinderGeometry(.17, .22, .3, 10), SA[1], bx - .1, .14 + g2, bz + .55); }
+    { const sx = -1.6, sz = .6, g = gy(sx, sz - .05) - .04; a(FM, new THREE.BoxGeometry(.2, .03, .24), '#facc15', sx, .12 + g, sz, -.9, .3, 0); a(FM, new THREE.CylinderGeometry(.02, .02, .5, 5), '#fde68a', sx, .38 + g, sz - .1, -.6, .3, 0); }
+    drape(new THREE.CircleGeometry(.55, 10), '#c9ad7c', -1.2, .02, -1.1, -Math.PI / 2, 0, 0, 1, .7, 1); // 挖沙挖出來的一個淺坑
+    // 攤在旁邊的藍白條紋浴巾（每條沿長邊分 5 段，順著斜坡攤平）、上面一頂繫著粉紅緞帶的草帽（帽沿也貼著浴巾）；堆沙堡的人去海邊玩水了
+    { const tx = -1.9, tz = -1.6, c = Math.cos(.35), s = Math.sin(.35); for (let k = 0; k < 6; k++) { const o = (k - 2.5) * .24; drape(new THREE.BoxGeometry(.24, .02, 1.3, 1, 1, 5), k % 2 ? '#f8fafc' : '#38bdf8', tx + c * o, .025, tz - s * o, 0, .35, 0); }
+      const hx = tx + .1, hz = tz - .25, g = gy(hx, hz); drape(new THREE.CylinderGeometry(.3, .32, .03, 12), '#f5d08a', hx, .055, hz); a(FM, new THREE.SphereGeometry(.15, 10, 5, 0, PI2, 0, Math.PI / 2), '#eec170', hx, .065 + g, hz); a(FM, new THREE.CylinderGeometry(.152, .152, .045, 12), '#f472b6', hx, .09 + g, hz);
+      // 插在浴巾邊上的粉紅白條紋海灘傘（沙堡本身是沙色、遠看認不出來；一把彩色的傘從沙丘頂上、靠山那條路上遠遠就看得到）
+      const ux = tx - .75, uz = tz + .55, ug = gy(ux, uz) - .12; a(FM, new THREE.CylinderGeometry(.025, .025, 1.95, 5), '#f8fafc', ux, ug + .97, uz, .1, 0, -.12);
+      for (let k = 0; k < 8; k++) a(FM, new THREE.ConeGeometry(1.05, .38, 2, 1, false, k / 8 * PI2, PI2 / 8), k % 2 ? '#fdf2f8' : '#f472b6', ux + .13, ug + 2.03, uz + .11, .1, 0, -.12); // 傘面順著傘柱的斜度
+      a(FM, new THREE.SphereGeometry(.05, 6, 4), '#f472b6', ux + .15, ug + 2.22, uz + .13); addCol({ x: tv.set(ux, 0, uz).applyMatrix4(B).x, z: tv.z, r: .12 }); }
+    addCol({ x: x0, z: z0, r: 1.7 });
+    // 風車：細細的白棍子插在沙裡，四片葉子對著海（東邊）吹來的風
+    const wx = x0 + Math.sin(face + 1.9) * 2.6, wz = z0 + Math.cos(face + 1.9) * 2.6, wy = lowAt(wx, wz, .2);
+    kt.add(FM, new THREE.CylinderGeometry(.02, .026, 1.65, 5), '#f8fafc', M4(wx, wy + .74, wz)); kt.add(FM, new THREE.SphereGeometry(.05, 6, 4), '#facc15', M4(wx + .06, wy + 1.52, wz)); addCol({ x: wx, z: wz, r: .12 });
+    kt.done(LOW ? 80 : 110);
+    const bl = ['#f9a8d4', '#7dd3fc', '#fde68a', '#86efac'], parts = [];
+    for (let k = 0; k < 4; k++) { const t = new THREE.BufferGeometry(); t.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, .03, .4, 0, .31, .31, 0, 0, 0, 0, .31, .31, 0, .03, .4], 3)); parts.push([t, bl[k], M4(0, 0, 0, k / 4 * PI2, 0, 0)]); } // 一片葉子正反兩面（三角形）；葉子 40 公分（原本 26 公分，從路上遠遠看只是一個小點）
+    const wm = new THREE.Mesh(nookMerge(parts), FM); wm.position.set(wx + .08, wy + 1.52, wz); wm.castShadow = false; chunkObj(wm, 70, false, [wx, wz, 1]); CASTLE.wheel = wm;
+
+    // 海角台地北邊放風箏的地方：木樁、線軸、摺好的野餐墊（不動的零件，一個網格）
+    { const kx = KITE.x * K, kz = KITE.z * K, ky = lowAt(kx, kz, .5), kk2 = nookKit();
+      kk2.add(FM, new THREE.CylinderGeometry(.05, .03, .5, 5), '#8b6544', M4(kx, ky + .18, kz)); kk2.add(FM, new THREE.CylinderGeometry(.1, .1, .14, 10), '#f8fafc', M4(kx + .45, ky + .1, kz + .2, Math.PI / 2, .5, 0)); [-1, 1].forEach(s => kk2.add(FM, new THREE.CylinderGeometry(.15, .15, .025, 10), '#b45309', M4(kx + .45 + s * .07 * Math.cos(.5), ky + .1, kz + .2 - s * .07 * Math.sin(.5), Math.PI / 2, .5, 0)));
+      kk2.add(FM, ...stick(V(kx + .45, ky + .12, kz + .2), V(kx, ky + .4, kz), .006, '#f8fafc', 3)); // 線軸到木樁的線
+      const bx = kx - 1.3, bz = kz + 1.1, by = lowAt(bx, bz, .6); kk2.add(FM, new THREE.BoxGeometry(1.1, .08, .7), '#f9a8d4', M4(bx, by + .04, bz, 0, .3, 0)); kk2.add(FM, new THREE.BoxGeometry(1.12, .02, .12), '#fdf2f8', M4(bx, by + .09, bz, 0, .3, 0)); kk2.add(FM, new THREE.BoxGeometry(.12, .02, .72), '#fdf2f8', M4(bx, by + .09, bz, 0, .3, 0));
+      kk2.add(FM, new THREE.BoxGeometry(.3, .2, .22), '#c08457', M4(bx + .25, by + .18, bz - .1, 0, .6, 0)); kk2.add(FM, new THREE.TorusGeometry(.12, .015, 4, 10, Math.PI), '#8b5e34', M4(bx + .25, by + .28, bz - .1, 0, .6, 0)); // 小籃子
+      addCol({ x: kx, z: kz, r: .15 }); kk2.done(LOW ? 90 : 120);
+      // 風箏（連同線一起一個網格，原點在木樁：整組繞著木樁輕輕晃，線就一直接在木樁上）。台地上的風順著背後的山壁往海那邊吹，風箏飛在台地東邊的海崖外、海的上空：
+      // 從小湖那邊走上台地，風箏一直在正前方的天上（後面是天空和海）；走到木樁旁邊，不用抬頭就看得到風箏和往上拉的那條線
+      // （原本飛在木樁上方 17 公尺、偏向陸地那一側：遠遠看是一個小點，真的走到木樁旁邊時剛好在頭頂、超出畫面，只看得到一條細線）
+      const KX = 15.5, KY = 11, KZ = -5, kc = ['#f472b6', '#fde047', '#60a5fa', '#34d399'], pp = [];
+      const tri = (a, b, c, col) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b, ...c, ...a, ...c, ...b], 3)); pp.push([g, col]); }; // 正反兩面
+      const dl = Math.hypot(KX, KZ), dx = KX / dl, dz = KZ / dl, sx = -dz, sz = dx, KS = 2, at = (u, v, w = 0) => [KX + (sx * u + dx * w) * KS, KY + v * KS, KZ + (sz * u + dz * w) * KS]; // 風箏面：u＝左右、v＝上下、w＝順風（正對著木樁）；放大 2 倍（高 3.5 公尺）：從台地下的草坡看過去才不會只剩一個點；站在木樁旁仰角約 30 度，還在畫面裡
+      const top = at(0, .75), bot = at(0, -1), lf = at(-.55, 0), rt = at(.55, 0), mid = at(0, 0, -.12);
+      tri(top, lf, mid, kc[0]); tri(top, mid, rt, kc[1]); tri(mid, lf, bot, kc[2]); tri(mid, bot, rt, kc[3]);
+      pp.push(stick(V(...top), V(...bot), .018, '#334155', 3), stick(V(...lf), V(...rt), .018, '#334155', 3), stick(V(0, .4, 0), V(...at(0, -.2, -.05)), .012, '#f8fafc', 3)); // 骨架、風箏線
+      let p0 = V(...bot); for (let k = 1; k <= 6; k++) { const p1 = V(...at(Math.sin(k * 1.3) * .25, -1 - k * .5, k * .28)); pp.push(stick(p0, p1, .008, '#f8fafc', 3)); if (k % 2 === 0 || k === 5) pp.push([new THREE.BoxGeometry(.05, .24, .32), kc[k % 4], new THREE.Matrix4().makeRotationY(Math.atan2(sx, sz)).multiply(new THREE.Matrix4().makeRotationZ(.3)).setPosition(p1)]); p0 = p1; } // 蝴蝶結尾巴（往下風拖）
+      const km = new THREE.Mesh(nookMerge(pp), M.night); km.position.set(kx, ky, kz); km.castShadow = false; chunkObj(km, 160, false, [kx + KX / 2, kz + KZ / 2, 10]); KITE.m = km; } // 夜光漆：天黑以後風箏和線微微亮著（同一個網格，換成既有的夜光材質，不多一次繪製）
+    // 上海角那段草坡的山壁腳下：一塊從山壁突出來的岩台（頂上長著草和粉紅色的海石竹），一隻白色小山羊站在上面看著小湖（不動的零件一個網格、頭一個網格）
+    { const fx = GOAT.x * K, fz = GOAT.z * K, fy = H(fx, fz), e = .6, gx = H(fx + e, fz) - H(fx - e, fz), gz = H(fx, fz + e) - H(fx, fz - e), gl = Math.hypot(gx, gz) || 1, ux = gx / gl, uz = gz / gl; // u：往山壁上面的方向
+      const face = Math.atan2(-ux, -uz), T = fy + 1.05, cx = fx + ux * .7, cz = fz + uz * .7, kg = nookKit(), a = kg.at(cx, cz, 0, face, T), ag = kg.at(cx, cz, 0, face, T, 1.2), RC = ['#c99a72', '#b98a66', '#d6aa82']; GOAT.face = face; // 本地 +z＝面向小湖（下坡）
+      a(FM, new THREE.CylinderGeometry(1.35, 1.75, 2.3, 8), RC[0], 0, -1.15, 0, 0, .3, 0, 1, 1, .85); a(FM, new THREE.CylinderGeometry(1.3, 1.35, .07, 8), '#8cbf6a', 0, .02, 0, 0, .3, 0, 1, 1, .85); // 又寬又矮的岩台（離地 1 公尺、後半截埋在山壁裡；窄高的話遠看像一根柱子）與頂上的草皮
+      [[1.25, -.55, .55, 9411], [-1.3, -.7, .45, 9412]].forEach(([lx, ly, r, sd]) => a(FM, rk(sd), RC[2], lx, ly, -.2, .2, sd, 0, r, r * .8, r)); // 岩台兩側長出來的大石頭，輪廓才不會是一個圓柱
+      const LM = M4(cx, 0, cz, 0, face, 0); [[.9, .75, .42, .2, RC[1]], [-.75, 1.05, .28, .1, RC[2]]].forEach(([lx, lz, r, dy, c], i) => { tv.set(lx, 0, lz).applyMatrix4(LM); kg.add(FM, new THREE.DodecahedronGeometry(r, 0), c, M4(tv.x, H(tv.x, tv.z) + dy, tv.z, .3, .8 + i, 0, 1, .68, 1)); }); // 腳下兩塊墊腳的石頭（山羊是這樣跳上去的），各自坐在自己腳下的地上
+      const W2 = '#f7f3ea', LG = '#e9e2d4', gp = (geo, col, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => ag(FM, geo, col, x, y + .05, z + .2, rx, ry, rz, sx, sy, sz); // 山羊（放大 1.2 倍，二十幾公尺外也認得出來）站在岩台靠外的那半邊
+      gp(new THREE.SphereGeometry(.3, 8, 6), W2, 0, .55, 0, 0, 0, 0, .88, .82, 1.35); gp(new THREE.CylinderGeometry(.1, .13, .34, 6), W2, 0, .77, .32, .55, 0, 0); gp(new THREE.ConeGeometry(.05, .14, 4), W2, 0, .71, -.42, -.9, 0, 0); // 身體、脖子、短尾巴
+      [[.13, .23], [-.13, .23], [.13, -.24], [-.13, -.24]].forEach(([x, z]) => { gp(new THREE.CylinderGeometry(.06, .05, .36, 5), LG, x, .22, z); gp(new THREE.CylinderGeometry(.045, .05, .06, 5), '#6b5e55', x, .03, z); }); // 四條腿與小蹄子
+      [[-.55, .1, -.3], [.6, .08, -.45], [.6, .07, .45]].forEach(([x, y, z], i) => { a(FM, new THREE.SphereGeometry(.12, 6, 3, 0, PI2, 0, Math.PI / 2), '#6fae5c', x, y, z, 0, 0, 0, 1, .7, 1); for (let k = 0; k < 5; k++) a(FM, new THREE.IcosahedronGeometry(.035, 0), k % 2 ? '#f9a8d4' : '#f472b6', x + Math.cos(k * 1.3 + i) * .07, y + .08 + (k % 2) * .02, z + Math.sin(k * 1.3 + i) * .07); }); // 岩台上的海石竹
+      for (let i = 0; i < 3; i++) { const t = face + 1.1 + i * 1.6, x = fx - ux * 1.2 + Math.sin(t) * 1.4, z = fz - uz * 1.2 + Math.cos(t) * 1.4, y = H(x, z); kg.add(FM, new THREE.SphereGeometry(.14, 6, 3, 0, PI2, 0, Math.PI / 2), '#6fae5c', M4(x, y - .02, z, 0, 0, 0, 1, .7, 1)); for (let k = 0; k < 6; k++) kg.add(FM, new THREE.IcosahedronGeometry(.04, 0), k % 2 ? '#f9a8d4' : '#ec4899', M4(x + Math.cos(k * 1.1) * .08, y + .07 + (k % 2) * .03, z + Math.sin(k * 1.1) * .08)); } // 山壁腳下幾叢海石竹
+      addCol({ x: cx, z: cz, r: 1.45 }); kg.done(LOW ? 70 : 100);
+      // 山羊的頭（會動，單獨一個網格）：樞紐在脖子頂端；有人走近就轉頭看著他，沒人的時候慢慢左右看、嚼東西
+      const hp = [], h = (geo, col, x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx) => hp.push([geo, col, M4(x, y, z, rx, ry, rz, sx, sy, sz)]);
+      h(new THREE.SphereGeometry(.15, 8, 6), W2, 0, .04, .1, 0, 0, 0, .85, .9, 1.25); h(new THREE.BoxGeometry(.15, .12, .14), '#efe8db', 0, -.02, .25); h(new THREE.BoxGeometry(.07, .035, .02), '#f9a8d4', 0, .01, .325); // 頭、口鼻、粉紅鼻頭
+      [-1, 1].forEach(s => { h(new THREE.SphereGeometry(.024, 6, 4), '#1f2937', s * .085, .08, .17); h(new THREE.ConeGeometry(.033, .24, 5), '#a8a29e', s * .06, .2, .0, -.55, 0, s * -.12); h(new THREE.BoxGeometry(.15, .04, .07), '#efe7da', s * .16, .07, .03, 0, 0, s * .45); h(new THREE.SphereGeometry(.03, 6, 4), '#fecdd3', s * .09, -.01, .2, 0, 0, 0, 1, .6, .4); }); // 眼睛、往後彎的角、垂垂的耳朵、腮紅
+      h(new THREE.ConeGeometry(.035, .12, 4), '#e2dacb', 0, -.13, .2, Math.PI, 0, 0); // 山羊鬍
+      const hm = new THREE.Mesh(nookMerge(hp), FM); tv.set(0, .96, .6).applyMatrix4(M4(cx, T, cz, 0, face, 0, 1.2)); hm.position.copy(tv); hm.scale.setScalar(1.2); hm.rotation.order = 'YXZ'; hm.rotation.y = face; hm.castShadow = false;
+      chunkObj(hm, 60, false, [tv.x, tv.z, 1]); GOAT.head = hm; }
+    PACE.push(...W.chunks.slice(c00)); PACE.forEach(o => { o.userData.far0 = o.userData.far; });
+  });
+  regionStep((dt, t) => {
+    paceHide(PACE);
+    const w = CASTLE.wheel; if (w && w.visible) { CASTLE.a += dt * (4.5 + 2 * Math.sin(t * .4) + Math.sin(t * 1.3)); w.rotation.x = CASTLE.a; } // 海風一陣一陣：時快時慢（cullChunks 沒畫它的時候就不轉）
+    const g = GOAT.head; if (g && g.visible) { const dx = P.x - g.position.x, dz = P.z - g.position.z, d = Math.hypot(dx, dz); let y = Math.sin(t * .23) * .5 + Math.sin(t * .61) * .2; // 山羊：慢慢左右看
+      if (d < 22) { let r = Math.atan2(dx, dz) - GOAT.face; r = Math.atan2(Math.sin(r), Math.cos(r)); y = Math.max(-1.1, Math.min(1.1, r)); } // 有人走近：轉頭看著他（脖子轉不過去的角度就停在最旁邊）
+      GOAT.yaw += (y - GOAT.yaw) * Math.min(1, dt * 2.2); g.rotation.y = GOAT.face + GOAT.yaw; g.rotation.x = d < 22 ? -.08 : .12 + Math.max(0, Math.sin(t * 3.1)) * .06; } // 沒人的時候低頭嚼東西
+    const k = KITE.m; if (k && k.visible) { k.rotation.set(Math.sin(t * .53) * .06 + Math.sin(t * 1.7) * .015, Math.sin(t * .21) * .08, Math.sin(t * .71) * .05 + Math.sin(t * 2.3) * .012); } // 風箏繞著木樁慢慢畫八字、一陣風來抖一下
+  });
 })();
