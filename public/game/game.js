@@ -133,7 +133,7 @@ const NPC_IDS = ['yun', 'chen', 'zhe', 'mei', 'jie', 'lin', 'yu', 'leo', 'kai', 
 // 宅配（氣球木箱）的機器與四間店：sanitize 在存檔區就要用，所以放在這裡（OWN、SHOPS 在後面才宣告，讀檔時還在暫時死區）
 const SHIP_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'], SHOP_IDS = ['mach', 'mall', 'gear', 'arms'];
 // 收進手帳的紙：sanitize 在讀檔時就執行，比 PAPERS 早（還在暫時死區，用到會丟例外、被 load() 當成壞檔而開新遊戲），所以只能用這裡的字串白名單
-const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|sk_(forest|coast|volcano|snow|city)|note[0-2]|hole|bottle|info_(tree|light|ice)|arms|live|gn[1-8])$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
+const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|sk_(forest|coast|volcano|snow|city)|note[0-2]|hole|bottle|info_(tree|light|ice)|arms|live|gn[1-8]|moon)$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
 // 奶奶的筆記（gn1～gn8，6.1）：手帳裡那張紙 → 算進哪一個小秘密（前綴＝手帳上標的地方：home 工坊、cave 山洞）；讀檔時找到過的就補進手帳（同樹洞的紙條）
 const GN_EGG = { gn1: 'home_gn1', gn2: 'home_gn2', gn3: 'forest_gn', gn4: 'coast_gn', gn5: 'volcano_gn', gn6: 'snow_gn', gn7: 'cave_gn1', gn8: 'cave_gn2' };
 const SAVE_KEY = 'slime_world_v1';
@@ -158,6 +158,7 @@ function fresh() {
     trendD: { d: 0, sp: null }, // 今天的流行色（每個真實日換一次；工坊屋頂的旗子跟著換顏色）
     out: 0, // 網站貨架旁出貨箱裡還沒寄出的包裹（玩家回到工坊附近時綁上氣球飛走）
     altN: 0, // 「按 Alt 放開滑鼠」提示出現過幾次（只在前 3 次鎖定滑鼠時出現）
+    moon: { l: 0, b: 0 }, // 第二幕「月光回來」（story.js）：遺跡四根石柱亮了哪幾根（位元）、巨樹開過花沒
   };
 }
 // 讀檔時修正壞掉或過舊的資料，避免任何一筆異常資料讓遊戲當掉
@@ -233,6 +234,7 @@ function sanitize(o) {
   s.roads = Object.fromEntries(Object.entries(obj(o.roads)).filter(([k, v]) => ROAD_IDS.includes(k) && v).map(([k]) => [k, 1]));
   s.cave = caveSan(o.cave); // 山洞：走過哪些洞、拍過的壁畫、苔蘚（caves.js）
   s.map = nmSan(o.map); // 手繪地圖走過的格子（map.js）：舊存檔沒有＝白紙
+  s.moon = moonSan(o.moon, s.codex); // 遺跡的四根石柱（story.js）：舊存檔依圖鑑補亮該亮的柱子
   return s;
 }
 function load() {
@@ -277,7 +279,7 @@ const demand = (price, f) => clamp(1.5 - 0.75 * price / Math.max(1, f), 0, 1.3);
 const unlockedSpecies = () => SPECIES.filter(s => S.zones.includes(s.zone));
 function addMoney(n) { S.money += n; if (n > 0) S.earned += n; }
 function discover(id) { if (!S.codex[id]) { S.codex[id] = { seen: true, made: 0 }; if (typeof gainXP === 'function' && S.seen) gainXP(10, '發現新種類'); } }
-function makeProduct(spId, crisp, crude) { const p = { id: S.nextId++, sp: spId, crisp, dur: 100, deco: [], cracks: [] }; if (crude) p.crude = true; discover(spId); S.codex[spId].made++; return p; }
+function makeProduct(spId, crisp, crude) { const p = { id: S.nextId++, sp: spId, crisp, dur: 100, deco: [], cracks: [] }; if (crude) p.crude = true; discover(spId); S.codex[spId].made++; moonMade(spId); return p; } // moonMade：那一區第一個稀有捏捏點亮遺跡的一根石柱（story.js）
 
 /* ---------- 音效 ---------- */
 let AC = null, NB = null, master = null;
@@ -1904,6 +1906,7 @@ function buildLandmarks() {
     const rune = mesh(new THREE.PlaneGeometry(4.6, .22), new THREE.MeshBasicMaterial({ color: '#67e8f9', transparent: true, opacity: .7, toneMapped: false }), x, y + 4.25, z - 1.14, sc);
     W.anim.push((dt, t) => { rune.material.opacity = .45 + Math.sin(t * 1.5) * .25; });
     const lb = textSprite('古代遺跡', '#cbd5e1'); lb.position.set(x, y + 5.6, z); sc.add(lb); // 看不懂的月光文字就刻在拱門上（發光的那一條）
+    W.ruinsSign = lb; lb.userData.occ = [[new THREE.Vector3(x - 3.05, y + 3.95, z - 2.1), new THREE.Vector3(x + 3.05, y + 4.58, z - 1.1)]]; // 北側斷掉的拱門（從北邊走近約 5～8 m 會擋住名牌）：story.js 的 signStep 看到它或第二幕的石柱擋在名牌前面，就讓名牌畫在上面
   }
   // 雪原的雪人
   { const g = mergeParts([[new THREE.SphereGeometry(.55, 14, 10), '#f8fafc', M4(0, .5, 0)], [new THREE.SphereGeometry(.4, 14, 10), '#f1f5f9', M4(0, 1.2, 0)], [new THREE.SphereGeometry(.28, 12, 9), '#f8fafc', M4(0, 1.75, 0)], [new THREE.ConeGeometry(.05, .25, 8), '#f97316', M4(0, 1.75, .35, Math.PI / 2, 0, 0)], ...[-1, 1].map(s => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(s * .1, 1.84, .24)]), ...[0, 1, 2].map(i => [new THREE.SphereGeometry(.035, 6, 5), '#111827', M4(0, 1.05 + i * .14, .385 - i * .02)]), [new THREE.TorusGeometry(.28, .07, 8, 18), '#ef4444', M4(0, 1.5, 0, Math.PI / 2, 0, 0)], [new THREE.BoxGeometry(.12, .4, .06), '#ef4444', M4(.15, 1.35, .26, 0, 0, .2)], ...[-1, 1].map(s => [new THREE.CylinderGeometry(.025, .03, .9, 5), '#5b4030', M4(s * .62, 1.38, 0, 0, 0, s * 1.1)]), [new THREE.CylinderGeometry(.2, .22, .3, 12), '#1f2937', M4(0, 2.05, 0)], [new THREE.CylinderGeometry(.3, .3, .03, 14), '#1f2937', M4(0, 1.91, 0)]], true);
@@ -5245,6 +5248,7 @@ const PAPERS = {
   // 世界裡的紙條：從樹洞、瓶子裡飛到手上，收進手帳時才算找到小秘密（onFile；重讀不會重算）。瓶中信是捲著的（roll：從下緣捲開）
   hole: { v: 'note', name: '樹洞裡的紙條', b: ['池塘的小青蛙最愛學人跳，跳給牠看看吧。'], sig: '——奶奶', onFile: () => foundEgg('forest_note') },
   bottle: { v: 'note', roll: 1, name: '瓶中信', b: ['撿到這封信的人：', '月光谷的史萊姆捏起來，是全世界最療癒的聲音。'], sig: '——一個路過的水手', onFile: () => foundEgg('coast_bottle') },
+  moon: MOON_PAGE, // 第二幕「月光回來」：巨樹開花那一夜記在手帳的一頁（文案在 story.js）
   arms: { v: 'flyer', name: '武器店的傳單', head: '武器店　新開幕！', get b() { return [`保暖衣 ${fmt(OWN.coat.cost)}｜穿上才進得了雪原`, `長劍 ${fmt(OWN.sword.cost)}｜收藏用`]; }, sig: '大城市・路北側最右邊　搭計程車就到' },
   // 奶奶的筆記（6.1）：從奶奶的筆記本撕下來的 8 頁撇步，散在工坊、四區與山洞（gnBuild），取代以前一次性的教學 toast（完美節奏、直播、切片變速、潛行）。
   // gn＝筆記本的一頁（左邊一排裝訂孔、粉紅紙膠帶）、pg＝頁碼、dd＝左下角的小塗鴉（Paper.tsx 的 Doodle）；egg 由 GN_EGG 補上（讀到時蓋小秘密的章）
@@ -6241,6 +6245,7 @@ document.addEventListener('click', e => {
     case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; gainXP(4); addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
     case 'finish': finish(); break;
     case 'devZones': devUnlockZones(); break;
+    case 'devMoon': moonDev(); break; // 遺跡的石柱：點亮下一根／演一次開花（story.js）
     case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
     case 'avatar': setAvatar(k); break;
     case 'pickSave': closeModal(); switchSave(+k); break;

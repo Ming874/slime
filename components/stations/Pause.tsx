@@ -101,6 +101,10 @@ export default function Pause() {
             <button type="button" className="nb-btn" data-act="devZones" disabled={S.zones.length >= g.ZONES.length && !!S.own.coat}>
               {S.zones.length >= g.ZONES.length && S.own.coat ? '全部地圖都已解鎖' : '解鎖全部地圖（含保暖衣）'}
             </button>
+            {/* 第二幕「月光回來」（story.js）：一根一根點亮遺跡的石柱（照樣飛光點、敲鐘）；四根都亮了就撥到入夜、演一次巨樹開花（可以重演） */}
+            <button type="button" className="nb-btn" data-act="devMoon">
+              {(() => { const n = [0, 1, 2, 3].filter((i) => ((S.moon?.l ?? 0) >> i) & 1).length; return n < 4 ? `月光：點亮遺跡的下一根石柱（${n}/4）` : '月光：撥到入夜、演一次巨樹開花'; })()}
+            </button>
           </section>
         )}
       </div>

@@ -19,7 +19,7 @@ const ph = (t: string) => t.replace(/([，、；　])/g, '$1\u0000').split('\u00
 
 export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hint?: number | boolean }) {
   const ink = live && !p.rev && !p.rm ? ' ink' : ' now';
-  const cls = `pp pp-${p.v}${p.gift ? ' pp-gift' : ''}${p.torn ? ' pp-torn' : ''}${p.gn ? ' pp-gn' : ''}${ink}`;
+  const cls = `pp pp-${p.v}${p.gift ? ' pp-gift' : ''}${p.torn ? ' pp-torn' : ''}${p.gn ? ' pp-gn' : ''}${p.id === 'moon' ? ' pp-moonp' : ''}${ink}`;
   const tip = hint ? <div className="pp-hint" style={{ opacity: typeof hint === 'number' ? hint : 1 }}>{p.touch ? '點一下收進手帳' : `E 收進手帳${p.v === 'postcard' ? '・空白鍵翻面' : ''}`}</div> : null; // 走開也會收起來：一走就看得到，不寫（前 10 分鐘的文字預算 11.1）
   let body: ReactNode = null;
   if (p.v === 'letter') {
@@ -45,6 +45,7 @@ export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hin
           {p.sig && <p className="pp-l pp-sig" style={L(p.b.length)}>{p.sig}</p>}
         </div>
         {p.gift && <div className="pp-doodle pp-l" style={L(p.b.length + 1)} aria-hidden="true"><Slicer /><span>北邊的產線 ↑</span></div>}
+        {p.id === 'moon' && <><PressedPetal /><div className="pp-doodle pp-moonart pp-l" style={L(p.b.length + 1)} aria-hidden="true"><MoonNight /></div></>}
         {p.gn ? (
           <div className="pp-gn-ft">
             {p.dd ? <div className="pp-doodle pp-l" style={L(p.b.length + 1)} aria-hidden="true"><Doodle k={p.dd} /></div> : <i />}
@@ -190,6 +191,34 @@ function Doodle({ k }: { k: string }) {
   else if (k === 'curl') d = <><circle cx="22" cy="28" r="12" /><path d="M16 25l3 2-3 2M28 25l-3 2 3 2" /><path className="pp-red" d="M38 10c-2 3-3 6-1 7s3-1 1-7z" /><path d="M62 34H44M48 30l-4 4 4 4" /></>; // 縮成一團、冒汗、從旁邊慢慢靠近
   else if (k === 'moss') d = <><path d="M8 41c2-10 6-18 14-24M12 31c-4-1-6-4-6-7 4 0 6 3 6 7zM16 23c-3-2-4-5-3-8 3 1 5 4 3 8zM18 33c4-2 7-1 9 2-4 2-7 1-9-2z" /><path d="M38 39c0-7 4-10 10-10s10 3 10 10zM44 34v1M52 34v1" /><path className="pp-red" d="M26 9v.5M31 15v.5M48 16v7M44.5 19.5h7" /></>; // 發光的苔蘚、身上亮亮的捏捏
   return <svg className="pp-dd" viewBox="0 0 64 46" aria-hidden="true">{d}</svg>;
+}
+// 第二幕「月光回來」的手帳頁（story.js 的 MOON_PAGE）：四根石柱（柱頂的石頭是那一區的顏色）、月牙、從遺跡劃過去的月光、開滿花的巨樹與飄下來的花瓣
+function MoonNight() {
+  const C = ['#38bdf8', '#fb923c', '#bfe6ff', '#c4b5fd'];
+  const bl: [number, number][] = [[160, 36], [168, 26], [178, 24], [186, 34], [194, 46], [176, 40], [164, 50], [152, 48], [184, 54], [170, 56], [190, 58], [158, 60], [174, 32], [146, 56]];
+  return (
+    <svg className="pp-moon" viewBox="0 0 220 96" aria-hidden="true">
+      <path d="M4 90h212" opacity=".5" />
+      {C.map((c, i) => { const x = 10 + i * 18; return <g key={i}><path d={`M${x - 4} 90v-22h8v22M${x - 5} 68h10`} /><circle cx={x} cy={62} r={4} fill={c} /></g>; })}
+      <path d="M36 52Q100 -12 166 26" className="pp-moon-arc" />
+      <path d="M104 8a8 8 0 1 0 7 13a6.5 6.5 0 1 1 -7 -13z" fill="#fde68a" />
+      <path d="M166 90c2-9 2-19 0-29h12c-2 10-2 20 0 29" fill="#b98a62" />
+      <circle cx="172" cy="40" r="19" fill="#9fd49a" /><circle cx="154" cy="52" r="12" fill="#9fd49a" /><circle cx="190" cy="52" r="12" fill="#9fd49a" />
+      {bl.map(([x, y], i) => <circle key={i} cx={x} cy={y} r={2.6} fill={i % 3 ? '#f9a8d4' : '#fbcfe8'} stroke="none" />)}
+      {[[142, 72, 20], [200, 68, -30], [188, 82, 40]].map(([x, y, r], i) => <ellipse key={i} cx={x} cy={y} rx={2.6} ry={1.5} transform={`rotate(${r} ${x} ${y})`} fill="#f9a8d4" stroke="none" />)}
+    </svg>
+  );
+}
+// 夾在月光那一頁的櫻花瓣：細長、上緣平平的帶一個小缺口、下面收成窄窄的花瓣根（不是兩個圓瓣＋尖底的愛心）；淡粉、根部深一點（不用漸層：id 在手上的紙與剪貼區重複會畫不出來），三條葉脈從根部散開，一條紙膠帶貼著
+function PressedPetal() {
+  return (
+    <svg className="pp-moon-petal" viewBox="0 0 28 46" aria-hidden="true">
+      <path className="pp-moon-pl" d="M13 45C12.4 41.5 7.5 36 5.2 28C3.4 20 4.4 10 9 3.6Q11.6 6.4 14 8Q16.4 6.4 19 3.6C23.6 10 24.6 20 22.8 28C20.5 36 15.6 41.5 15 45Z" />
+      <path className="pp-moon-blush" d="M13.2 44.6C12.6 40.5 9.8 35.5 9.2 30.5Q14 27.6 18.8 30.5C18.2 35.5 15.4 40.5 14.8 44.6Z" />
+      <path className="pp-moon-vein" d="M14 43.5C13.6 34 12 22 10.2 10M14 43.5V12M14 43.5C14.4 34 16 22 17.8 10" />
+      <rect x="-2" y="21" width="32" height="8" rx="1" transform="rotate(-28 14 25)" className="pp-moon-tape" />
+    </svg>
+  );
 }
 function Knight() {
   return (

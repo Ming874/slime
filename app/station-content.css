@@ -521,6 +521,17 @@
 .pp-note .pp-sig{margin-top:4px}
 .pp-doodle{position:absolute;left:30px;bottom:16px;display:flex;align-items:flex-end;gap:8px;color:var(--pp-pen);font-size:18px;line-height:1.2;transform:rotate(-3deg)}
 .pp-slicer{width:54px;height:38px;fill:none;stroke:var(--pp-ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+/* 第二幕「月光回來」的手帳頁（story.js 的 MOON_PAGE、Paper.tsx 的 MoonNight）：左下畫四根柱子、月光的弧線、開花的巨樹（和奶奶便條的切片機一樣放左下：
+   右下是按鍵提示 .pp-hint，畫在右下會被提示的字壓過去）；右上用紙膠帶夾一片壓扁的櫻花瓣 */
+.pp-doodle.pp-moonart{bottom:12px;transform:rotate(-1.5deg)}
+.pp-moon{width:220px;height:96px;fill:none;stroke:var(--pp-ink);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pp-moon .pp-moon-arc{stroke:#7c8cf0;stroke-dasharray:3 4;stroke-width:1.8}
+.pp-moon-petal{position:absolute;right:30px;top:14px;width:28px;height:46px;transform:rotate(24deg)}
+.pp-moon-petal .pp-moon-pl{fill:#fcd5e9;stroke:#f472b6;stroke-width:.8;opacity:.92}
+.pp-moon-petal .pp-moon-blush{fill:#f9a8d4;stroke:none;opacity:.75}
+.pp-moon-petal .pp-moon-vein{fill:none;stroke:#ec48995c;stroke-width:.7;stroke-linecap:round}
+.pp-moon-petal .pp-moon-tape{fill:var(--pp-tape);stroke:none}
+@media (max-height:500px),(max-width:480px){.pp-moon{width:150px;height:66px}} /* 手機橫拿太矮、直拿太窄（紙約 340 px 寬，220 px 的畫會碰到右下的提示）：畫小一點 */
 @media (max-width:480px){.pp-note{padding:40px 22px 20px 26px}.pp-doodle{left:22px}}
 /* 撕碎的紙條（潮汐石的謎語）：上緣撕過的鋸齒、沒有膠帶 */
 .pp-note.pp-torn{padding-top:34px;-webkit-mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) 50%/16px 100%;mask:conic-gradient(from 135deg at top,#0000,#000 1deg 89deg,#0000 90deg) 50%/16px 100%}
@@ -727,7 +738,7 @@
 .rx-clipview[data-v="flyer"] .rx-clipview-in{width:min(340px,82%);height:min(440px,88%)}
 .rx-clipview .pp:not(.pp-scrap){font-size:18px} /* 撕碎的紙條照自己的字級（手機 16 px）：三片疊著，18 px 在手機橫拿時塞不下 */
 .rx-clipview[data-v="note"] .rx-clipview-in{height:auto;max-height:80%}
-.rx-clipview .pp-note{height:auto;min-height:170px;max-height:100%}.rx-clipview .pp-note.pp-gift{padding-bottom:72px}.rx-clipview .pp-note.pp-gn{padding-bottom:18px} /* 便條、紙條高度跟著字（便條下面留給小切片機的塗鴉） */
+.rx-clipview .pp-note{height:auto;min-height:170px;max-height:100%}.rx-clipview .pp-note.pp-gift{padding-bottom:72px}.rx-clipview .pp-note.pp-gn{padding-bottom:18px}.rx-clipview .pp-note.pp-moonp{padding-bottom:118px} /* 便條、紙條高度跟著字（便條下面留給小切片機的塗鴉） */
 .rx-clipview .pp-flipbtn{bottom:-52px}
 .rx-clipview-tip{position:absolute;left:0;right:0;bottom:8px;text-align:center;font:400 13px/1.3 var(--pp-hand);color:var(--pp-ink2)}
 @media (max-aspect-ratio:3/4){.rx-clipview[data-v="postcard"] .rx-clipview-in{width:min(320px,86%);aspect-ratio:2/3}}

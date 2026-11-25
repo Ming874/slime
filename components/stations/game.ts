@@ -13,6 +13,7 @@ export type State = {
   money: number; fans: number; earned: number; xp: number; gel: Record<string, number>; stock: Product[]; web: Product[]; show: Product[];
   zones: string[]; packs: string[]; up: Record<string, number>; own: Record<string, boolean>; codex: Record<string, { made: number }>;
   ship?: Ship[]; wish?: Record<string, number>; shopSeen?: Record<string, number>;
+  moon?: { l: number; b: number }; // 第二幕「月光回來」（public/game/story.js）：遺跡四根石柱亮了哪幾根（位元）、巨樹開過花沒
   reviews: Review[]; hb: number; done: boolean; wk: { w: number; done: number[] }; name?: string; last: number; sound: boolean; sens: number; vol?: { music: number; sfx: number }; quality?: string; avatar?: string;
 };
 type Up = { name: string; desc: string; max: number; mach?: number; need?: string };
