@@ -8,7 +8,7 @@ from fontTools import subset
 
 root = pathlib.Path(__file__).resolve().parent.parent
 src = sys.argv[1] if len(sys.argv) > 1 else 'LXGWWenKaiTC-Regular.ttf'
-files = [root / 'public/game/game.js', root / 'public/game/caves.js', root / 'game/dom.html', root / 'server/server.js']
+files = [root / 'public/game/game.js', root / 'public/game/caves.js', root / 'public/game/talk.js', root / 'game/dom.html', root / 'server/server.js']
 for d in ['components', 'app', 'lib']:
     files += [p for p in (root / d).rglob('*') if p.suffix in ('.tsx', '.ts', '.css') and p.is_file()]
 chars = set(chr(c) for c in range(0x20, 0x7f))  # 完整 ASCII

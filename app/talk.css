@@ -1,0 +1,102 @@
+/* ================= 世界裡的對話（public/game/talk.js） =================
+   誰在說話，字就從誰身上冒出來；你的回答拿在自己手上。位置由 talk.js 每格寫 transform（把說話的人的世界座標投影到畫面上），
+   這裡只管長相：奶油色的紙、墨線、手寫字（霞鶩文楷）。字是 DOM，跟著裝置解析度，不受動態解析度影響 */
+#talk{--paper:#fffdf6;--ink:#22314f;--ink2:#5d6880;--pen:#b4380a;--night:0;
+  --tkf:"Slime Hand","Hannotate TC","HanziPen TC","Kaiti TC","BiauKai","STKaiti","DFKai-SB",serif;--tkfs:clamp(17px,2vh,21px);
+  --pp:color-mix(in srgb,var(--paper),#24305e calc(var(--night) * 14%)); /* 夜裡、山洞深處：紙跟著環境暗一點（墨對紙仍 ≥ 10:1） */
+  position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden;color:var(--ink);font-family:var(--tkf);line-height:1.55;text-shadow:none}
+body.touch #talk{--tkfs:17px}
+@media (max-height:520px){body.touch #talk{--tkfs:16px}}
+#talk .tkw,#talk .bkw{position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform,opacity}
+#talk .tki{position:relative;padding-top:15px} /* 上面留給名牌 */
+#talk .bkw .tki{padding-top:0}
+#talk .tkw.tip1 .tki{padding-bottom:24px}
+#talk .bkw.self .tki{padding-bottom:30px} /* 想法雲底下的兩顆小圓點 */
+
+/* 泡泡：手剪的紙、2.5px 墨線 */
+#talk .tb{position:relative;width:max-content;max-width:min(19em,80vw);font-size:var(--tkfs);padding:10px 16px 12px;background:var(--pp);border:2.5px solid var(--ink);
+  border-radius:22px 18px 24px 16px/18px 22px 16px 24px;box-shadow:0 3px 0 #22314f2b,0 12px 24px -10px #0007;letter-spacing:.02em;overflow-wrap:anywhere}
+#talk.low .tb{box-shadow:0 3px 0 #22314f2b}
+#talk .tx i{font-style:normal;opacity:0;transition:opacity .07s} /* 還沒打出來的字透明：泡泡大小與換行一開始就固定 */
+#talk .tx i.on{opacity:1}
+#talk .tx i.p,#talk .tb b.p{color:var(--pen);font-weight:inherit} /* 「」裡的名字與 ¥ 金額 */
+#talk .sig{display:block;text-align:right;color:var(--pen);margin-top:2px}
+#talk .nx{display:inline-block;margin-left:.45em;padding:0 7px;border-radius:999px;background:var(--ink);color:#fff;font:700 11px/17px Inter,var(--tkf);vertical-align:.12em;white-space:nowrap;opacity:0}
+#talk .tb.done .nx{opacity:1;transition:opacity .12s .16s;animation:tkNx 1.2s ease-in-out .28s infinite}
+@keyframes tkNx{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+
+/* 名牌（左上角貼著）、貼紙（右上角）、尾巴 */
+#talk .nm{position:absolute;left:12px;top:1px;z-index:2;display:none;transform:rotate(-3deg);transform-origin:0 100%;padding:1px 9px 2px;border:2px solid var(--ink);border-radius:8px 10px 9px 7px;
+  background:color-mix(in srgb,var(--c,#e2e8f0) 55%,#fff);color:#0b1020;font:700 13.5px/1.35 var(--tkf);white-space:nowrap}
+#talk .nm small{margin-left:6px;font-size:12px;font-weight:400;color:#3b4560}
+#talk .nm b{margin-right:4px}
+#talk .nm small:empty,#talk .nm b:empty{display:none}
+#talk .tkw.nm1 .nm,#talk .tkw.off .nm,#talk .tkw.hint .nm{display:block}
+#talk .emo{position:absolute;right:-12px;top:-2px;z-index:2;width:34px;height:34px;transform:rotate(8deg);filter:drop-shadow(0 2px 0 #22314f33)}
+#talk .tkt{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;z-index:1;pointer-events:none;fill:none;stroke:none}
+#talk .tkt path{fill:var(--pp);stroke:var(--ink);stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+#talk .tip{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);white-space:nowrap;font:13px/1.4 var(--tkf);color:#fff;text-shadow:0 1px 3px #000d,0 0 2px #000b}
+
+/* 說話的人跑到畫面外：貼在邊上、外框變虛線、尾巴變成指向他的小三角、名牌加箭頭 */
+#talk .tkw.off .tb{border-style:dashed}
+
+/* 準心對到會說話的對象：頭上一張小紙片「…」，桌機旁邊一個 E 鍵帽；輕輕呼吸 */
+#talk .tkw.hint .tb{padding:2px 10px 4px;line-height:1.2;animation:tkBreath 1.4s ease-in-out infinite}
+#talk .tkw.hint .nm{font-size:12px;padding:0 7px 1px}
+#talk .dots{font-size:18px;letter-spacing:.06em}
+#talk .hk{display:inline-block;width:16px;height:18px;margin-left:6px;border:1.5px solid var(--ink);border-radius:4px;background:#fff;color:var(--ink);font:700 11px/15px Inter,sans-serif;text-align:center;vertical-align:2px}
+@keyframes tkBreath{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+
+/* 紙：告示牌的牛皮紙便條（紅圖釘）、拿在手上的紙（下緣撕邊）。整頁一次出現 */
+#talk .tb.note{max-width:min(22em,86vw);line-height:1.6}
+#talk .tb.kraft{--kp:color-mix(in srgb,#f3e2bf,#24305e calc(var(--night) * 14%));background:var(--kp);color:#3b2a1a;border:2px solid #6b4a2b;border-radius:3px 5px 3px 4px;padding:14px 16px 12px}
+#talk .tb.kraft::before{content:"";position:absolute;left:50%;top:-8px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:radial-gradient(circle at 35% 32%,#fee2e2 0 2px,#ef4444 3px 60%,#b91c1c);box-shadow:0 2px 1px #0006}
+#talk .tb.hand{--hp:color-mix(in srgb,#fff6dc,#24305e calc(var(--night) * 14%));background:var(--hp);border:0;border-radius:4px 5px 0 0;padding:14px 18px 10px;box-shadow:0 2px 0 #22314f22,0 14px 22px -12px #0008}
+#talk .tb.hand::after{content:"";position:absolute;left:0;right:0;top:100%;height:6px;background:conic-gradient(from -40deg at 50% 100%,var(--hp) 80deg,#0000 0) 0 0/10px 6px repeat-x}
+#talk.low .tb.hand{box-shadow:0 2px 0 #22314f22}
+
+/* 一句話（道別、店員）：泡泡的小版本、沒有名牌 */
+#talk .tb.bark{font-size:max(15px,calc(var(--tkfs) * .88));padding:6px 11px 7px;max-width:min(14em,70vw)}
+/* 自己的想法雲：圓角虛線雲，下方兩顆小圓點指向「我」 */
+#talk .tb.self{--sp:color-mix(in srgb,#f7f5ff,#24305e calc(var(--night) * 14%));max-width:min(20em,84vw);background:var(--sp);color:#2b3550;border:2px dashed var(--ink2);border-radius:28px;padding:9px 18px 10px;box-shadow:0 10px 22px -12px #0007}
+#talk .tb.self::before,#talk .tb.self::after{content:"";position:absolute;left:50%;border:2px dashed var(--ink2);border-radius:50%;background:var(--sp)}
+#talk .tb.self::before{width:12px;height:12px;bottom:-19px;margin-left:-9px}
+#talk .tb.self::after{width:7px;height:7px;bottom:-30px;margin-left:1px}
+#talk.low .tb.self{box-shadow:none}
+
+/* 彩蛋的章 */
+#talk .tks{position:absolute;right:-10px;bottom:-14px;z-index:3;padding:2px 8px;border:2px dashed #7c3aed;border-radius:8px;background:#faf5ffee;color:#7c3aed;font:700 13px/1.3 var(--tkf);white-space:nowrap;transform:rotate(-4deg);animation:tkStampIn .22s cubic-bezier(.3,1.6,.5,1) both}
+#talk .tks.still{animation:none}
+@keyframes tkStampIn{from{transform:scale(1.6) rotate(-4deg);opacity:0}to{transform:rotate(-4deg);opacity:1}}
+
+/* 回話卡：拿在第一人稱的手上（桌機排成小扇形、跟著手掌；觸控在拇指按得到、又不蓋住搖桿的地方） */
+#talk .tkc{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
+#talk .tkc .row{display:flex;gap:8px;align-items:flex-end}
+#talk .tcard{position:relative;pointer-events:auto;min-width:92px;min-height:44px;max-width:180px;padding:8px 14px 8px 32px;border:2px solid var(--ink);border-radius:10px 12px 9px 11px;background:#fff7e6;
+  box-shadow:0 3px 0 #22314f33;color:var(--ink);font:400 16px/1.3 var(--tkf);text-align:left;text-shadow:none;transform-origin:50% 100%;touch-action:manipulation;will-change:transform,opacity}
+#talk .tcard .k{position:absolute;left:7px;top:8px;width:19px;height:19px;border-radius:50%;background:var(--ink);color:#fff;font:700 11px/19px Inter,sans-serif;text-align:center}
+#talk .tcard .t{display:block}
+#talk .tcard small{display:block;font-size:12.5px;color:var(--ink2)}
+#talk .tcard.e{background:#d1fae5}
+#talk .tcard.off{border-style:dashed;background:#f3ead6;color:var(--ink2)}
+#talk .tcard.off .k{background:var(--ink2)}
+#talk .tkn{font:400 13px/1.3 var(--tkf);color:#fff;text-shadow:0 1px 3px #000d,0 0 2px #000b;padding-right:4px}
+body.touch #talk .tkc{left:auto;top:auto;right:14px;bottom:calc(var(--slot) + 236px + env(safe-area-inset-bottom))}
+body.touch #talk .tkc .row{flex-direction:column;align-items:stretch}
+body.touch #talk .tcard{min-height:48px;padding-left:14px}
+body.touch #talk .tcard .k{display:none}
+@media (max-height:520px){
+  body.touch #talk .tkc{right:184px;bottom:calc(var(--slot) + 44px + env(safe-area-inset-bottom))}
+  body.touch #talk .tkc .row{flex-direction:row;align-items:flex-end}
+  body.touch #talk .tcard{max-width:135px}
+}
+@media (max-height:520px) and (max-width:759px){body.touch #talk .tcard{max-width:120px}}
+
+/* 錢包彈一下 */
+.tk-bump{animation:tkBump .36s ease-out}
+@keyframes tkBump{0%{transform:scale(1)}35%{transform:scale(1.18)}100%{transform:scale(1)}}
+
+/* 對話中 HUD 讓位：目標面板與目標星標淡出、準心變淡（畫面中央的提示文字由 tkLabel 清空） */
+#objective,#wp{transition:opacity .25s}
+body.talk #objective,body.talk #wp{opacity:0!important}
+body.talk #cross{opacity:.35}
