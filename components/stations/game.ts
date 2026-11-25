@@ -48,10 +48,11 @@ export type Game = {
 export type Rcpt = { n: number; inc: number; tip: number; fan: number; sec: number; t: number; torn?: number };
 export type PaperData = {
   id: string; v: string; name: string; head: string; b: string[]; sig: string; zone: string; zoneName: string; acc: string; gift: boolean; torn?: boolean; d: Rcpt | null;
+  gn: boolean; pg: number; dd: string; stamp: string; // 奶奶的筆記：筆記本的一頁、頁碼、左下的小塗鴉、蓋在紙上的小秘密章
   who: string; day: string; touch: boolean; rm: boolean; rev: number; flip: number; live: number; hint: number | boolean; seq: number;
 };
 // 手帳剪貼區的一張（i＝S.papers 的索引，新的在前）
-export type PaperRow = { i: number; id: string; v: string; name: string; zone: string; gift: boolean; torn?: boolean; t: number; isNew: boolean };
+export type PaperRow = { i: number; id: string; v: string; name: string; zone: string; gift: boolean; torn?: boolean; gn?: boolean; t: number; isNew: boolean };
 // 付了錢、還沒演的到貨（氣球木箱）；商品狀態（城市與網購共用的規則）
 export type Ship = { k: string; via: 'city' | 'web'; at: number };
 export type WareState = { id: string; t: string; k: string; name: string; cost: number; can: boolean; why: '' | 'has' | 'max' | 'need' | 'poor'; d: number; lv: number; max: number; need: string; go: 'ship' | 'bag' | 'wear' };
@@ -64,7 +65,7 @@ export type MapView = {
   stickers: (MapPt & { id: string; kind: string; name: string; lb: string })[]; eggs: (MapPt & { id: string; name: string; zone: string })[];
   eggN: number; eggT: number; lmN: number; lmT: number;
 };
-// 月光谷的小秘密（彩蛋）：id 開頭是區域（forest_／coast_／volcano_／snow_／city_）
+// 月光谷的小秘密（彩蛋）：id 開頭是區域（forest_／coast_／volcano_／snow_／city_；奶奶的筆記另有 home_ 工坊、cave_ 山洞）
 export type Egg = { id: string; name: string; hint: string; found: boolean };
 
 declare global {

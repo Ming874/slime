@@ -444,7 +444,7 @@
 #gui[data-prop="paper"][data-v="postcard"] .gwin{width:min(600px,calc(100vw - 40px),calc((100dvh - 120px) * 1.5));aspect-ratio:3/2;height:auto}
 #gui[data-prop="paper"][data-v="flyer"] .gwin{width:min(420px,calc(100vw - 40px));height:min(540px,calc(100dvh - 110px))}
 #gui[data-prop="paper"][data-v="receipt"] .gwin{width:min(320px,calc(100vw - 60px));height:min(calc(150px + 30px * var(--pp-n,7)),calc(100dvh - 120px))}
-@media (max-height:500px){#gui[data-prop="paper"][data-v="receipt"] .gwin{height:min(360px,calc(100dvh - 40px))}} /* 手機橫拿：收據長，可以蓋過上方的 HUD，整張不用捲 */
+@media (max-height:500px){#gui[data-prop="paper"][data-v="receipt"] .gwin{height:min(360px,calc(100dvh - 40px))}#gui[data-prop="paper"][data-v="note"] .gwin{height:min(300px,calc(100dvh - 60px))}} /* 手機橫拿：收據長、奶奶的筆記有塗鴉和章，都可以蓋過上方的 HUD，整張不用捲 */
 @media (max-aspect-ratio:3/4){#gui[data-prop="paper"][data-v="postcard"] .gwin{width:min(400px,calc(100vw - 40px),calc((100dvh - 120px) * .667));aspect-ratio:2/3}}
 #gui[data-mode="held"][data-prop="paper"].dim{background:radial-gradient(120% 100% at 50% 45%,#0000 42%,#05070d6b 100%)}
 #gui[data-prop="paper"][data-mode="card"]{background:radial-gradient(120% 100% at 50% 45%,#0000 42%,#05070d6b 100%)}

@@ -525,9 +525,10 @@ function barkStep(dt, now) {
     if (d !== b.pd) { b.pd = d; b.path.setAttribute('d', d); }
   }
 }
-// 彩蛋的章「✦ 小秘密 n/28」：蓋在旁白的想法雲、正在讀的紙或說話的人的泡泡上（400ms 後蓋下去）；都沒有就冒一朵只有一行的想法雲
+// 彩蛋的章「✦ 小秘密 n/28」：蓋在手上的紙（奶奶的筆記，墨水寫完才蓋）、旁白的想法雲、正在讀的紙條或說話的人的泡泡上（400ms 後蓋下去）；都沒有就冒一朵只有一行的想法雲
 function tkStamp(id, txt, name) {
   setTimeout(() => { // 等目前這段程式跑完（例如 Leo 認出你之後馬上開口）再找要蓋在哪裡
+    if (typeof paperStampOn === 'function' && paperStampOn(id, txt)) return; // 手上拿著的就是這張紙（奶奶的筆記）：章蓋在紙上（game.js）
     const host = tkStampHost(id);
     if (host) setTimeout(() => { const h = tkStampHost(id); if (h) tkStampOn(h, txt); }, TKT.stamp);
     else bark(SELF, '發現小秘密「' + name + '」', { egg: id, stamp: txt });

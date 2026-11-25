@@ -133,7 +133,9 @@ const NPC_IDS = ['yun', 'chen', 'zhe', 'mei', 'jie', 'lin', 'yu', 'leo', 'kai', 
 // 宅配（氣球木箱）的機器與四間店：sanitize 在存檔區就要用，所以放在這裡（OWN、SHOPS 在後面才宣告，讀檔時還在暫時死區）
 const SHIP_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'], SHOP_IDS = ['mach', 'mall', 'gear', 'arms'];
 // 收進手帳的紙：sanitize 在讀檔時就執行，比 PAPERS 早（還在暫時死區，用到會丟例外、被 load() 當成壞檔而開新遊戲），所以只能用這裡的字串白名單
-const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|note[0-2]|hole|bottle|arms|live)$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
+const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|note[0-2]|hole|bottle|arms|live|gn[1-8])$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
+// 奶奶的筆記（gn1～gn8，6.1）：手帳裡那張紙 → 算進哪一個小秘密（前綴＝手帳上標的地方：home 工坊、cave 山洞）；讀檔時找到過的就補進手帳（同樹洞的紙條）
+const GN_EGG = { gn1: 'home_gn1', gn2: 'home_gn2', gn3: 'forest_gn', gn4: 'coast_gn', gn5: 'volcano_gn', gn6: 'snow_gn', gn7: 'cave_gn1', gn8: 'cave_gn2' };
 const SAVE_KEY = 'slime_world_v1';
 function fresh() {
   return {
@@ -219,7 +221,7 @@ function sanitize(o) {
     const lv = pp.filter(p => p.id === 'live'); s.papers = pp.filter(p => p.id !== 'live' || lv.indexOf(p) >= lv.length - 6).slice(-40);
     const add = id => { if (s.papers.length < 40 && !s.papers.some(p => p.id === id)) s.papers.push({ id, t: 0 }); };
     if (!Array.isArray(o.papers)) { if (s.letter) add('granny'); if (s.tutDone && o.seen) add('gift'); ROAD_IDS.forEach(z => { if (s.zones.includes(z)) add('pc_' + z); }); }
-    arr(obj(o.q).notes).forEach(i => { if ([0, 1, 2].includes(i)) add('note' + i); }); if (s.eggs.includes('forest_note')) add('hole'); if (s.eggs.includes('coast_bottle')) add('bottle'); } // 撿過的紙條、讀過的樹洞紙條與瓶中信（手上讀完才收進手帳，讀檔時補上漏收的）
+    arr(obj(o.q).notes).forEach(i => { if ([0, 1, 2].includes(i)) add('note' + i); }); if (s.eggs.includes('forest_note')) add('hole'); if (s.eggs.includes('coast_bottle')) add('bottle'); Object.keys(GN_EGG).forEach(k => { if (s.eggs.includes(GN_EGG[k])) add(k); }); } // 撿過的紙條、讀過的樹洞紙條、瓶中信與奶奶的筆記（手上讀完才收進手帳，讀檔時補上漏收的）
   s.jrSeen = Math.max(0, +s.jrSeen || 0); s.ppN = clamp(Math.floor(+s.ppN) || 0, 0, 99);
   s.roads = Object.fromEntries(Object.entries(obj(o.roads)).filter(([k, v]) => ROAD_IDS.includes(k) && v).map(([k]) => [k, 1]));
   s.cave = caveSan(o.cave); // 山洞：走過哪些洞、拍過的壁畫、苔蘚（caves.js）
@@ -1094,7 +1096,7 @@ function initWorld() {
     vertexShader: 'varying vec3 vd; void main(){ vd = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader: 'uniform vec3 top; uniform vec3 bot; uniform vec3 sunDir; uniform float night; varying vec3 vd; float h3(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); } void main(){ vec3 d = normalize(vd); vec3 c = mix(bot, top, smoothstep(0.0, 0.45, d.y)); float s = max(dot(d, sunDir), 0.0); vec3 sc = mix(vec3(1.0, 0.93, 0.78), vec3(0.78, 0.84, 1.0), night); c += sc * (pow(s, 700.0) * 3.5 * (1.0 - night * 0.3) + pow(s, 48.0) * 0.28 * (1.0 - night * 0.5) + pow(s, 6.0) * 0.07 * (1.0 - night)) * smoothstep(-0.05, 0.05, d.y); float st = step(0.9965, h3(floor(d * 230.0))) * night * smoothstep(0.03, 0.3, d.y); c += vec3(0.85, 0.9, 1.0) * st; c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 160.0; gl_FragColor = vec4(c, 1.0);\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n}',
   })); W.sky.renderOrder = -1; sc.add(W.sky);
-  buildTerrain(); buildCaves(); terrainCuts(); buildWater(); buildProps(); buildLandmarks(); buildRegions(); buildFauna(); buildWorkshop(); buildCity(); buildTunnel(); buildVolcanoFx(); buildGates(); buildPuzzles(); restoreCards(); buildParticles(); buildClouds();
+  buildTerrain(); buildCaves(); terrainCuts(); buildWater(); buildProps(); buildLandmarks(); buildRegions(); buildFauna(); buildWorkshop(); buildCity(); buildTunnel(); buildVolcanoFx(); buildGates(); buildPuzzles(); restoreCards(); gnBuild(); buildParticles(); buildClouds();
   W.goo = makeGoo(sc); skyEnv(true);
   initPlayer(); spawnAllSlimes(); resizeWorld(); bindInput(); applyQuality(true); taxiWarm(); W.ready = true; return true;
 }
@@ -2201,10 +2203,10 @@ const nookWet = (x, z) => NOOK_DIG.some(p => { const dx = x / K - p.x, dz = z / 
 function nookClear(l) { let j = 0; for (const o of l) if (!nookWet(o.x, o.z)) l[j++] = o; l.length = j; }
 
 /* ---------- 彩蛋：登記與發現 ---------- */
-const EGGS = new Map(); // id → { id, name, hint }，依登記順序顯示在手帳
-function regEgg(id, name, hint) {
+const EGGS = new Map(); // id → { id, name, hint, short }，依登記順序顯示在手帳；short＝想法雲裡用的短名字（奶奶的筆記不重複「奶奶的筆記：」，一行放得下）
+function regEgg(id, name, hint, short) {
   if (typeof id !== 'string' || !id) return null;
-  if (!EGGS.has(id)) EGGS.set(id, { id, name: String(name || id), hint: String(hint || '') });
+  if (!EGGS.has(id)) EGGS.set(id, { id, name: String(name || id), hint: String(hint || ''), short: String(short || name || id) });
   return EGGS.get(id);
 }
 // 第一次發現才算：蓋一個章「✦ 小秘密 n/28」＋叮叮聲＋一點經驗，存進存檔；回傳是否第一次
@@ -2212,7 +2214,7 @@ function foundEgg(id) {
   if (!S || typeof id !== 'string' || !id) return false; if (!Array.isArray(S.eggs)) S.eggs = [];
   if (S.eggs.includes(id)) return false; S.eggs.push(id);
   const e = EGGS.get(id), n = S.eggs.filter(k => EGGS.has(k)).length;
-  tkStamp(id, '✦ 小秘密 ' + n + '/' + EGGS.size, e ? e.name : id); // 章蓋在旁白的想法雲、正在讀的紙或說話的人的泡泡上，不再跳左下角的長句（talk.js）
+  tkStamp(id, '✦ 小秘密 ' + n + '/' + EGGS.size, e ? e.short : id); // 章蓋在旁白的想法雲、正在讀的紙或說話的人的泡泡上，不再跳左下角的長句（talk.js）
   if (S.sound) { try { const t = audio().currentTime; [1318.5, 1568, 2093, 2637].forEach((f, i) => tone(f, t + i * .075, .4, .045, 'triangle')); } catch (er) { } }
   nmEgg(id); gainXP(8, '發現小秘密'); save(); ui('inv'); return true;
 }
@@ -4178,12 +4180,12 @@ function applyHit(sl, r, local, pt, remote) {
   if (!pb || pb.n !== bn) sfx.beat(bn, perfect, r.res === 'harvest' && sl.perf >= 2); // 原本完美時另外響的 perfect、收成的 pop（E-A-E，和 Sol 打架）都併進這一聲；多人客戶端猜對的就不再放第二次
   if (r.res === 'harvest') {
     W.hitstop = .09;
-    const bonus = sl.perf >= 2 ? 1 : 0, n = Math.max(1 + S.up.net + bonus, S.tutDone ? 0 : 2); sl.happy = .6; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); gainXP(XP_HARV[sl.sp.rar] + bonus);
+    const bonus = sl.perf >= 2 ? 1 : 0, n = Math.max(1 + S.up.net + bonus, S.tutDone ? 0 : 2); // 完美節奏怎麼抓：小徑旁那張奶奶的筆記（gn3）
+    sl.happy = .6; S.gel[sl.sp.id] = (S.gel[sl.sp.id] || 0) + n; discover(sl.sp.id); gainXP(XP_HARV[sl.sp.rar] + bonus);
     fx3(top, `+${n} ${short(sl.sp.id)}凝膠`, sl.sp.color, 'big');
     if (bonus) { setTimeout(() => fx3(top.clone().setY(top.y + .5), '完美節奏！額外 +1', '#f0abfc', 'big'), 220); if (!emoteOn(sl) || sl.emo.k !== 'star') emote(sl, 'star'); }
     if (W.goo) W.goo.emit(sl.m.position.clone().setY(sl.m.position.y + .7 * sl.sc), 3 + n * 3, sl.sp.color, { collect: true, size: .07, up: 3.5, speed: 1.2 });
     toast(`採集到 ${n} 份${SP[sl.sp.id].name}凝膠${bonus ? '（完美節奏加成）' : ''}`); if (!S.tutDone) coachFlash(`凝膠飛進你的手裡了！（+${n}）`, 2600); renderHotbar(true); sl.perf = 0;
-    if (!S.tipRhythm) { S.tipRhythm = true; setTimeout(() => toast('小技巧：捏一下之後，準心外圈亮一圈的時候再捏（約 0.3 秒）；Do、Mi、Sol 三下都完美會響起和弦、多得 1 份凝膠'), 1500); }
   } else { fx3(top, `${short(sl.sp.id)} ${r.hits}/3${perfect ? ' 完美！' : ''}`, perfect ? '#f0abfc' : RAR[sl.sp.rar].c); }
   ringPulse(perfect ? 'perf' : 'hit');
 }
@@ -4885,7 +4887,7 @@ function refresh() { if (GUI.kind && tab) RENDER[tab](); renderTop(); renderHotb
    拿紙時滑鼠不放開、世界照畫（只有淡淡暗角、不模糊）、雪原體溫不倒數（worldStep 依 GUI.kind）；手不空就排隊（PAPER.q）。
    ============================================================ */
 const PT0 = { raise: 480, open0: 160, open1: 640, roll1: 900 }, PC0 = { fade: 60, hide: 170, up: 120, close0: 180, close1: 400, down0: 140, end: 620 }, PFLY = 520, PFLY_W = 900; // 從世界裡飛來／被風吹來
-const PAPER = { cur: null, q: [], src: null, obj: null, T: null, revT0: 0, revMs: 0, rev: 0, flip: 0, gapT: 0, seq: 0, o0: 0, caught: 0 }, CLIP = { i: -1, flip: 0 };
+const PAPER = { cur: null, q: [], src: null, obj: null, T: null, revT0: 0, revMs: 0, rev: 0, flip: 0, gapT: 0, seq: 0, o0: 0, caught: 0, egg: '', stamp: '' }, CLIP = { i: -1, flip: 0 }; // egg＝這張紙寫完字才算找到的小秘密、stamp＝蓋在紙上的章
 // 文案：奶奶的口吻，每張 ≤ 40 字（信沿用原文）。b＝內文每一行（墨水一行一行寫出來）
 const PAPERS = {
   granny: { v: 'letter', name: '奶奶的信', head: '親愛的孩子：', b: ['月光谷那間舊工坊，現在交給你了。', '窗戶破了、屋頂也缺了幾片瓦，但史萊姆們還在等著被捏。', '每完成一件事，工坊就會慢慢變回從前的樣子。'], sig: '——奶奶', onFile: letterFiled },
@@ -4898,9 +4900,19 @@ const PAPERS = {
   hole: { v: 'note', name: '樹洞裡的紙條', b: ['池塘的小青蛙最愛學人跳，跳給牠看看吧。'], sig: '——奶奶' },
   bottle: { v: 'note', name: '瓶中信', b: ['撿到這封信的人：', '月光谷的史萊姆捏起來，是全世界最療癒的聲音。'], sig: '——一個路過的水手' },
   arms: { v: 'flyer', name: '武器店的傳單', head: '武器店　新開幕！', get b() { return [`保暖衣 ${fmt(OWN.coat.cost)}｜穿上才進得了雪原`, `長劍 ${fmt(OWN.sword.cost)}｜收藏用`]; }, sig: '大城市・路北側最右邊　搭計程車就到' },
+  // 奶奶的筆記（6.1）：從奶奶的筆記本撕下來的 8 頁撇步，散在工坊、四區與山洞（gnBuild），取代以前一次性的教學 toast（完美節奏、直播、切片變速、潛行）。
+  // gn＝筆記本的一頁（左邊一排裝訂孔、粉紅紙膠帶）、pg＝頁碼、dd＝左下角的小塗鴉（Paper.tsx 的 Doodle）；egg 由 GN_EGG 補上（讀到時蓋小秘密的章）
+  gn1: { v: 'note', gn: 1, pg: 1, dd: 'slice', name: '奶奶的筆記：切片機的脾氣', b: ['切片機用久了，輸送帶會忽快忽慢，', '那是它認得你了。', '看準了再下刀，別跟著它急。'], sig: '——奶奶' },
+  gn2: { v: 'note', gn: 1, pg: 2, dd: 'live', name: '奶奶的筆記：直播的訣竅', b: ['直播的時候按住捏捏擠一擠、滑一滑，', '一下接一下別停，', '看的人就會越來越熱鬧。'], sig: '——奶奶' },
+  gn3: { v: 'note', gn: 1, pg: 3, dd: 'beat', name: '奶奶的筆記：捏的節奏', b: ['捏三下的時候別急，', '一下、一下、一下，像輕輕敲門，', '穩穩的，牠們會多分你一份凝膠。'], sig: '——奶奶' },
+  gn4: { v: 'note', gn: 1, pg: 4, dd: 'tiptoe', name: '奶奶的筆記：怕生的孩子', get b() { return ['怕生的孩子一聽到腳步聲就跑。', `蹲低身子${TOUCH ? '（點潛行鍵）' : '（按住 C）'}慢慢走過去，`, '牠們就不會發現你了。']; }, sig: '——奶奶' },
+  gn5: { v: 'note', gn: 1, pg: 5, dd: 'moon', name: '奶奶的筆記：夜裡的孩子', b: ['天黑以後，有些孩子會發著光出來玩，', '白天怎麼找都找不到喔。', '晚上也出門走走吧。'], sig: '——奶奶' },
+  gn6: { v: 'note', gn: 1, pg: 6, dd: 'mitten', name: '奶奶的筆記：怕冷的時候', b: ['雪原冷得快，', '覺得冷了就先回冰洞裡躲一躲，', '暖和了再出來，別逞強喔。'], sig: '——奶奶' },
+  gn7: { v: 'note', gn: 1, pg: 7, dd: 'curl', name: '奶奶的筆記：洞裡的孩子', b: ['洞裡的孩子很害羞，', '被一直盯著看就會縮成一團。', '別正眼看牠，從旁邊慢慢靠近。'], sig: '——奶奶' },
+  gn8: { v: 'note', gn: 1, pg: 8, dd: 'moss', name: '奶奶的筆記：發光的苔蘚', b: ['洞壁上發光的苔蘚摘一小撮，', '放在捏捏上，夜裡會微微發亮。', '別摘太多，讓它慢慢長回來。'], sig: '——奶奶' },
 };
 NOTE_TXT.forEach((t, i) => { PAPERS['note' + i] = { v: 'note', torn: 1, name: `撕碎的紙條 ${i + 1}`, b: [t] }; }); // 潮汐石謎語的三張紙條（上緣撕過）
-Object.keys(PAPERS).forEach(k => { PAPERS[k].id = k; });
+Object.keys(PAPERS).forEach(k => { PAPERS[k].id = k; if (GN_EGG[k]) PAPERS[k].egg = GN_EGG[k]; });
 const rcptSpec = d => ({ id: 'live', v: 'receipt', name: '直播收據', d: Object.assign({}, d), roll: 1 }); // 收據：每場一張（d＝那一場的數字）
 const paperSpec = r => (r && (r.id === 'live' ? rcptSpec(r.d || {}) : PAPERS[r.id])) || null;
 const hasPaper = id => S.papers.some(p => p.id === id);
@@ -4908,7 +4920,7 @@ const mechOf = s => !s ? 'flip' : s.v === 'letter' ? 'fold3' : s.v === 'receipt'
 const paperLines = s => !s ? 0 : s.v === 'receipt' ? 7 : (s.b || []).length + (s.head ? 1 : 0) + (s.sig ? 1 : 0);
 // 手不空就排隊：介面開著或還在收起、道具還在放下、鏡頭還沒回到眼睛、開場、主選單、彈窗、產線小遊戲、站在舞台上直播、聊天、對話、拿著商品、搭車
 const paperBusy = () => !W.ready || !P || TITLE.on || INTRO.on || RIDE.on || !!GUI.kind || !$('#gui').hidden || !!GX.mode || W.camAway || mOpen || M.active || (L.on && L.auto) || CHAT.open || TK.on || !!WARE.h;
-// from：世界裡的那張紙（Object3D，userData.pw＝寬度、flat＝平躺、paper＝拿起時藏起來、drop＝收起後移除）；null＝從口袋拿出來。
+// from：世界裡的那張紙（Object3D，userData.pw＝寬度、flat＝平躺、paper＝拿起時藏起來、drop＝收起後移除、at＝紙的中心（物件座標）、lift()／gone()＝拿起來那一刻／收進手帳時自己處理，例如只藏紙、留下台子與壓紙的石頭）；null＝從口袋拿出來。
 // o.soft＝等玩家停下腳步 0.4 秒才拿；o.file＝一直在走滿幾秒就直接收進手帳（收據）
 function openPaper(spec, from, o = {}) {
   if (!spec || (PAPER.cur && PAPER.cur.id === spec.id && spec.id !== 'live')) return false;
@@ -4917,6 +4929,7 @@ function openPaper(spec, from, o = {}) {
 }
 function paperGo(spec, from) {
   PAPER.cur = GX.paper = spec; PAPER.rev = PAPER.flip = PAPER.o0 = PAPER.caught = 0; PAPER.revT0 = PAPER.revMs = 0; PAPER.seq++; S.ppN = Math.min(99, (S.ppN || 0) + 1); // GX.paper 不清空：收起動畫還要用同一個模型
+  PAPER.egg = spec.egg && !(S.eggs || []).includes(spec.egg) ? spec.egg : ''; PAPER.stamp = ''; // 奶奶的筆記：字寫完才蓋章（paperPump）
   const wind = from === 'wind' && !RM(), live = !!(from && from.isObject3D && from.parent), far = live && from.getWorldPosition(hv1).distanceTo(W.cam.position) > 25;
   PAPER.src = wind ? { wind: 1 } : live && !far ? paperSrc(from) : null; PAPER.obj = live ? from : null; if (far && from.userData.paper) from.visible = false; // 太遠（25 m 外）就不飛，直接從口袋拿
   const fly = wind ? PFLY_W : PAPER.src ? PFLY : 0, o1 = mechOf(spec) === 'roll' ? PT0.roll1 : PT0.open1; if (wind) sfx.paper('whoosh');
@@ -4924,11 +4937,11 @@ function paperGo(spec, from) {
   const g = $('#gui'); g.dataset.v = spec.v; g.style.setProperty('--pp-n', paperLines(spec)); // data-v 決定 #gwin 大小：gxIn 量矩形前就要設好
   openGui('paper');
 }
-// 從世界裡拿起：位置、方向、寬度（量物件原點，不量包圍盒：光柱之類的子物件會把紙的位置拉到半空中）；紙本身先藏起來，由手上的紙接手
+// 從世界裡拿起：位置、方向、寬度（量物件原點，不量包圍盒：光柱之類的子物件會把紙的位置拉到半空中；userData.at＝紙在物件裡的位置，例如放在台子上的筆記）；紙本身先藏起來，由手上的紙接手
 function paperSrc(o) {
   o.updateWorldMatrix(true, false); const u = o.userData;
-  const s = { p: o.getWorldPosition(new THREE.Vector3()), q: o.getWorldQuaternion(new THREE.Quaternion()), w: u.pw || .25, flat: !!u.flat, qL: null, a: null };
-  if (u.paper) o.visible = false; if (u.beam) u.beam.visible = false; return s;
+  const s = { p: u.at ? o.localToWorld(u.at.clone()) : o.getWorldPosition(new THREE.Vector3()), q: o.getWorldQuaternion(new THREE.Quaternion()), w: u.pw || .25, flat: !!u.flat, qL: null, a: null };
+  if (u.paper) o.visible = false; if (u.beam) u.beam.visible = false; if (u.lift) u.lift(); return s;
 }
 const PQ_B = new THREE.Quaternion().setFromEuler(new THREE.Euler(-.95, -.5, .22)), PQ_FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), pv1 = new THREE.Vector3();
 // 飛到手上（0→T.fly）：位置從來源（換成鏡頭座標）沿 ease3 走到「舉起」的起點、中段往上拱；方向轉到手上的斜角、輕輕晃；大小從來源寬度變成手上的大小；手在後段伸出來接住
@@ -4955,8 +4968,11 @@ function paperSnd(o, op) {
   if (m === 'fold3') { if (x(.1) || x(.42)) sfx.paper('unfold'); } else if (m === 'roll') { if (x(.005)) sfx.print(14); } else if (x(.5)) sfx.paper('flip');
 }
 // 每一格（loop）：明信片浮起、光柱；手空 0.3 秒才拿下一張；soft 等玩家停下 0.4 秒，file＞0（收據）一直在走滿 file 秒就直接收進手帳
+// 奶奶的筆記：2D 接手、墨水寫完（或按 E 直接寫好）之後才算找到，章蓋在紙上（paperStampOn）
 function paperPump(dt) {
-  riseStep(dt); const q = PAPER.q[0]; if (!q) return; if (GUI.kind || !$('#gui').hidden) { PAPER.gapT = 0; return; }
+  riseStep(dt);
+  if (PAPER.egg && GUI.kind === 'paper' && PAPER.revT0 && (PAPER.rev || performance.now() - PAPER.revT0 > PAPER.revMs + 250)) { const e = PAPER.egg; PAPER.egg = ''; foundEgg(e); }
+  const q = PAPER.q[0]; if (!q) return; if (GUI.kind || !$('#gui').hidden) { PAPER.gapT = 0; return; }
   if (paperBusy() || (PAPER.gapT += dt) < .3) return;
   if (q.soft) { const mv = !P.ground || Math.hypot(P.vx, P.vz) > .3; q.w += dt; if (mv) { q.idle = 0; if (q.file && q.w > q.file) { PAPER.q.shift(); paperFile(q.spec); } return; } if ((q.idle += dt) < .4) return; }
   PAPER.q.shift(); PAPER.gapT = 0; paperGo(q.spec, q.from === 'wind' || (q.from && q.from.isObject3D && q.from.parent) ? q.from : null);
@@ -4979,6 +4995,8 @@ function paperKey(e, k) {
 // 收起（closeGui → guiLeave）：世界裡那張要移除的（浮著的明信片、雪堆上的卡）連同互動點一起拿掉，再收進手帳
 function paperDone(quiet) {
   const s = PAPER.cur, o = PAPER.obj; PAPER.cur = null; PAPER.obj = PAPER.src = null; if (!s) return;
+  if (PAPER.egg) { const e = PAPER.egg; PAPER.egg = ''; foundEgg(e); } // 字還沒寫完就收起來：照樣算找到（章蓋在自己的想法雲上）
+  if (o && o.userData.gone) o.userData.gone();
   if (o && o.userData.drop) { const r = o.userData.dropRoot || o; if (o.userData.it) W.inter = W.inter.filter(it => it !== o.userData.it); W.chunks = W.chunks.filter(c => c !== r); RISE.list = RISE.list.filter(c => c.g !== o); if (W.snowCard === r) W.snowCard = null; dropObj(r); }
   paperFile(s, quiet);
 }
@@ -5014,9 +5032,12 @@ function toBag(isNew) {
 function paperView(s, o) {
   const d = new Date((o && o.t) || Date.now()), z = s.zone && ZONES.find(x => x.id === s.zone);
   return Object.assign({ id: s.id, v: s.v, name: s.name, head: s.head || '', b: s.b || [], sig: s.sig || '', zone: s.zone || '', zoneName: z ? z.name : '', acc: z ? z.acc : '', gift: !!s.gift, torn: !!s.torn, d: s.d || null,
+    gn: !!s.gn, pg: s.pg || 0, dd: s.dd || '', stamp: '',
     who: String(S.name || (window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.name) || '工坊主人').slice(0, 12), day: `${d.getMonth() + 1}/${d.getDate()}`, touch: TOUCH, rm: RM(), rev: 1, flip: 0, live: 0, hint: false, seq: 0 }, o);
 }
-const paperNow = () => { const s = PAPER.cur || (GUI.kind === 'paper' && GX.paper); return s ? paperView(s, { rev: PAPER.rev, flip: PAPER.flip, live: 1, hint: (S.ppN || 0) <= 3 ? 1 : .55, seq: PAPER.seq }) : null; };
+const paperNow = () => { const s = PAPER.cur || (GUI.kind === 'paper' && GX.paper); return s ? paperView(s, { rev: PAPER.rev, flip: PAPER.flip, live: 1, hint: (S.ppN || 0) <= 3 ? 1 : .55, seq: PAPER.seq, stamp: PAPER.cur ? PAPER.stamp : '' }) : null; };
+// 彩蛋的章蓋在手上的紙（talk.js 的 tkStamp 先問這裡）：正在讀的就是這個小秘密的紙（奶奶的筆記）才蓋
+function paperStampOn(id, txt) { if (GUI.kind !== 'paper' || !PAPER.cur || PAPER.cur.egg !== id) return false; PAPER.stamp = txt; ui('paper'); tkSnd.stamp(); return true; }
 function letterFiled() { S.letter = 1; if (W.letterObj) { dropObj(W.letterObj.userData.beam); dropObj(W.letterObj); W.letterObj = null; } COACH.sig = ''; coachFlash('信收進手帳了', 1800); objSig = ''; }
 // 奶奶的信：新存檔在手作台右前角放一封蓋紅色封蠟的三折信（合併成一個網格）＋一道淡淡的暖黃光柱；讀過就不再擺
 function placeLetter() {
@@ -5127,6 +5148,118 @@ function snowCard() { // 熔岩柱中間已經浮著一張（RISE）就不再插
   card.userData = { paper: 1, pw: .39, drop: 1, dropRoot: g, it }; chunkObj(g, 60, false); W.snowCard = g;
 }
 
+/* ============================================================
+   奶奶的筆記（6.1）：8 張從奶奶筆記本撕下來的紙（PAPERS.gn1～gn8），工坊 2、四區各 1、山洞 2，每張一個撇步，也是一個小秘密。
+   世界裡：一張微微發光的紙（晚上亮一點），一角被風吹得一掀一掀；放在小徑旁的小台子（木箱、樹樁、石頭）上、用一顆小石頭壓著，或用粉紅紙膠帶貼在柱子上。
+   平放的紙從遠處看幾乎是一條線，所以紙角上每 3 秒閃一下小星星（頂點著色器在鏡頭空間展開，永遠正對鏡頭、遠一點也是差不多大的幾個像素）：白天 7 m 外也看得到「那裡有東西」。
+   E＝紙從世界飛到手上（openPaper），墨水寫完在紙上蓋「小秘密」的章（paperPump → foundEgg → paperStampOn），收起＝收進手帳的剪貼區。
+   拿走之後台子與壓紙的石頭留在原地：它們的頂點排在最前面，拿起來的那一刻 drawRange 只畫這一段（lift），不必另外一個網格。
+   每張 1 次繪製（台子、石頭、紙、膠帶、閃光合併成一個網格；8 張共用一個材質，掀動、發光與閃光寫在頂點屬性 aGn），不投影、不加光源，60 m（LOW 45 m）外不畫。
+   位置：工坊、平地、海岸、火山、雪原寫在 GN_AT（世界座標；也放進 NOOK_CLEAR，隨機的樹和石頭不會長在紙上）；
+   山洞那兩張由 caves.js 的 caveGnSpots 給（要等洞建好才知道洞裡的座標）。
+   ============================================================ */
+// 在哪裡（世界座標）：wall＝用膠帶貼在柱子上（y＝離地高度、ry＝紙面朝向、tilt＝貼歪一點）；不然平放在一個小台子上（ped：crate 木箱、stump 樹樁、rock 平頂的石頭；
+// ry＝紙的上緣朝向，c＝台子的顏色；台子要和地面、紙的顏色都差得開：雪地上用深色的樹樁，白紙放在白雪或淺色的箱蓋上會看不見）。地上的都在小徑旁 3 公尺左右、平的地方：走在路上一轉頭就看得到，又不擋路。
+// 工坊那兩張放在新手一定會走的路上（目標面板帶著走的地方）：做完第一個捏捏要去網站貨架上架（gn2 在貨架旁），接著奶奶的切片機在北邊產線等你（gn1 在產線正前方的柱子上，紙面朝著小屋的後門）
+const gnPath = (li, t, off) => { const L = PATH_LINES[li], a = L[Math.floor(t)], b = L[Math.floor(t) + 1], f = t % 1, dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz); return { x: a[0] + dx * f - dz / l * off, z: a[1] + dz * f + dx / l * off }; }; // 第 li 條小徑第 t 段（小數＝段內位置），往左（正）或右（負）偏 off 公尺
+const GN_AT = {
+  gn1: { x: .75, z: -6.95, y: 1.38, ry: 0, tilt: -.07, wall: 1 }, // 工棚正面中間那根柱子（產線正前方），面向小屋的後門：從小屋、從東邊繞過來都是迎面看到
+  gn2: { x: 7, z: 7.55, ry: .6, ped: 'crate', c: '#8f5f3b' }, // 網站貨架和小屋之間的蘋果木箱（深色的箱蓋襯出奶油色的紙）：繞過小屋的角就在眼前，站在貨架前上架時在左手邊（右手邊會被第一人稱的手擋住）
+  gn3: Object.assign(gnPath(0, 1.45, 3.1), { ry: 2.6, ped: 'stump', c: '#7a5a3e' }), // 往海蝕洞的小徑旁的樹樁
+  gn4: Object.assign(gnPath(4, 2.5, -3.2), { ry: 1.2, ped: 'rock', c: '#a39581' }), // 海岸的小徑旁（離開海蝕洞往東走一段）
+  gn5: Object.assign(gnPath(2, 1.45, -3), { ry: -2.2, ped: 'rock', c: '#5a4c47' }), // 往火山的小徑旁的玄武岩
+  gn6: Object.assign(gnPath(5, .45, 2.8), { ry: 1.6, ped: 'stump', c: '#6b4d33' }), // 一走出冰洞，小徑旁平地上的樹樁（再往前小徑就是 30° 的坡：樹樁會卡在坡上、紙剛好在眼睛的高度看不到）
+};
+Object.values(GN_AT).forEach(p => NOOK_CLEAR.push([p.x, p.z, 2.2]));
+const GN_HINT = {
+  gn1: '加工產線前面的柱子上，好像貼著一張紙。', gn2: '網站貨架旁邊的木箱上，放著一張被小石頭壓著的紙。', gn3: '往海蝕洞的小徑旁，樹樁上有一張紙，一角被風吹得一掀一掀。',
+  gn4: '海岸的小徑旁，有一顆石頭上壓著一張紙。', gn5: '往火山的小徑旁，深色的石頭上壓著一張紙。', gn6: '一走出冰洞，小徑旁的樹樁上就有一張紙。',
+  gn7: '海蝕洞的大廳前，地上的石頭上有一張微微發亮的紙。', gn8: '熔岩隧道的發光苔蘚旁邊，石頭上好像壓著一張紙。',
+};
+const GN = { mat: null, W: .3, H: .225, list: [] }; // 世界裡的紙比真的筆記本頁大一點（4:3，和手上那張一樣的比例），幾公尺外也看得出是一張紙
+// 共用材質：aGn.x＝這個頂點跟著風掀多少（壓著／貼著的那一角是 0）、aGn.y＝自己發光的程度（台子、石頭 0；閃光的星星 4）、aGn.zw＝星星的頂點往外推的方向；
+// 每張紙的相位跟著位置走，不會一起掀、一起閃。白天發光 0.45（比 0.34 亮一點：奶油色的紙在陽光下才和台子分得開）
+function gnMat() {
+  if (GN.mat) return GN.mat; const NU = nookMats().U;
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .92, metalness: 0, side: THREE.DoubleSide });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uWind = W.wind; sh.uniforms.uNight = NU;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aGn;\nuniform float uWind;\nvarying float vGnG;').replace('#include <begin_vertex>', `#include <begin_vertex>
+      float gP = modelMatrix[3].x * 0.37 + modelMatrix[3].z * 0.23;
+      float gU = sin(uWind * 2.3 + gP) * 0.5 + 0.5, gG = pow(max(0.0, sin(uWind * 0.6 + gP * 1.7)), 6.0);
+      transformed += objectNormal * aGn.x * (0.01 + 0.03 * gU + 0.07 * gG);
+      vGnG = aGn.y * (0.8 + 0.2 * sin(uWind * 1.7 + gP));`).replace('#include <project_vertex>', `#include <project_vertex>
+      if (aGn.y > 2.0) { // 閃光的星星：平常縮成一點（不畫任何像素），每 3.3 秒張開 0.3 秒、慢慢轉；遠的放大一點（4～18 m 看起來差不多大：半徑約畫面高度的 2%）
+        float gK = pow(max(0.0, sin(uWind * 1.9 + gP * 3.1)), 14.0), gA = uWind * 1.3 + gP;
+        mvPosition.xy += mat2(cos(gA), sin(gA), -sin(gA), cos(gA)) * aGn.zw * gK * clamp(-mvPosition.z * 0.028, 0.1, 0.5);
+        gl_Position = projectionMatrix * mvPosition;
+      }`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vGnG;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGnG * (0.45 + uNight * 0.4);');
+  };
+  m.customProgramCacheKey = () => 'gnote'; return GN.mat = m;
+}
+// 放紙的小台子（[幾何, 顏色, 矩陣]，地面 y＝0、往下埋一點）；top＝台面高度
+function gnPed(k, c, rd) {
+  const P = [], dk = new THREE.Color(c).multiplyScalar(.72).getStyle(), lt = new THREE.Color(c).lerp(new THREE.Color('#f5e6c8'), .45).getStyle();
+  if (k === 'crate') { // 蘋果木箱：箱身、上下兩條深色的板、箱口兩片蓋板（中間一條縫；蓋板和箱身同色，不淡成奶油色：紙放在上面才看得出來）
+    P.push([new THREE.BoxGeometry(.56, .36, .42), c, M4(0, .16, 0)], [new THREE.BoxGeometry(.58, .05, .44), dk, M4(0, .06, 0)], [new THREE.BoxGeometry(.58, .05, .44), dk, M4(0, .27, 0)]);
+    [-.105, .105].forEach(z => P.push([new THREE.BoxGeometry(.54, .03, .19), c, M4(0, .355, z)]));
+    return { P, top: .37 };
+  }
+  if (k === 'stump') { // 樹樁：樹皮、切面與年輪、三條根（切面是中間色的木頭，不用淺奶油色：奶油色的紙放在上面才分得出來）
+    const cut = new THREE.Color(c).lerp(new THREE.Color('#e0c08f'), .3).getStyle();
+    P.push([new THREE.CylinderGeometry(.25, .3, .5, 9), c, M4(0, .2, 0)], [new THREE.CylinderGeometry(.235, .235, .02, 9), cut, M4(0, .455, 0)], [new THREE.CylinderGeometry(.13, .13, .022, 9), dk, M4(0, .457, 0)], [new THREE.CylinderGeometry(.11, .11, .024, 9), cut, M4(0, .458, 0)]);
+    for (let i = 0; i < 3; i++) { const a = i / 3 * PI2 + rd() * .6; P.push([new THREE.ConeGeometry(.08, .34, 5), dk, M4(Math.cos(a) * .27, .03, Math.sin(a) * .27, Math.sin(a) * 1.25, 0, -Math.cos(a) * 1.25)]); }
+    return { P, top: .47 };
+  }
+  // 石頭：頂面平平的大石塊（七邊形、側面不規則）
+  const g = jit(new THREE.CylinderGeometry(.34, .44, .34, 7, 1), .14, 50 + Math.floor(rd() * 40)), p = g.attributes.position; for (let i = 0; i < p.count; i++) if (p.getY(i) > .1) p.setY(i, .17); g.computeVertexNormals(); // 頂面壓平：紙平平地放得上去
+  P.push([g, c, M4(0, .1, 0, 0, rd() * PI2, 0)]);
+  return { P, top: .27 };
+}
+// 一張紙的網格：先放留下來的東西（台子、壓紙的小石頭；keep＝它們的頂點數），再放紙與膠帶。紙的模型座標：直立、面向 +z、上緣 +y（和手上那張一樣）；
+// 平放的轉 −90°（上緣朝 −z，paperSrc 的 flat 會轉回來）。貼著的：膠帶那一角（左上）不動、右下角掀得最高；壓著的：石頭在右上角，左下角掀得最高
+function gnGeo(p, seed) {
+  const gw = GN.W, gh = GN.H, rd = seeded(seed), PS = [], add = (g0, c, m, f) => { const g = g0.index ? g0.toNonIndexed() : g0.clone(); g0.dispose(); if (m) g.applyMatrix4(m); g.computeVertexNormals(); PS.push([g, new THREE.Color(c), f]); };
+  const ped = p.wall ? null : gnPed(p.ped || 'rock', p.c || '#8b918a', rd), top = ped ? ped.top : 0;
+  const F = p.wall ? M4(0, 0, 0, 0, 0, p.tilt || 0) : M4(0, top + .007, 0, -Math.PI / 2, 0, 0);
+  const flap = (x, y) => { const u = (x + gw / 2) / gw, v = (gh / 2 - y) / gh, d = p.wall ? Math.hypot(u, v) : Math.hypot(1 - u, v); return Math.pow(smooth(.42, 1.35, d), 1.6); };
+  if (ped) { ped.P.forEach(([g, c, m]) => add(g, c, m, null)); add(jit(new THREE.DodecahedronGeometry(1, 0), .3, seed), '#8b918a', M4(gw / 2 - .05, top + .03, -(gh / 2 - .045), .3, seed, .2, .085, .055, .072), null); } // 壓在右上角的小石頭
+  const keep = PS.reduce((n, q) => n + q[0].attributes.position.count, 0);
+  add(new THREE.PlaneGeometry(gw, gh, 6, 4), PP_BG.gn, F, flap);
+  add(new THREE.PlaneGeometry(.068, .018), '#f6b8cf', F.clone().multiply(M4(-gw / 2 + .055, gh / 2 - .012, .0012, 0, 0, -.14)), flap); // 左上的粉紅紙膠帶（和手上那張同一個位置）
+  const n = PS.reduce((s, q) => s + q[0].attributes.position.count, 0) + 24, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), gn = new Float32Array(n * 4), back = new THREE.Matrix4().copy(F).invert(); let o = 0;
+  for (const [g, c, f] of PS) {
+    const k = g.attributes.position.count, q = g.attributes.position; pos.set(q.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
+    for (let i = 0; i < k; i++) { const j = o + i; col[j * 3] = c.r; col[j * 3 + 1] = c.g; col[j * 3 + 2] = c.b; if (f) { const v = hv1.fromBufferAttribute(q, i).applyMatrix4(back); gn[j * 4] = f(v.x, v.y); gn[j * 4 + 1] = 1; } } // 掀動的權重用紙的模型座標算（平放的先轉回直立）
+    o += k; g.dispose();
+  }
+  // 閃光的小星星（四個尖角、8 個三角形）：頂點都疊在星星的中心，aGn.zw＝鏡頭空間裡往外推的方向（gnMat）。平放的在掀起來的左下角上方 10 cm、貼著的在右下角前面；排在最後，拿起來時跟紙一起不畫
+  const sc = new THREE.Vector3(p.wall ? gw / 2 - .05 : -gw / 2 + .05, -gh / 2 + .05, p.wall ? .06 : .1).applyMatrix4(F), sk = new THREE.Color('#fff1c2'), tip = k => { const a = k * Math.PI / 4 + Math.PI / 2, r = k % 2 ? .3 : 1; return [Math.cos(a) * r, Math.sin(a) * r]; };
+  for (let k = 0; k < 8; k++) [[0, 0], tip(k), tip(k + 1)].forEach(([ox, oy], i) => { const j = o + k * 3 + i; pos[j * 3] = sc.x; pos[j * 3 + 1] = sc.y; pos[j * 3 + 2] = sc.z; nor[j * 3 + 1] = 1; col[j * 3] = sk.r; col[j * 3 + 1] = sk.g; col[j * 3 + 2] = sk.b; gn[j * 4 + 1] = 4; gn[j * 4 + 2] = ox; gn[j * 4 + 3] = oy; });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setAttribute('aGn', new THREE.BufferAttribute(gn, 4));
+  return { geo, keep, at: new THREE.Vector3(0, p.wall ? 0 : top + .007, 0) };
+}
+// 擺一張：p＝GN_AT 的一筆，或 caveGnSpots 的一筆（cave＝放進那個洞的群組、只在第 1 層畫，y＝洞的地面）。讀過的只留下台子與石頭（貼在柱子上的什麼都不留）
+function gnPlace(id, p) {
+  const spec = PAPERS[id]; if (!spec) return; const read = hasPaper(id); if (read && p.wall) return;
+  const { geo, keep, at } = gnGeo(p, 3 + +id.slice(2) * 7), m = new THREE.Mesh(geo, gnMat()); m.castShadow = false; m.receiveShadow = !p.cave;
+  m.position.set(p.x, (p.cave ? p.y : H(p.x, p.z)) + (p.wall ? p.y : -.04), p.z); m.rotation.y = p.ry || 0; // 台子往下埋 4 公分：斜坡上也不會露出底
+  m.name = id; if (read) geo.setDrawRange(0, keep); GN.list.push(m); // GN.list：量效能、測試時找得到（name＝哪一張）
+  if (p.cave) { caveSetLayers(m, 2); p.cave.g.add(m); (p.cave.obst || (p.cave.obst = [])).push({ ax: p.x, az: p.z, bx: p.x, bz: p.z, r: .42 }); } // 洞裡：人與史萊姆繞開台子（caveSlide）
+  else { chunkObj(m, LOW ? 45 : 60, false, [p.x, p.z, 1]); if (!p.wall) addCol({ x: p.x, z: p.z, r: .36 }); }
+  if (read) return;
+  const hit = p.wall ? hitBox(.38, .32, .14, 0, 0, .05, m) : hitBox(.6, .5, .6, 0, at.y - .1, 0, m); if (p.cave) hit.layers.mask = 3; // 射線只測第 0 層：洞裡的也要在第 0 層
+  const it = addInter(hit, 'nook', id, p.wall ? '撕下奶奶的筆記' : '拿起奶奶的筆記', { act: () => { if (!PAPER.cur) openPaper(spec, m); } });
+  const lift = () => { if (keep) geo.setDrawRange(0, keep); else m.layers.mask = 0; }; // 只剩台子與石頭；貼在柱子上的整個不畫（cullChunks 會改 visible，所以用 layers）
+  Object.assign(m.userData, { pw: GN.W, flat: !p.wall, at, lift, gone() { lift(); W.inter = W.inter.filter(x => x !== it); m.remove(hit); hit.geometry.dispose(); hit.material.dispose(); if (!keep) { W.chunks = W.chunks.filter(c => c !== m); if (m.parent) m.parent.remove(m); geo.dispose(); } } }); // 材質是 8 張共用的：只丟幾何，不用 dropObj
+}
+function gnBuild() {
+  Object.keys(GN_EGG).forEach(k => regEgg(GN_EGG[k], PAPERS[k].name, GN_HINT[k], PAPERS[k].name.split('：').pop()));
+  Object.keys(GN_AT).forEach(k => gnPlace(k, GN_AT[k]));
+  if (typeof caveGnSpots === 'function') caveGnSpots().forEach(s => gnPlace(s.id, s));
+}
+
 /* ---------- 加工：三台機器各有不同的操作流程 ---------- */
 const M = { sp: null, step: -1, active: false, phase: '', pt: 0, g: null, scores: [], last: null, hold: false, kdir: 0 };
 const MG = [
@@ -5145,12 +5278,11 @@ function startMake() {
 function beginStep() {
   M.phase = 'ready'; M.pt = 1.4; M.hold = false; M.kdir = 0; const lv = lvlOf(M.step);
   if (M.step === 0) {
-    // 越熟練判定越寬（最多 +35%）；切過 40 刀之後輸送帶會忽快忽慢
+    // 越熟練判定越寬（最多 +35%）；切過 40 刀之後輸送帶會忽快忽慢（加工產線前那根柱子上的奶奶的筆記 gn1 寫著，不再跳 toast）
     const C = CUTS[M.cut] || CUTS.thick, k = C.marks, marks = [], skill = 1 + Math.min(.35, (S.cutN || 0) / 150), vary = (S.cutN || 0) >= 40 ? .5 : 0;
     for (let i = 0; i < k; i++) marks.push(.14 + i * .72 / (k - 1) + rnd(-.02, .02));
     M.g = { t: 0, dur: 2.6 + k * .45, marks, hit: marks.map(() => null), tol: (.045 + .012 * lv) * C.tol * skill, vary };
     MK.clipU = 1.1;
-    if (vary && !S.tipVary) { S.tipVary = true; toast('你的切片越來越熟練了：輸送帶現在會忽快忽慢，看準了再下刀！'); }
   }
   else if (M.step === 1) { // 指針一開始在正中間；綠色區域放在左半或右半，要按住加速或放手減速才對得上
     const w = .2 + .035 * lv, c = Math.random() < .5 ? rnd(.53 + w / 2, .93 - w / 2) : rnd(.07 + w / 2, .47 - w / 2); M.g = { t: 0, dur: 5, thr: .5, v: .5, inz: 0, lo: c - w / 2, hi: c + w / 2, w, c0: c, ph: rnd(0, 6.28), amp: Math.max(0, Math.min(.16, c - w / 2 - .05, .95 - c - w / 2)) }; M.coop = null; const f = NET.on && P ? nearFriend(8) : null; if (f) { M.coop = f; M.pt = 2.4; netEmit({ t: 'coop', to: f.id, on: true, lo: M.g.lo, hi: M.g.hi }); toast(`${f.name} 在旁邊：裹糖交給朋友來做！`); } }
@@ -5464,7 +5596,7 @@ function toggleLive() {
     if (!stockById(L.stageId)) L.stageId = bestStock().id;
     if (L.rcpt) { const r = L.rcpt; L.rcpt = null; delete r.torn; paperFile(rcptSpec(r)); } // 上一場的收據還沒撕：先收進手帳
     L.on = true; L.ss = { sales: 0, income: 0, tips: 0, fans: S.fans, t0: Date.now() }; L.reqT = Math.min(L.reqT, 14);
-    chat('系統', '直播開始！歡迎大家', 'dm'); sfx.level(); if (!S.tipLive) { S.tipLive = true; toast('按住捏捏擠壓、滑動或連續點擊，連擊越多熱度越高'); }
+    chat('系統', '直播開始！歡迎大家', 'dm'); sfx.level(); // 怎麼捏才熱鬧：網站貨架旁那張奶奶的筆記（gn2），不再跳一次性的 toast
   } else {
     L.on = false; const ss = L.ss; L.ss = null; chat('系統', '直播結束，感謝收看', 'dm');
     // 不跳回顧卡：熱感紙收據。手機開著＝從直播畫面上緣印出來（Live.tsx 的 LiveRcpt）；走下舞台＝停下腳步才從口袋拿出來，一直在走就直接收進手帳
@@ -8753,9 +8885,10 @@ function rrShape(w, h, r) { const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
    fold3＝三折信：上片以 y＝+h/6、下片以 y＝−h/6 為軸往鏡頭這邊摺，闔著時看到上片外側的紅色封蠟；flip＝一張卡兩面，闔著時背面（明信片的風景）朝你；
    roll＝收據從下緣（手托著的地方）往上捲開，紙捲跟著上緣走。正面只畫底色與裝飾（橫線、摺痕、膠帶、郵票框、虛線），字交給 2D 用墨水寫出來 */
 const PP_SHORT = () => innerHeight <= 500; // 和 station-content.css 的 @media (max-height:500px) 一致（手機橫拿：信的行距變小）
-const PP_BG = { letter: '#fffaf0', note: '#fdf8ec', gift: '#fef9c3', postcard: '#fbf6ea', receipt: '#fbfaf7', flyer: '#fde68a' };
+const PP_BG = { letter: '#fffaf0', note: '#fdf8ec', gift: '#fef9c3', gn: '#fcf4e2', postcard: '#fbf6ea', receipt: '#fbfaf7', flyer: '#fde68a' };
+const ppBg = s => s.gift ? PP_BG.gift : s.gn ? PP_BG.gn : PP_BG[s.v] || '#fffaf0';
 function paperModel(pm, s, w, h, tex, face, root) {
-  const m = mechOf(s), bg = s.gift ? PP_BG.gift : PP_BG[s.v] || '#fffaf0';
+  const m = mechOf(s), bg = ppBg(s);
   pm.D = .42; pm.grip = [w * .26, -h / 2 - 4, 6]; pm.hs = 1.5;
   const fm = face(tex((g, W2, H2) => paperArt(g, W2, H2, s))), bm = face(tex(g => { g.fillStyle = bg; g.fillRect(0, 0, 64, 64); g.fillStyle = 'rgba(110,84,50,.06)'; g.fillRect(0, 30, 64, 4); }, 64, 64));
   const plane = (ww, hh, v0, v1, u0 = 0, u1 = 1) => { const g = new THREE.PlaneGeometry(ww, hh), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + (u1 - u0) * uv.getX(i), v0 + (v1 - v0) * uv.getY(i)); return g; };
@@ -8785,13 +8918,14 @@ function paperModel(pm, s, w, h, tex, face, root) {
 }
 // 紙的正面（沒有字）：和 2D 的 .pp 同樣的底色、橫線、摺痕、膠帶、郵票框、地址線、虛線與條碼（位置用同一組比例）
 function paperArt(g, w, h, s) {
-  const v = s.v; g.fillStyle = s.gift ? PP_BG.gift : PP_BG[v] || '#fffaf0'; g.fillRect(0, 0, w, h);
+  const v = s.v; g.fillStyle = ppBg(s); g.fillRect(0, 0, w, h);
   if (v === 'letter') {
     const sh = PP_SHORT(), y0 = sh ? 62 : 78, dy = sh ? 28 : 34; g.fillStyle = 'rgba(122,160,204,.22)'; for (let y = y0; y < h - 18; y += dy) g.fillRect(26, y, w - 52, 1); // 橫線和 .pp-letter 同一組（矮的畫面行距 28）
     g.fillStyle = 'rgba(120,96,60,.09)'; [h / 3, h * 2 / 3].forEach(y => g.fillRect(0, Math.round(y) - 1, w, 2)); // 和 3D 摺線同位置的淡摺痕
     g.fillStyle = '#b91c1c'; g.beginPath(); g.arc(w / 2, 0, 22, 0, Math.PI); g.fill(); // 上緣中央半個封蠟
   } else if (v === 'note') {
-    g.save(); g.translate(54, 12); g.rotate(-.14); g.fillStyle = 'rgba(167,243,208,.85)'; g.fillRect(-48, -13, 96, 26); g.restore(); // 左上的紙膠帶
+    if (s.gn) { g.fillStyle = '#e4d5b4'; for (let y = 34; y < h + 5; y += 26) { g.beginPath(); g.arc(13, y, 4.5, 0, PI2); g.fill(); } } // 奶奶的筆記：左邊一排裝訂孔（和 .pp-gn 的背景同一組位置）
+    g.save(); g.translate(54, 12); g.rotate(-.14); g.fillStyle = s.gn ? 'rgba(249,198,217,.88)' : 'rgba(167,243,208,.85)'; g.fillRect(-48, -13, 96, 26); g.restore(); // 左上的紙膠帶（奶奶的筆記是粉紅色）
   } else if (v === 'postcard') { // 直向（手機直拿）時寫字區在上、郵票與地址在下（和 station-content.css 的 max-aspect-ratio:3/4 同一組比例）
     const z = ZONES.find(x => x.id === s.zone), acc = z ? z.acc : '#94a3b8', tall = w < h, sx = w - 104, sy = tall ? h - 120 : 20;
     g.fillStyle = 'rgba(123,106,82,.35)'; if (tall) g.fillRect(26, Math.round(h * .58), w - 52, 1.5); else g.fillRect(Math.round(w * .58), 26, 1.5, h - 52);
@@ -8842,7 +8976,7 @@ function postcardArt(z) {
   return PC_ART[z] = o;
 }
 function heldModel(kind, R) {
-  const w = Math.round(R.w), h = Math.round(R.h), two = kind === 'inv' && innerWidth > 760, pp = kind === 'paper' && GX.paper, key = kind + w + 'x' + h + (two ? 'd' : '') + (pp ? '|' + pp.v + (pp.zone || '') + (pp.gift ? 'g' : '') + (PP_SHORT() ? 's' : '') : ''); // 紙依種類各一個模型（key 用 GX.paper：收起時 PAPER.cur 已清空，模型不能換）
+  const w = Math.round(R.w), h = Math.round(R.h), two = kind === 'inv' && innerWidth > 760, pp = kind === 'paper' && GX.paper, key = kind + w + 'x' + h + (two ? 'd' : '') + (pp ? '|' + pp.v + (pp.zone || '') + (pp.gift ? 'g' : '') + (pp.gn ? 'n' : '') + (PP_SHORT() ? 's' : '') : ''); // 紙依種類各一個模型（key 用 GX.paper：收起時 PAPER.cur 已清空，模型不能換）
   if (VM.pm && VM.pm.key === key) return VM.pm;
   if (!VM.prop) { VM.prop = new THREE.Group(); W.cam.add(VM.prop); }
   if (VM.pm) { VM.prop.remove(VM.pm.root); VM.pm.root.traverse(o => { if (o.isMesh) { o.geometry.dispose(); [].concat(o.material).forEach(m => { if (m.map && !m.userData.keepMap) m.map.dispose(); m.dispose(); }); } }); } // keepMap：明信片的風景是共用快取（postcardArt）
@@ -9642,7 +9776,7 @@ function worldStep(dt) {
   ringBeat();
   // 按住互動鍵連續捏（節奏較慢，想拿「完美節奏」要自己抓拍點）
   if ((IN.hold || IN.holdE) && !GUI.kind && !TK.on && !RIDE.on) { IN.holdT -= dt; if (IN.holdT <= 0) { IN.holdT = .55; if (TARGET && TARGET.type === 'slime') act(); } }
-  if (W.sneakUI !== !!P.sneak) { W.sneakUI = !!P.sneak; $('#vig').classList.toggle('on', W.sneakUI); $('#btnSneak').classList.toggle('on', W.sneakUI); if (W.sneakUI && !S.tipSneak) { S.tipSneak = true; toast('潛行中：腳步變輕，怕生的稀有史萊姆比較不會發現你'); } }
+  if (W.sneakUI !== !!P.sneak) { W.sneakUI = !!P.sneak; $('#vig').classList.toggle('on', W.sneakUI); $('#btnSneak').classList.toggle('on', W.sneakUI); } // 潛行的用處寫在海岸那張奶奶的筆記（gn4）
   W.r.render(W.scene, W.cam);
 }
 function loop(now) {
@@ -9710,7 +9844,7 @@ window.SlimeGame = {
   mapView: nmView, mapDraw: nmDraw, // 筆記本的手繪地圖（map.js、components/stations/NoteMap.tsx）
   eggs: eggList, // 月光谷的小秘密：[{ id, name, hint, found }]（手帳的探索日誌）
   // 手上的紙（components/stations/Paper.tsx）與手帳的剪貼區：papers() 新的在前；paperAt(i) 重讀第 i 張（i＝S.papers 的索引）
-  paper: paperNow, papers: () => S.papers.map((r, i) => { const s = paperSpec(r); return s && { i, id: r.id, v: s.v, name: s.name, zone: s.zone || '', gift: !!s.gift, torn: !!s.torn, t: r.t, isNew: r.t > S.jrSeen }; }).filter(Boolean).reverse(),
+  paper: paperNow, papers: () => S.papers.map((r, i) => { const s = paperSpec(r); return s && { i, id: r.id, v: s.v, name: s.name, zone: s.zone || '', gift: !!s.gift, torn: !!s.torn, gn: !!s.gn, t: r.t, isNew: r.t > S.jrSeen }; }).filter(Boolean).reverse(),
   paperAt: i => { const r = S.papers[i], s = paperSpec(r); return s ? paperView(s, { flip: CLIP.flip, t: r.t }) : null; }, paperOf: id => PAPERS[id] ? paperView(PAPERS[id], { rev: 0, live: 1 }) : null, rcptView: d => paperView(rcptSpec(d), {}), clip: () => CLIP.i, hasPaper, postcardImg: z => postcardArt(z).img(), PAPERS,
 };
 

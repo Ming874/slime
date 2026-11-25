@@ -1046,6 +1046,16 @@ function caveAct(it) {
     toast(`摘到一小撮「苔光」（共 ${S.cave.mossN} 份）：放在捏捏上會微微發光，到裝飾桌試試看`);
   }
 }
+// 奶奶的筆記（6.1）：海蝕洞大廳前、熔岩隧道窄道那叢發光苔蘚旁各一張，放在一塊平頂的石頭上；紙由 game.js 的 gnBuild 擺（要等洞建好才知道洞裡的座標）。
+// 都放在平地上（斷面 0.743 倍半寬以內是平的；熔岩溝在左側，苔蘚那張在右側），y＝洞的地面、ry＝紙的上緣朝著洞的深處（從洞口走進來看是正的）、c＝石頭的顏色（那個洞的岩石）
+function caveGnSpots() {
+  const at = (c, s, f, id) => { const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), l = f * caveW(c, i, f < 0 ? -1 : 1), x = c.X[i] - c.TZ[i] * l, z = c.Z[i] + c.TX[i] * l; return { id, x, z, y: caveQ(c, x, z, i).y, ry: Math.atan2(-c.TX[i], -c.TZ[i]) + (f < 0 ? -.35 : .35), cave: c, ped: 'rock', c: '#' + c.T.rockC.clone().lerp(new THREE.Color('#5a5a5a'), .55).getHexString() }; }; // 洞壁的岩石色偏灰一點：紙的材質吃洞裡的半球光（海蝕洞偏藍），原色會比洞壁鮮豔
+  const free = (c, s0, f, id) => { for (const ds of [0, -1, 1, -2, 2, -3, 3, -4, 4]) { const p = at(c, s0 + ds, f, id); if (!(c.obst || []).some(o => caveObstQ(o, p.x, p.z).d < o.r + .9)) return p; } return at(c, s0, f, id); }; // 洞裡原本的石筍、熔岩小池、柱子旁邊讓開一點
+  const out = [], sea = CAVES.find(c => c.id === 'sea'), lava = CAVES.find(c => c.id === 'lava');
+  if (sea) { const H_ = sea.hallI, side = sea.WR[H_] >= sea.WL[H_] ? 1 : -1; out.push(free(sea, sea.S[H_] - sea.Wd[H_] * .8, -side * .42, 'gn7')); } // 壁畫在大廳外側的牆，紙在另一邊
+  if (lava && lava.moss[1]) { const m = lava.moss[1]; out.push(free(lava, m.s - 1.2, m.side * .45, 'gn8')); }
+  return out;
+}
 // 存檔：山洞的進度（走過哪些洞、拍過的壁畫、苔蘚）
 function caveSan(o) {
   const obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}, ids = CAVE_DEF.map(d => d.id), pickIds = v => Object.fromEntries(Object.entries(obj(v)).filter(([k, x]) => ids.includes(k) && x).map(([k, x]) => [k, Math.max(1, Math.floor(+x) || 1)]));

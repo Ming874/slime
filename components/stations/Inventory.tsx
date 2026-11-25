@@ -113,7 +113,7 @@ function Equip() {
 }
 
 // 月光谷的小秘密（彩蛋，登記與發現在 game.js 的 regEgg／foundEgg）：找到的寫名字，還沒找到的只給一句提示
-const EGG_ZONE: Record<string, string> = { forest: '中央平地', coast: '海岸', volcano: '火山', snow: '雪原', city: '大城市' };
+const EGG_ZONE: Record<string, string> = { home: '工坊', forest: '中央平地', coast: '海岸', volcano: '火山', snow: '雪原', cave: '山洞', city: '大城市' };
 function Eggs() {
   const list = G().eggs?.() ?? [];
   if (!list.length) return null;
@@ -149,9 +149,9 @@ function Clips() {
       <div className="rx-clips-hd"><b>收到的信與明信片</b><span>{list.length} 張</span></div>
       <div className="rx-clip-row">
         {list.map((c) => (
-          <button key={c.i} type="button" className={`rx-clip v-${c.v}${c.gift ? ' gift' : ''}${c.torn ? ' torn' : ''}${c.isNew ? ' new' : ''}`} data-act="clipOpen" data-k={c.i} style={{ '--r': `${CLIP_R(c.id + c.t)}deg` } as CSSProperties} aria-label={`重讀：${c.name}`}>
+          <button key={c.i} type="button" className={`rx-clip v-${c.v}${c.gift ? ' gift' : ''}${c.torn ? ' torn' : ''}${c.gn ? ' gn' : ''}${c.isNew ? ' new' : ''}`} data-act="clipOpen" data-k={c.i} style={{ '--r': `${CLIP_R(c.id + c.t)}deg` } as CSSProperties} aria-label={`重讀：${c.name}`}>
             <span className="rx-clip-p" aria-hidden="true">{c.v === 'postcard' && g.postcardImg ? <img src={g.postcardImg(c.zone)} alt="" draggable={false} /> : <i />}</span>
-            <small>{c.name}</small>
+            <small>{c.name.split('：').map((t, i, a) => <span key={i}>{t}{i < a.length - 1 ? '：' : ''}</span>)}</small>{/* 「奶奶的筆記：發光的苔蘚」：冒號前後各自一段、整段換行，不會斷成「發／光的苔蘚」 */}
             {c.isNew && <em>新</em>}
           </button>
         ))}
