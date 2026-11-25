@@ -515,7 +515,7 @@ function caveProps(c, def, rd) {
   const at = (s, lf, yr) => atL(s, lf * caveW(c, clamp(Math.round(clamp(s, 0, L) / CAVE_STEP), 0, c.n - 1), lf), yr);
   // 依實際的斷面擺：onWall＝貼在高度 y 的牆面上（往洞裡 inset 公尺）；floorY＝那個橫向位置的地面（牆腳是斜面）；out＝擋路的東西推到玩家走得到的範圍外（caveSlide 的界線）
   const onWall = (s, side, y, inset) => { const wl = caveWallL(c, clamp(s, 0, L), side, y); return atL(s, (wl * side > .1 ? wl : side * caveW(c, clamp(Math.round(clamp(s, 0, L) / CAVE_STEP), 0, c.n - 1), side) * .9) - side * inset, y); }; // 那個高度碰不到牆（比洞頂還高）就退回半寬的 0.9 倍
-  const floorY = p => caveVert(c, p.s, p.l, false), out = (p, side, m) => { const lm = Math.max(.15, p.w * .84 - .35) + m; return Math.abs(p.l) < lm ? atL(p.s, side * lm, 0) : p; };
+  const floorY = p => caveVert(c, p.s, p.l, false), out = (p, side, m) => { let lm = Math.max(Math.abs(p.l), Math.max(.15, p.w * .84 - .35) + m), q = Math.abs(p.l) >= lm ? p : atL(p.s, side * lm, 0); for (let t = 0; t < 16 && lm > .3 && caveVert(c, q.s, q.l, false) > .35; t++) { lm -= .15; q = atL(p.s, side * lm, 0); } return q; }; // 擋路的東西推到界線外；那裡若已經爬上牆腳斜面（地面 > 35 公分，低畫質的斷面斜面從 0.65 倍半寬就開始）就往中間退，石頭才會坐在牆腳、不會黏在牆上
   const add = (geo, col, p, rx, ry, rz, sx, sy = sx, sz = sx, glow = false, dec = 0) => ((p.s < c.sIn + 3 || (!dead && p.s > L - c.sIn - 3)) ? near : deep).push([geo, col, M4(p.x, p.y, p.z, rx, ry, rz, sx, sy, sz), glow, p.i, dec]);
   // 地上的薄片（沙地、焦黑的地面）：每個頂點各自貼齊地面再墊高 2.2 公分（地面沿曲線有坡度，水平的薄片會被地面吃掉一邊）；半徑夾在平地裡面
   const decal = (col, s, lf, R1, R2) => { const i = clamp(Math.round(clamp(s, 0, L) / CAVE_STEP), 0, c.n - 1), w = caveW(c, i, lf), fe = caveFloorE() - .05, k = Math.min(1, (fe * w - .1) / Math.max(R1, R2)), mx = fe * w - Math.max(R1, R2) * k; add(G0.disc, col, atL(s, clamp(lf * w, -mx, mx), 0), 0, rd() * 3, 0, R1 * k, 1, R2 * k, false, .022); };
@@ -645,7 +645,9 @@ function caveMove(dx, dz) {
   return caveSlide(c, q, nx, nz);
 }
 function caveSlide(c, q, nx, nz) {
-  const lim = Math.max(.15, q.w * .84 - P.r);
+  // 走路界線：除了半寬，也看實際斷面在腰部與眼睛高度的牆（低畫質的斷面只有 8 個點，牆腳斜面在眼睛高度比半寬近），鏡頭才不會穿出牆
+  let lim = Math.max(.15, q.w * .84 - P.r);
+  if (c.rings && c.rings.length > 1) { const side = Math.sign(q.l) || 1, w1 = Math.abs(caveWallL(c, q.s, side, 1)), w2 = Math.abs(caveWallL(c, q.s, side, (P.eye || 1.62) + .15)), wm = Math.min(w1 || 1e9, w2 || 1e9); if (wm < 1e8) lim = Math.max(.15, Math.min(lim, wm - .42)); }
   if (Math.abs(q.l) > lim) { const k = (Math.abs(q.l) - lim) * Math.sign(q.l); nx -= q.nx * k; nz -= q.nz * k; }
   for (const o of [c.lake, c.pool]) { if (!o) continue; const dx = nx - o.x, dz = nz - o.z, d = Math.hypot(dx, dz), R = o.r + P.r * .6; if (d < R && d > 1e-4) { nx = o.x + dx / d * R; nz = o.z + dz / d * R; } }
   P.x = nx; P.z = nz; const q2 = caveQ(c, nx, nz, q.i); CV.i = q2.i; CV.s = q2.s; CV.l = q2.l; return true;
@@ -882,22 +884,13 @@ function ipAir(pts, fa = 26, fb = 26) {
 }
 // 洞壁實際的形狀：管子是低面數的（LOW 每圈只有 8 個點、2.4 公尺一圈），轉角的弦會切進標稱的斷面裡。
 // 從建好的管子網格取出這個 s 前後兩圈的頂點，內插成斷面多邊形；點離每一邊不到 mg 公尺（或在外面）就往斷面中心推
-function ipWall(c) {
-  if (c.wallQ) return c.wallQ; const N = LOW ? 8 : 14, segs = [];
-  c.g.children.forEach(m => { const rings = m.userData && m.userData.rings; if (rings && rings.length > 1 && m.geometry) segs.push({ rings, pos: m.geometry.attributes.position.array }); });
-  // 第 r 圈第 k 個點＝四邊形 (r,k) 第一個三角形的第一個頂點；最後一圈用前一圈四邊形的第二個頂點（caveTube 的頂點順序）
-  const vert = (g, r, k, out) => { const rr = Math.min(r, g.rings.length - 2), o = 2 * (rr * N + k) * 9 + (r > rr ? 3 : 0); return out.set(g.pos[o], g.pos[o + 1], g.pos[o + 2]); };
-  // 檢查：每一段第一圈的第 0 個點應該是那一圈的地面中心；對不上（管子的做法改了）就不用這個修正，只靠標稱斷面的夾限
-  const ok = segs.every(g => g.pos.length >= (g.rings.length - 1) * N * 18 && vert(g, 0, 0, IPV[0]).distanceTo(IPV[1].set(c.X[g.rings[0]], c.Y[g.rings[0]], c.Z[g.rings[0]])) < .6);
-  return (c.wallQ = { N, segs: ok ? segs : [], vert });
-}
 function ipPolyDist(P, x, y) { let inside = false, md = 1e9; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const xi = P[i][0], yi = P[i][1], xj = P[j][0], yj = P[j][1]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside; const ex = xi - xj, ey = yi - yj, L2 = ex * ex + ey * ey, t = L2 > 0 ? clamp(((x - xj) * ex + (y - yj) * ey) / L2, 0, 1) : 0; md = Math.min(md, Math.hypot(x - xj - ex * t, y - yj - ey * t)); } return inside ? md : -md; }
+// 把一個點推回實際的洞壁裡面（離牆 mg 公尺以上）：斷面直接用洞壁建模時存下的每一圈（c.rings → caveSlice），
+// 彎道加密、冰洞挖坑之後也對得上
 function ipInside(c, s, p, mg = .4) {
-  const W2 = ipWall(c), i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), g = W2.segs.find(o => i >= o.rings[0] && i <= o.rings[o.rings.length - 1]); if (!g) return p;
-  const R = g.rings; let r = 0; while (r < R.length - 2 && R[r + 1] < i) r++; const f = clamp((i - R[r]) / Math.max(1, R[r + 1] - R[r]), 0, 1), N = W2.N, poly = [];
+  if (!c.rings || c.rings.length < 2) return p; const i = clamp(Math.round(s / CAVE_STEP), 0, c.n - 1), N = caveSlice(c, s), poly = [];
+  for (let k = 0; k < N; k++) poly.push([CAVE_SL[k * 2], CAVE_SL[k * 2 + 1]]);
   const cx = c.X[i], cz = c.Z[i], tx = c.TX[i], tz = c.TZ[i], nx = -tz, nz = tx, y0 = c.Y[i];
-  if (c.TX[R[r]] * tx + c.TZ[R[r]] * tz < .9 || c.TX[R[r + 1]] * tx + c.TZ[R[r + 1]] * tz < .9) return p; // 前後兩圈的方向差太多（曲線在這裡折回、管子扭到）：斷面不可信，不推
-  for (let k = 0; k < N; k++) { const a = W2.vert(g, r, k, IPV[0]), b = W2.vert(g, r + 1, k, IPV[1]); poly.push([(a.x + (b.x - a.x) * f - cx) * nx + (a.z + (b.z - a.z) * f - cz) * nz, a.y + (b.y - a.y) * f - y0]); }
   const along = (p.x - cx) * tx + (p.z - cz) * tz; let lx = (p.x - cx) * nx + (p.z - cz) * nz, ly = p.y - y0; const cy = c.Hh[i] * .45;
   for (let it = 0; it < 16 && ipPolyDist(poly, lx, ly) < mg; it++) { lx += (0 - lx) * .2; ly += (cy - ly) * .2; }
   p.x = cx + nx * lx + tx * along; p.z = cz + nz * lx + tz * along; p.y = y0 + ly; return p;
