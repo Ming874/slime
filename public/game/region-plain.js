@@ -42,11 +42,14 @@
   // 東北的觀景台地（平頂的方山）：頂面半徑 r、高 top（公尺）；四周是斷崖（1.8 單位內降到地面，坡度遠大於玩家爬得上的 1.1），
   // 只有往西北 (dx, dz) 一條長 len、半寬 w 的緩坡（最陡約 0.55）：從東邊小徑看是一整面岩壁，從北邊小徑看得到上去的路
   const PLAT = { x: 31, z: -28, r: 4.2, top: 7, dx: -.8, dz: -.6, len: 11.5, w: 2.2, cl: 1.6 };
+  // 緩坡不是一條直直、寬度一樣、兩側一樣陡的土堤（從北邊看像人工堤防）：中線往東北彎一點、寬窄有變化，
+  // 兩側的坡靠方山那頭陡（接著斷崖）、越往下越緩，坡腳攤開接進草地（u＝沿著緩坡往下的距離，基礎單位）
+  const rampC = u => 1.3 * Math.sin(Math.PI * Math.min(1, Math.max(0, (u - PLAT.r) / PLAT.len))), rampW = u => PLAT.w * (1 + .2 * Math.sin(u * .5 + .7)), rampS = u => 1.6 + 1.9 * sm(PLAT.r, PLAT.r + PLAT.len, u);
   function platF(x, z) { // 0～1：1＝頂面
-    const dx = x - PLAT.x, dz = z - PLAT.z, d = Math.hypot(dx, dz); if (d > PLAT.r + PLAT.len + 2) return 0;
+    const dx = x - PLAT.x, dz = z - PLAT.z, d = Math.hypot(dx, dz); if (d > PLAT.r + PLAT.len + 4) return 0;
     const a = Math.atan2(dz, dx), R = PLAT.r * (1 + .09 * Math.sin(a * 3 + 1.3) + .05 * Math.sin(a * 5 + .4)), fc = 1 - sm(0, PLAT.cl, d - R);
-    const L = Math.hypot(PLAT.dx, PLAT.dz), ux = PLAT.dx / L, uz = PLAT.dz / L, u = dx * ux + dz * uz, v = Math.abs(dz * ux - dx * uz);
-    return Math.max(fc, u > 0 ? (1 - sm(R - .6, R + PLAT.len, u)) * (1 - sm(PLAT.w, PLAT.w + 1.6, v)) : 0);
+    const L = Math.hypot(PLAT.dx, PLAT.dz), ux = PLAT.dx / L, uz = PLAT.dz / L, u = dx * ux + dz * uz, v = Math.abs(dz * ux - dx * uz - rampC(u)), w = rampW(u);
+    return Math.max(fc, u > 0 ? (1 - sm(R - .6, R + PLAT.len, u)) * (1 - sm(w, w + rampS(u), v)) : 0);
   }
   // 東南的小溪：從南面山壁的瀑布潭往北，繞過巨樹東邊，流進溪尾的小水潭（基礎單位；水面高度 s 是世界公尺）
   const CREEK = [[31.6, 38.2], [32.4, 35.8], [34.3, 33.0], [36.6, 30.1], [37.9, 26.6], [38.0, 22.6], [37.1, 19.2], [35.6, 16.6]];
@@ -120,8 +123,9 @@
         if (aFx.x > 0.0) { float wS = sin(uWind * 1.6 + aFx.z * 0.31 + aFx.w * 0.23) * 0.7 + sin(uWind * 3.7 + aFx.z * 1.3 - aFx.w * 0.9) * 0.3;
           transformed.x += (wS + 0.35) * aFx.x; transformed.z += cos(uWind * 1.3 + aFx.w * 0.37 + aFx.z * 0.11) * aFx.x * 0.5; }
         if (aB.y > 0.5) transformed = mix(vec3(aFx.z, aB.x, aFx.w), transformed, 1.0 - smoothstep(uFade.x, uFade.y, distance(aFx.zw, cameraPosition.xz)));`); // aB.y＝小東西：遠了就往自己的底部 (aFx.z, aB.x, aFx.w) 縮小（同 fadeMat）
+      // vGlow > 0：夜光（天黑後亮起來）；vGlow < 0：草地反上來的光（只有白天，朝下的面才不會只剩半球光的深綠地面色，疊石、懸出崖邊的岩板底下不再一片黑）
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * vGlow * (0.05 + uNight * 1.3);');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * (vGlow > 0.0 ? vGlow * (0.05 + uNight * 1.3) : -vGlow * (1.0 - uNight));');
     };
     solid.customProgramCacheKey = () => 'plainSolid';
     const water = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, roughness: .07, metalness: .1, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }); // 雙面透明材質預設會分兩次畫（多一次繪製），水面不需要
@@ -136,13 +140,14 @@
           diffuseColor.a = min(1.0, diffuseColor.a + foam * 0.25) * (1.0 - wRb * uNight);`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
           float wq = (wA + wB * 0.5) * 0.05 * (1.0 - wRb); normal = tPerturb(-vViewPosition, normal, vec2(dFdx(wq), dFdy(wq)));`)
-        // 水自己帶一點光（和池塘一樣），夜裡流動的白色水紋映著月光
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * (0.2 + wRb * 0.5) + vec3(0.55, 0.7, 0.9) * foam * uNight * 0.45;');
+        // 水自己帶一點光（和池塘一樣），夜裡流動的白色水紋映著月光。瀑布與水沫（aSpd ≥ 1.5）夜裡不自己發亮：
+        // 顏色幾乎是白的，原本夜裡是整個山谷最亮的東西，像一條發光的紙條；只留一點月光下的淡藍
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat wN = step(1.5, vSpd) * uNight;\ntotalEmissiveRadiance += diffuseColor.rgb * (0.2 + wRb * 0.5) * (1.0 - wN * 0.85) + vec3(0.55, 0.7, 0.9) * foam * uNight * (0.45 - wN * 0.3);');
     };
     water.customProgramCacheKey = () => 'plainWater';
     return (MT = { U, solid, water });
   }
-  // 零件收集器（世界座標）：add(幾何, 顏色 或 (面法線 nx,ny,nz, 面中心 cx,cy,cz, 面編號) → 顏色, 矩陣, { sw 風吹（×離地高度²，同 windMat）, by 地面高度, ax/az 物件中心（同一棵樹一起擺）, gl 夜光 })
+  // 零件收集器（世界座標）：add(幾何, 顏色 或 (面法線 nx,ny,nz, 面中心 cx,cy,cz, 面編號) → 顏色, 矩陣, { sw 風吹（×離地高度²，同 windMat）, by 地面高度, ax/az 物件中心（同一棵樹一起擺）, gl 夜光, bo 地面反光（看得到底面的石頭） })
   function kit(fd = 0) {
     const parts = []; let nv = 0;
     const add = (geo, col, m, o = {}) => { const g = geo.index ? geo.toNonIndexed() : geo; if (g !== geo) geo.dispose(); if (m) g.applyMatrix4(m); parts.push([g, col, fd && !o.fd ? Object.assign({}, o, { fd }) : o]); nv += g.attributes.position.count; };
@@ -156,7 +161,8 @@
         for (let f = 0; f < k; f += 3) {
           const i = f * 3; e1.set(p[i + 3] - p[i], p[i + 4] - p[i + 1], p[i + 5] - p[i + 2]); e2.set(p[i + 6] - p[i], p[i + 7] - p[i + 1], p[i + 8] - p[i + 2]); n.crossVectors(e1, e2).normalize();
           const fc = fixed || c.set(cl(n.x, n.y, n.z, (p[i] + p[i + 3] + p[i + 6]) / 3, (p[i + 1] + p[i + 4] + p[i + 7]) / 3, (p[i + 2] + p[i + 5] + p[i + 8]) / 3, f / 3));
-          for (let v = f; v < f + 3; v++) { const j = (o + v) * 3, hh = Math.max(0, p[v * 3 + 1] - (op.by || 0)); col[j] = fc.r; col[j + 1] = fc.g; col[j + 2] = fc.b; nor[j] = n.x; nor[j + 1] = n.y; nor[j + 2] = n.z; fx.set([op.sw ? op.sw * hh * hh : 0, op.gl || 0, op.ax || 0, op.az || 0], (o + v) * 4); }
+          const gl = op.bo && n.y < .3 ? -op.bo * Math.min(1, (.3 - n.y) / 1.3) : op.gl || 0; // bo＝地面反光：越朝下的面補得越多（側面只補一點）
+          for (let v = f; v < f + 3; v++) { const j = (o + v) * 3, hh = Math.max(0, p[v * 3 + 1] - (op.by || 0)); col[j] = fc.r; col[j + 1] = fc.g; col[j + 2] = fc.b; nor[j] = n.x; nor[j + 1] = n.y; nor[j + 2] = n.z; fx.set([op.sw ? op.sw * hh * hh : 0, gl, op.ax || 0, op.az || 0], (o + v) * 4); }
         }
         o += k; g.dispose();
       }
@@ -177,7 +183,7 @@
   function rock(k, x, z, s, o = {}) {
     const seed = o.seed != null ? o.seed : Math.floor(hashN(x, z, 3) * 9973), base = new THREE.Color(o.c || STONE[seed % 3]), dark = base.clone().multiplyScalar(.84), lite = base.clone().multiplyScalar(1.08), moss = new THREE.Color(o.moss || '#6a9a4a'), mt = o.mt != null ? o.mt : .62;
     const y = (o.y != null ? o.y : H(x, z)) - s * (o.sink != null ? o.sink : .3);
-    k.add(rk(seed, o.d || 0), (nx, ny, nz, cx, cy, cz, fi) => ny > mt ? moss : fi % 3 === 1 ? dark : fi % 3 === 2 ? lite : base, M4(x, y, z, o.rx || 0, o.ry != null ? o.ry : seed % 6.28, o.rz || 0, s * (o.sx || 1.15), s * (o.sy || .74), s * (o.sz || 1)));
+    k.add(rk(seed, o.d || 0), (nx, ny, nz, cx, cy, cz, fi) => ny > mt ? moss : fi % 3 === 1 ? dark : fi % 3 === 2 ? lite : base, M4(x, y, z, o.rx || 0, o.ry != null ? o.ry : seed % 6.28, o.rz || 0, s * (o.sx || 1.15), s * (o.sy || .74), s * (o.sz || 1)), o.bo ? { bo: o.bo } : undefined);
     if (o.col !== false && s > .5) addCol({ x, z, r: s * (o.cr || .8) });
   }
   // 白樺：白色樹幹上一圈一圈的黑色橫紋、淡黃綠（或秋天的金黃）圓樹冠
@@ -280,15 +286,28 @@
         secs.push([-1, -.45, 0, .45, 1].map(u => v(X + rx * hw * u, s, Z + rz * hw * u, Math.abs(u) > .9 ? '#7ccbc8' : u ? '#3592a0' : '#25788c', (Math.abs(u) > .9 ? .55 : .88) * fade, (u + 1) / 2, acc, .9))); // 中間深、兩岸淺
       }
       ribbon(secs); }
-    // 瀑布：從山脊頂往下，貼著山壁（每一點都在地面之上），越往下越寬；最下面淡進瀑布潭
-    { const secs = []; let acc = 0, prev = null;
+    // 瀑布：從山脊頂往下貼著山壁（每一點都在地面之上），最下面淡進瀑布潭。原本是一條離牆 0.3 m 的平帶子（遠看、側看都像貼在牆上的白布）：
+    // - 橫剖面改成拱形：兩邊貼著岩壁、中間鼓出來（岩階處鼓得更多），側面看是一道有厚度的水
+    // - 一條一條的直紋（白色水沫與透著藍的水交錯），遠看水紋糊掉了也還看得出是往下流的水；兩邊淡成水霧
+    // - 縱向有變化：源頭、岩階下、落水處是白色水沫，中段透著藍
+    { const secs = [], U = [-1, -.8, -.5, -.18, .18, .5, .8, 1], cW = new THREE.Color('#f7fcfe'), cS = [new THREE.Color('#8ccbda'), new THREE.Color('#e8f7fa'), new THREE.Color('#8fcedc')], cc = new THREE.Color(); let acc = 0, prev = null;
       for (let z = WF.z1; z >= WF.z0 - 1e-6; z -= .12) {
         const hw = wfW(z), X = wfx(z) * K, Z = z * K, L = wfLift(z), cy = Math.max(H(X, Z) + L, POOL.s + .03);
         if (prev) acc += Math.hypot(X - prev[0], cy - prev[1], Z - prev[2]); prev = [X, cy, Z];
-        const end = sm(WF.z0, WF.z0 + .6, z);
-        secs.push([-1, -.5, 0, .5, 1].map(u => { const x = X + u * hw; return v(x, Math.max(H(x, Z) + L * (1 - .3 * Math.abs(u)), POOL.s + .03), Z, Math.abs(u) > .7 ? '#bfe9f0' : '#e2f6f9', (Math.abs(u) > .7 ? .62 : .9) * end, (u + 1) / 2, acc, 3.2); }));
+        const end = sm(WF.z0, WF.z0 + .6, z), foam = Math.min(1, sm(52.5, 53.3, z) + sm(41.8, 40.3, z) + WF.lips.reduce((a, zl) => a + Math.exp(-(((z - zl + .45) / .55) ** 2)), 0));
+        secs.push(U.map((u, j) => { const x = X + u * hw, e = j === 0 || j === U.length - 1; cc.copy(cS[e ? 0 : 1 + j % 2]).lerp(cW, foam * (e ? .35 : .8));
+          return v(x, Math.max(H(x, Z) + .07 + (L + .34) * Math.sqrt(1 - u * u), POOL.s + .03), Z, cc, (e ? .28 : .84 + .12 * foam) * end, (u + 1) / 2, acc, 3.2); }));
       }
       ribbon(secs); }
+    // 水沫與水霧：一團團半透明的白色低多邊形（和水同一個網格，不多一次繪製；aSpd 2＝翻滾的水沫，夜裡和瀑布一樣不自己發亮）。
+    // 落水處一圈、往上飄的幾團淡淡的霧、兩道岩階下各一排、山腳那段兩側的水花（原本是不透明的白色扁石頭，夜裡變成一條條深藍色的線）
+    { const ico = jit(new THREE.IcosahedronGeometry(1, 0), .3, 17).attributes.position, rd = seeded(97);
+      const puff = (x, y, z, s, sy, a) => { const o = rd() * 9; for (let i = 0; i < ico.count; i++) { const px = ico.getX(i), py = ico.getY(i), pz = ico.getZ(i); I.push(v(x + px * s, y + py * s * sy, z + pz * s, '#f7fcfe', a, px * .4 + o, py * .4 + pz * .3 + o, 2)); } };
+      const bx = wfx(WF.z0) * K, bz = (WF.z0 - .15) * K;
+      for (let j = 0; j < 9; j++) { const an = j / 9 * PI2 + rd() * .4, r = .55 + rd() * .9; puff(bx + Math.cos(an) * r * 1.3, POOL.s + .08, bz + Math.sin(an) * r * .8, .42 + rd() * .25, .55, .62); }
+      for (let j = 0; j < 4; j++) puff(bx + (rd() - .5) * 2.4, POOL.s + .7 + j * .45, bz + .3 + j * .35, .75 + rd() * .35, .7, .16);
+      WF.lips.forEach(zl => { const X = wfx(zl - .45) * K, hw = wfW(zl - .45); for (let j = 0; j < 4; j++) { const x = X + (j / 3 * 2 - 1 + (rd() - .5) * .3) * hw * .62, z = (zl - .4 - rd() * .25) * K; puff(x, H(x, z) + wfLift(zl - .45) + .2, z, .4 + rd() * .2, .75, .72); } }); // 一小簇大小不一的水沫（排成一列的話側看像一串珠子）
+      for (let z = 40.6; z < 43; z += .8) [-1, 1].forEach(e => { const x = wfx(z) * K + e * wfW(z) * 1.02, Z = z * K; puff(x, Math.max(H(x, Z), POOL.s) + .25, Z, .24 + rd() * .12, .7, .35); }); }
     // 彩虹：瀑布潭上方的水霧裡，白天淡淡的一道（只有從北邊、平地這一側看得到正面）
     { const cx = WF.x * K, cz = 41.4 * K, cy = .6, R0 = 4.2, B = ['#f87171', '#fb923c', '#fde047', '#86efac', '#7dd3fc', '#a78bfa'], N = 24, rows = [];
       for (let b = 0; b <= B.length; b++) { const row = [], r = R0 + b * .16; for (let i = 0; i <= N; i++) { const a = .18 * Math.PI + i / N * .64 * Math.PI, e = Math.sin(i / N * Math.PI); row.push(v(cx + Math.cos(a) * r, cy + Math.sin(a) * r, cz, B[Math.min(B.length - 1, b)], .42 * e * e, 0, 0, -1)); } rows.push(row); }
@@ -298,17 +317,13 @@
   }
   function buildCreek(ks, kf) {
     const rd = seeded(311), PK = POOL.x * K, PZ = POOL.z * K;
-    // 瀑布兩側的濕岩石（越下面越大）、岩階下的白色水花、源頭的岩縫
+    // 瀑布兩側的濕岩石（越下面越大）、源頭的岩縫（岩階下與落水處的水沫在 buildWater，和水同一個半透明網格）
     for (let z = 41; z < 46.6; z += .62) {
       const hw = wfW(z) / K, k = (z - 41) / 5.6;
       [-1, 1].forEach(sd => { if (rd() < .15) return; const x = (wfx(z) + sd * (hw + .3 + rd() * .35)) * K, Z = (z + (rd() - .5) * .3) * K; rock(ks, x, Z, .75 + (1 - k) * .45 + rd() * .3, { c: '#7a817a', moss: '#5d8f45', sink: .4, col: false, mt: .6 }); });
     }
-    WF.lips.forEach((zl, i) => { // 岩階下的白色水花
-      for (let j = 0; j < 4; j++) { const x = (wfx(zl - .4) + (j - 1.5) * .3) * K, z = (zl - .42) * K; const y = H(x, z) + wfLift(zl - .42) + .05; ks.add(blob(900 + i * 9 + j), '#f4fbff', M4(x, y, z, 0, j, 0, .32 + (j % 2) * .1, .2, .3), { sw: .5, by: y - .3, ax: x, az: z }); }
-    });
     [[-.75, .1], [.7, -.1], [0, .7]].forEach(([dx, dz], i) => rock(ks, (wfx(WF.z1) + dx) * K, (WF.z1 + dz) * K, .9 + i * .1, { c: '#a3aaa8', moss: '#eef2f6', sink: .35, col: false, mt: .5 })); // 源頭：雪線上的岩縫
-    // 瀑布潭：落水處的水花、岸邊圓石、西岸一塊可以坐的大平石、東岸夜裡發光的蘑菇與蕨類、蘆葦
-    for (let j = 0; j < 7; j++) { const a = j / 7 * PI2, r = .35 + (j % 3) * .25, x = WF.x * K + Math.cos(a) * r * 1.4, z = (WF.z0 + .5) * K + Math.sin(a) * r; ks.add(blob(930 + j), '#f4fbff', M4(x, POOL.s + .06, z, 0, j, 0, .45 - (j % 3) * .08, .22, .42), { sw: .5, by: POOL.s - .3, ax: x, az: z }); }
+    // 瀑布潭：岸邊圓石、西岸一塊可以坐的大平石、東岸夜裡發光的蘑菇與蕨類、蘆葦
     for (let i = 0; i < 13; i++) { const a = i / 13 * PI2 + rd() * .3; if (Math.abs(wrapA(a - Math.PI / 2)) < .55) continue; const R = poolR(POOL, a) * K + .2 + rd() * .4, x = PK + Math.cos(a) * R, z = PZ + Math.sin(a) * R; rock(ks, x, z, .32 + rd() * .3, { sink: .35, col: false, mt: .85 }); }
     { const a = Math.PI + .15, R = poolR(POOL, a) * K + 1.5, x = PK + Math.cos(a) * R, z = PZ + Math.sin(a) * R; rock(ks, x, z, 1.15, { sy: .45, sink: .25, seed: 77, moss: '#7aa85a', mt: .7 }); }
     for (let i = 0; i < 6; i++) { const a = -.7 + i * .28 + rd() * .1, R = poolR(POOL, a) * K + 1 + rd() * 1.2, x = PK + Math.cos(a) * R, z = PZ + Math.sin(a) * R; shroom(kf, x, z, 1 + rd() * .5, GLOWC[i % 4], 1); }
@@ -350,11 +365,13 @@
       for (let j = 0; j < 3; j++) { const k = .25 + j * .25, p = a.clone().lerp(b, k); ks.add(new THREE.SphereGeometry(.33, 7, 3, 0, PI2, 0, Math.PI / 2), '#5b8f3e', M4(p.x, p.y + .2, p.z, 0, Math.atan2(rx, rz), 0, .9, .32, 1.6)); }
       [.62, .7].forEach((k, j) => { const p = a.clone().lerp(b, k), m = obj(kf, p.x + (j - .5) * .12, p.z, { y: p.y + .22, s: .7 - j * .2 }); m(new THREE.CylinderGeometry(.045, .06, .2, 5, 1, true), '#f3ece0', 0, .1, 0); m(new THREE.SphereGeometry(.15, 7, 3, 0, PI2, 0, Math.PI / 2), '#e5484d', 0, .19, 0, 0, 0, 0, 1, .72, 1); }); // 木頭背上的兩朵小紅菇
       for (let j = 0; j <= 6; j++) { const p = a.clone().lerp(b, j / 6); addCol({ x: p.x, z: p.z, r: .38 }); } }
-    // 踏腳石：巨樹東邊，五顆平平的大石頭橫過溪面（站上去的時候會走過溪床，石頭是給眼睛看的路線）
+    // 踏腳石：巨樹東邊，五顆平平的大石頭橫過溪面，石面高出水面約 15 公分、往下一直埋進溪床（不會浮在水裡）。
+    // 踩上去的時候腳下是石面（stepStep 把玩家托到石面上）：原本石頭只是給眼睛看的路線，過溪其實是在膝蓋深的溪床裡涉水
     STEP.list = [];
     { const i = Math.round(Cp.length * .58), [x, z, t] = Cp[i], fx = Cp[i + 3][0] - Cp[i - 3][0], fz = Cp[i + 3][1] - Cp[i - 3][1], fl = Math.hypot(fx, fz), rx = fz / fl, rz = -fx / fl, s = POOL.s + (TAIL.s - POOL.s) * t;
       Object.assign(STEP, { x: x * K, z: z * K, rx, rz, w: creekW(t) * K });
-      [-1.9, -.95, 0, .95, 1.9].forEach((o, j) => { const X = x * K + rx * o + rz * (j % 2 ? .18 : -.12), Z = z * K + rz * o - rx * (j % 2 ? .18 : -.12); rock(ks, X, Z, .48, { y: Math.max(H(X, Z) - .05, s - .05), sy: .32, sink: 0, col: false, moss: '#9aa09a', mt: .9, seed: 600 + j }); }); } // 石面高出水面約 10 公分
+      [-1.9, -.95, 0, .95, 1.9].forEach((o, j) => { const X = x * K + rx * o + rz * (j % 2 ? .18 : -.12), Z = z * K + rz * o - rx * (j % 2 ? .18 : -.12), sy = .75, y = Math.max(H(X, Z), s) - .2, g = rk(600 + j), p = g.attributes.position; let top = 0; for (let v = 0; v < p.count; v++) top = Math.max(top, p.getY(v)); g.dispose();
+        rock(ks, X, Z, .48, { y, sy, sink: 0, col: false, moss: '#9aa09a', mt: .9, seed: 600 + j, bo: .3 }); STEP.list.push([X, Z, y + top * .48 * sy * .9, .56]); }); } // 石面：最高的頂點往下一點（頂面那一圈）
     // 溪邊的樹：大多在東岸（西岸是巨樹的地方），三五棵成群
     [[.08, 1, 2.8], [.16, 1, 3.4], [.36, 1, 2.6], [.47, 1, 3.6], [.74, 1, 2.6], [.86, -1, 3], [.27, -1, 3.2], [.93, 1, 3.2]].forEach(([tt, side, off], j) => {
       const i = Math.min(Cp.length - 4, Math.max(3, Math.round(Cp.length * tt))), [x, z, t] = Cp[i], fx = Cp[i + 3][0] - Cp[i - 3][0], fz = Cp[i + 3][1] - Cp[i - 3][1], fl = Math.hypot(fx, fz), rx = fz / fl, rz = -fx / fl;
@@ -375,7 +392,7 @@
       duck(cx + .9, cz - .5, 1, -2.4); duck(cx + 1.45, cz - .05, .58, -2.2); duck(cx + 1.9, cz + .35, .55, -2.5);
     }
   }
-  const STEP = { list: [] }; // 踏腳石的位置（彩蛋：從一岸踩到另一岸）
+  const STEP = { list: [], got: new Set() }; // 踏腳石：[x, z, 石面高度, 站得上去的半徑]（彩蛋：從一岸踩到另一岸）
   const SNOW = { x: 17.5, z: 54 }; // 山脊頂的雪地小家族（基礎單位）：從台地的望遠鏡看過去，視線剛好擦過巨樹樹冠的西邊
 
   /* ---------- 南面山壁：山脊上的松樹線、山壁下緣的岩脈、山腳的樹與灌木（只放物件，不動地形） ---------- */
@@ -423,19 +440,23 @@
     // 斷崖：三層橫向的岩層（崖頂的淺沙色、崖腰的灰色、崖腳的大石頭），扁平的石板順著崖壁的切線排，遠看是一圈一圈的地層；
     // 頂上一圈矮石頭當作邊（有碰撞，不會一腳踩空）、崖腳外的碎石（緩坡那一側都不放）
     const tan = a => Math.atan2(-Math.cos(a), -Math.sin(a)), BAND = [['#cdbd9f', '#c2b192'], ['#a89f91', '#9c9385'], ['#aca393', '#9f968a', '#b6ad9e']]; // 苔只長在最平的頂面（mt 高），岩層才不會被切成一塊一塊的綠斑
+    // 順著崖壁切線的長條岩石：沿長邊排三個碰撞圓（一個圓蓋不住兩頭，崖腳走過去會整個人走進石頭裡、石頭從畫面上消失）
+    const colAlong = (x, z, ry, hl, r) => { for (const e of [-1, 0, 1]) addCol({ x: x + Math.cos(ry) * hl * e, z: z - Math.sin(ry) * hl * e, r }); };
+    // 崖頂岩板底下（往內 0.9 m、沿切線兩頭）至少要有一處地面頂得到：西北角被野餐區的保留範圍壓低成斜坡，那裡的岩板會整塊懸空
+    const grounded = (x, z, a, hl, yb) => [[0, 0], [-.9, 0], [-.5, -.6], [-.5, .6]].some(([dr, dt]) => H(x + Math.cos(a) * dr - Math.sin(a) * dt * hl, z + Math.sin(a) * dr + Math.cos(a) * dt * hl) > yb - .1);
     for (let a = 0; a < PI2; a += .3) {
       const g = Math.abs(wrapA(a - ra)); if (g < .6) continue;
       const aa = a + (rd() - .5) * .1, R = Rw(aa);
-      { const [x, z] = at(aa, R + .3); rock(ks, x, z, 1.3 + rd() * .25, { y: top - .65, sink: 0, col: false, c: BAND[0][Math.round(a * 7) % 2], moss: '#7aa85a', mt: .86, sx: 1.6, sy: .45, sz: 1, ry: tan(aa) }); }
-      { const [x, z] = at(aa + .15, R + .95); rock(ks, x, z, 1.45 + rd() * .3, { sink: .2, col: false, c: BAND[1][Math.round(a * 5) % 2], moss: '#6f9e4c', mt: .9, sx: 1.5, sy: .8, sz: .9, ry: tan(aa + .15) }); }
-      if (g > .8 && Math.round(a / .3) % 2) { const [x, z] = at(aa + .05, R + 2.3); rock(ks, x, z, 1.3 + rd() * .45, { sink: .3, col: false, c: BAND[2][Math.round(a * 3) % 3], moss: '#6f9e4c', mt: .75, sx: 1.2, sy: .85, ry: tan(aa) }); }
+      { const [x, z] = at(aa, R + .3), s = 1.3 + rd() * .25, y = top - .65; if (grounded(x, z, aa, s * 1.6, y - s * .45 * 1.1)) rock(ks, x, z, s, { y, sink: 0, col: false, c: BAND[0][Math.round(a * 7) % 2], moss: '#7aa85a', mt: .86, sx: 1.6, sy: .45, sz: 1, ry: tan(aa), bo: .45 }); }
+      { const [x, z] = at(aa + .15, R + .95), s = 1.45 + rd() * .3; rock(ks, x, z, s, { sink: .2, col: false, c: BAND[1][Math.round(a * 5) % 2], moss: '#6f9e4c', mt: .9, sx: 1.5, sy: .8, sz: .9, ry: tan(aa + .15), bo: .45 }); colAlong(x, z, tan(aa + .15), s * .75, s * .78); }
+      if (g > .8 && Math.round(a / .3) % 2) { const [x, z] = at(aa + .05, R + 2.3), s = 1.3 + rd() * .45; rock(ks, x, z, s, { sink: .3, col: false, c: BAND[2][Math.round(a * 3) % 3], moss: '#6f9e4c', mt: .75, sx: 1.2, sy: .85, ry: tan(aa), bo: .45 }); colAlong(x, z, tan(aa), s * .6, s * .82); }
       if (g > .8 && (aa < 1.9 || aa > 3.1)) { const [xr, zr] = at(aa + .08, R - .5); rock(ks, xr, zr, .42 + rd() * .15, { sink: .4, mt: .7, cr: .9, c: BAND[0][1] }); }
       const [x2, z2] = at(aa + .15, R + 4.2 + rd() * 1.6); if (okAt(x2, z2, .7)) rock(ks, x2, z2, .55 + rd() * .5, { sink: .3, c: BAND[2][Math.round(a * 11) % 3] });
       if (rd() < .45) { const [x3, z3] = at(aa - .1, R + 5.6 + rd() * 2); if (okAt(x3, z3, .5)) rock(ks, x3, z3, .3 + rd() * .25, { sink: .25, col: false, c: BAND[1][0] }); }
     }
-    // 緩坡上的一條踏石小路（交錯的扁平石頭），兩旁零星的黃花
-    for (let u = PLAT.r * .55 + PLAT.len; u > PLAT.r * .4; u -= .85) { const j = Math.round(u * 3) % 2 ? .25 : -.25, x = (PLAT.x + PLAT.dx / L * u - PLAT.dz / L * j) * K, z = (PLAT.z + PLAT.dz / L * u + PLAT.dx / L * j) * K; rock(kf, x, z, .38, { sy: .22, sink: .35, col: false, moss: '#a3a89f', mt: .95, c: '#b4b8ae' }); }
-    [[-2.6, .62], [2.7, .5], [-2.9, .3], [2.5, .78]].forEach(([v, f], j) => { const u = PLAT.r + PLAT.len * f, x = (PLAT.x + PLAT.dx / L * u - PLAT.dz / L * v) * K, z = (PLAT.z + PLAT.dz / L * u + PLAT.dx / L * v) * K; flowers(kf, x, z, LOW ? 6 : 10, 1.3, ['#fde047', '#fef08a'], 520 + j); });
+    // 緩坡上的一條踏石小路（交錯的扁平石頭，順著坡面斜放；原本平放又埋 0.35，坡上那幾顆整顆埋進土裡、小路斷掉），兩旁零星的黃花
+    for (let u = PLAT.r * .55 + PLAT.len; u > PLAT.r * .4; u -= .85) { const j = (Math.round(u * 3) % 2 ? .25 : -.25) + rampC(u), x = (PLAT.x + PLAT.dx / L * u - PLAT.dz / L * j) * K, z = (PLAT.z + PLAT.dz / L * u + PLAT.dx / L * j) * K, gx = (H(x + .4, z) - H(x - .4, z)) / .8, gz = (H(x, z + .4) - H(x, z - .4)) / .8; rock(kf, x, z, .38, { sy: .3, sink: .1, rx: Math.atan(-gz), ry: 0, rz: Math.atan(gx), col: false, moss: '#a3a89f', mt: .95, c: '#b4b8ae' }); }
+    [[-2.6, .62], [2.7, .5], [-2.9, .3], [2.5, .78]].forEach(([v0, f], j) => { const u = PLAT.r + PLAT.len * f, v = v0 * rampW(u) / PLAT.w + rampC(u), x = (PLAT.x + PLAT.dx / L * u - PLAT.dz / L * v) * K, z = (PLAT.z + PLAT.dz / L * u + PLAT.dx / L * v) * K; flowers(kf, x, z, LOW ? 6 : 10, 1.3, ['#fde047', '#fef08a'], 520 + j); });
     // 頂上：面向平地的長椅與一盞小燈、望向瀑布的望遠鏡、一棵孤松、石堆、一段木欄杆、野花
     const P = (bx, bz) => [(PLAT.x + bx) * K, (PLAT.z + bz) * K];
     { const [x, z] = P(-2.3, .3), f = Math.atan2(-x, -z), b = obj(ks, x, z, { ry: f, dy: -.02 }); // 面向工坊
@@ -472,13 +493,15 @@
   function buildBirch(ks, kf) {
     const rd = seeded(611), GROVES = [[-10.5, -30.5, 4.6, LOW ? 6 : 10], [-18, -35.5, 3.8, LOW ? 4 : 7], [-5.5, -26.5, 2.6, LOW ? 3 : 5]];
     const L = ['#f6d365', '#f4a742', '#e8b23a', '#d9a066'];
+    // 吊床的兩棵樹（先決定位置）：樹林裡隨機的白樺、蕨類要避開吊床那一條線——吊床最後才擺，okAt 看不到它，原本有一棵白樺正好長在吊床中間、樹幹穿過布面
+    const HA = V3(-12.9 * K, 0, -27.6 * K), HB = V3(-9.5 * K, 0, -27.0 * K), hamD = (x, z) => segDist(x, z, [[HA.x, HA.z], [HB.x, HB.z]]);
     GROVES.forEach(([gx, gz, R, n], gi) => {
       let placed = 0;
       for (let tr = 0; tr < n * 6 && placed < n; tr++) {
-        const a = rd() * PI2, r = Math.sqrt(rd()) * R, x = (gx + Math.cos(a) * r) * K, z = (gz + Math.sin(a) * r) * K; if (!okAt(x, z, 1.25)) continue;
+        const a = rd() * PI2, r = Math.sqrt(rd()) * R, x = (gx + Math.cos(a) * r) * K, z = (gz + Math.sin(a) * r) * K; if (!okAt(x, z, 1.25) || hamD(x, z) < 1.8) continue;
         const gold = rd() < .3; birch(ks, x, z, .9 + rd() * .35, 620 + gi * 40 + placed, gold); placed++;
         leaves(kf, x, z, 2.1, LOW ? 5 : 11, gold ? L : [L[0], L[3], '#c9d86b'], 700 + gi * 40 + placed);
-        if (rd() < .5) { const fa = rd() * PI2; if (okAt(x + Math.cos(fa) * 1.3, z + Math.sin(fa) * 1.3, .3)) fern(kf, x + Math.cos(fa) * 1.3, z + Math.sin(fa) * 1.3, .75 + rd() * .3, gi * 9 + placed); }
+        if (rd() < .5) { const fa = rd() * PI2, fx = x + Math.cos(fa) * 1.3, fz = z + Math.sin(fa) * 1.3; if (okAt(fx, fz, .3) && hamD(fx, fz) > 1.1) fern(kf, fx, fz, .75 + rd() * .3, gi * 9 + placed); }
       }
     });
     // 苔蘚岩、白色的小蘑菇、夜裡亮起來的月光花（淡藍、淡紫）
@@ -486,8 +509,8 @@
     [[-12.2, -33.4], [-16.6, -31.2], [-8.4, -29.2], [-19.4, -37.4]].forEach(([bx, bz], j) => { const x = bx * K, z = bz * K; if (!okAt(x, z, .8)) return; const c = j % 2 ? ['#dbeafe', '#c4b5fd'] : ['#e0f2fe', '#bae6fd']; c.gl = 1; c.c = '#fef9c3'; flowers(kf, x, z, LOW ? 5 : 9, .9, c, 650 + j); });
     for (let i = 0; i < (LOW ? 4 : 8); i++) { const a = rd() * PI2, r = 2 + rd() * 4, x = (-12 + Math.cos(a) * r) * K, z = (-32 + Math.sin(a) * r) * K; if (okAt(x, z, .25)) shroom(kf, x, z, .7 + rd() * .4, i % 3 ? '#f5efe6' : '#d6a46a'); }
     [[-5.8, -27.6], [-7.2, -32], [-4.6, -30]].forEach(([bx, bz], j) => { const x = bx * K, z = bz * K; if (okAt(x, z, .6)) glowBells(kf, x, z, LOW ? 4 : 7, 640 + j); }); // 面向北邊小徑的東坡：夜裡從路上看得到
-    // 吊床：掛在兩棵白樺之間，彩色條紋的布往下垂
-    { const A = V3(-12.9 * K, 0, -27.6 * K), B = V3(-9.5 * K, 0, -27.0 * K); A.y = H(A.x, A.z); B.y = H(B.x, B.z);
+    // 吊床：掛在兩棵白樺之間，彩色條紋的布往下垂。兩頭綁在同一個高度（兩棵樹站的地面差了一截，照各自的地面綁會整張斜斜翹起來，像一條彩色的溜滑梯）
+    { const A = HA, B = HB, gm = H((A.x + B.x) / 2, (A.z + B.z) / 2); A.y = B.y = Math.max(H(A.x, A.z), H(B.x, B.z), gm + .15);
       birch(ks, A.x, A.z, 1, 690); birch(ks, B.x, B.z, 1.05, 691, true);
       const N = 12, d = new THREE.Vector3().subVectors(B, A), len = d.length(), C = ['#ef4444', '#fde047', '#38bdf8'];
       for (let i = 0; i < N; i++) { const k0 = i / N, k1 = (i + 1) / N, p0 = A.clone().lerp(B, k0), p1 = A.clone().lerp(B, k1), s0 = Math.sin(Math.PI * k0) * .55, s1 = Math.sin(Math.PI * k1) * .55; p0.y += 1.25 - s0; p1.y += 1.25 - s1; if (i === 0 || i === N - 1) { seg(ks, i ? p1 : p0, (i ? p1 : p0).clone().setY((i ? p1 : p0).y + .25), .015, '#e7e5e4', 4); } const m = p0.clone().add(p1).multiplyScalar(.5), q = new THREE.Quaternion().setFromUnitVectors(V3(0, 0, 1), p1.clone().sub(p0).normalize()); ks.add(new THREE.BoxGeometry(.85, .03, p0.distanceTo(p1) + .01), C[Math.floor(i / 2) % 3], new THREE.Matrix4().compose(m, q, V3(1, 1, 1))); }
@@ -506,12 +529,14 @@
   /* ---------- 西南：苔石丘（疊石柱、老樹、夜光蘑菇） ---------- */
   function buildKnoll(ks, kf) {
     const rd = seeded(711), KX = -35.5, KZ = 18.5, P = (bx, bz) => [(KX + bx) * K, (KZ + bz) * K];
-    // 疊石柱：圓圓扁扁的石頭一顆一顆往上疊，每顆頂上長一點苔
-    [[.4, -.9, 6], [-2.1, 1.2, 5], [2, 1.8, 4], [-.6, 3.2, 3]].forEach(([bx, bz, n], j) => {
-      const [x, z] = P(bx, bz); let r = 1.5 - j * .12, y = Math.min(H(x, z), H(x + r * .7, z), H(x - r * .7, z), H(x, z + r * .7), H(x, z - r * .7)) - .15; // 底石坐在周圍最低的地面：坡上不會有一邊懸空
-      for (let i = 0; i < n; i++) { const h = r * (.62 + rd() * .12), g = jit(new THREE.IcosahedronGeometry(1, 1), .18, 720 + j * 9 + i), c = new THREE.Color(['#9ca3a0', '#8b928e', '#a8aea9'][(i + j) % 3]), dk = c.clone().multiplyScalar(.86);
-        ks.add(g, (nx, ny, nz, cx, cy, cz, fi) => ny > .72 ? '#6a9a4a' : fi % 4 === 1 ? dk : c, M4(x + (rd() - .5) * .12, y + h * .5, z + (rd() - .5) * .12, (rd() - .5) * .12, rd() * 6, (rd() - .5) * .12, r, h * .5, r * (.9 + rd() * .15))); y += h * .9; r *= .8 + rd() * .06; }
-      addCol({ x, z, r: 1.15 - j * .1 });
+    // 疊石柱：河邊撿來的那種卵石（底面壓平、上面圓）一顆一顆往上疊，每顆頂上長一點苔。整疊約 1.3～1.9 公尺、在眼睛附近：
+    // 原本 3 公尺多、底石半徑 1.5 公尺，抬頭看全是石頭朝下的面（只照得到半球光的深綠地面色），像一座座黑色的塔
+    [[.4, -.9, 6, .88], [-2.1, 1.2, 5, .74], [2, 1.8, 4, .66], [-.6, 3.2, 4, .56]].forEach(([bx, bz, n, r0], j) => {
+      const [x, z] = P(bx, bz); let r = r0, y = Math.min(H(x, z), H(x + r * .7, z), H(x - r * .7, z), H(x, z + r * .7), H(x, z - r * .7)) - .08; // 底石坐在周圍最低的地面：坡上不會有一邊懸空
+      for (let i = 0; i < n; i++) { const h = r * (.66 + rd() * .12), g = jit(new THREE.IcosahedronGeometry(1, 1), .14, 720 + j * 9 + i), p = g.attributes.position, c = new THREE.Color(['#a6aca4', '#989e97', '#b0b5ac'][(i + j) % 3]), dk = c.clone().multiplyScalar(.9);
+        for (let v = 0; v < p.count; v++) if (p.getY(v) < 0) p.setY(v, p.getY(v) * .45); // 底面壓平：疊起來只露出一道細細的石縫，看不到大片朝下的面
+        ks.add(g, (nx, ny, nz, cx, cy, cz, fi) => ny > .74 ? '#6a9a4a' : fi % 4 === 1 ? dk : c, M4(x + (rd() - .5) * .08, y + h * .4, z + (rd() - .5) * .08, (rd() - .5) * .1, rd() * 6, (rd() - .5) * .1, r, h * .55, r * (.9 + rd() * .15)), { bo: .4 }); y += h * .78; r *= .8 + rd() * .06; }
+      addCol({ x, z, r: r0 * .85 });
     });
     // 老樹：彎彎的樹幹、隆起的樹根、深綠的大樹冠
     { const [x, z] = P(-2.9, -1.9), y = H(x, z) - .1, pts = [V3(x, y, z), V3(x + .3, y + 1.4, z - .1), V3(x - .2, y + 2.6, z + .3), V3(x + .5, y + 3.6, z + .2)];
@@ -561,28 +586,48 @@
   function glowBells(k, x, z, n, seed) {
     const rd = seeded(seed), c = BELL[seed % BELL.length];
     for (let i = 0; i < n; i++) {
-      const a0 = rd() * PI2, r = Math.sqrt(rd()) * .55, bx = x + Math.cos(a0) * r, bz = z + Math.sin(a0) * r, h = .34 + rd() * .22, lean = (rd() - .5) * .5, a = obj(k, bx, bz, { ry: rd() * PI2, sw: .25, dy: -.02 });
+      const a0 = rd() * PI2, r = Math.sqrt(rd()) * .7, bx = x + Math.cos(a0) * r, bz = z + Math.sin(a0) * r, h = .38 + rd() * .26, lean = (rd() - .5) * .5, a = obj(k, bx, bz, { ry: rd() * PI2, sw: .25, dy: -.02 });
       a(new THREE.CylinderGeometry(.01, .014, h, 3, 1, true), '#4f8a3f', 0, h / 2, 0, 0, 0, lean);
       const tx = -Math.sin(lean) * h, ty = Math.cos(lean) * h;
-      [[0, 0], [.09, -.1], [-.08, -.19]].forEach(([dx, dy], j) => { if (j && rd() < .3) return; const r = .07 - j * .01; a(new THREE.SphereGeometry(r, 6, 3, 0, PI2, 0, 1.95), c, tx + dx, ty + dy - r * .9, 0, 0, rd() * 2, 0, 1, 1.3, 1, { gl: 1 }); }); // 圓頂、下緣微微外翻的小鈴鐺
+      [[0, 0], [.09, -.1], [-.08, -.19]].forEach(([dx, dy], j) => { if (j && rd() < .3) return; const r = .088 - j * .013; a(new THREE.SphereGeometry(r, 6, 3, 0, PI2, 0, 1.95), c, tx + dx, ty + dy - r * .9, 0, 0, rd() * 2, 0, 1, 1.3, 1, { gl: 1 }); }); // 圓頂、下緣微微外翻的小鈴鐺
       if (i % 2 === 0) a(new THREE.ConeGeometry(.05, .3, 3, 1, true), '#5aa64e', .05, .15, 0, 0, 0, -.35, 1, 1, .3);
     }
   }
-  // 沿著小徑：每隔 5～8 單位在路邊（左右交錯、偶爾跳過）放一叢夜光鈴蘭或一圈夜光蘑菇，夜裡走在路上一叢一叢亮著
+  // 沿著小徑：每隔 3.6～6 單位在路邊（左右交錯、偶爾跳過）放一叢夜光鈴蘭或一圈夜光蘑菇，夜裡走在路上一叢一叢亮著
+  // （原本 5～8 單位一叢、離路 3～3.7、一叢 7 株小鈴鐺，夜裡從路上看只剩零星幾個小藍點）
   function buildPathGlow(kits) {
     const rd = seeded(951), kq = (x, z) => kits[(x > 0 ? 'e' : 'w') + (z > 0 ? 's' : 'n')].f; let n = 0;
     paths().forEach((L, li) => {
-      let acc = 0, next = 4 + rd() * 4, side = li % 2 ? 1 : -1;
+      let acc = 0, next = 3 + rd() * 3, side = li % 2 ? 1 : -1;
       for (let i = 1; i < L.length; i++) {
         const [x0, z0] = L[i - 1], [x1, z1] = L[i], d = Math.hypot(x1 - x0, z1 - z0); acc += d; if (acc < next) continue;
-        acc = 0; next = 5 + rd() * 3; side = -side; if (vnoise(x1 * .3, z1 * .3, 17) < .22) continue;
-        const ux = (x1 - x0) / (d || 1), uz = (z1 - z0) / (d || 1), off = 2.9 + rd() * .8, bx = x1 - uz * side * off, bz = z1 + ux * side * off;
+        acc = 0; next = 3.6 + rd() * 2.4; side = -side; if (vnoise(x1 * .3, z1 * .3, 17) < .22) continue;
+        const ux = (x1 - x0) / (d || 1), uz = (z1 - z0) / (d || 1), off = 2.5 + rd() * .7, bx = x1 - uz * side * off, bz = z1 + ux * side * off;
         if (Math.hypot(bx, bz) < 19 || Math.max(Math.abs(bx), Math.abs(bz)) > 37) continue;
         const X = bx * K, Z = bz * K; if (!okAt(X, Z, .7)) continue;
-        if (n++ % 3 === 2) for (let j = 0; j < (LOW ? 3 : 5); j++) { const a = j / 5 * PI2 + rd(), r = .35 + rd() * .5; shroom(kq(bx, bz), X + Math.cos(a) * r, Z + Math.sin(a) * r, .7 + rd() * .5, GLOWC[(j + n) % 4], 1); }
-        else glowBells(kq(bx, bz), X, Z, LOW ? 4 : 7, 960 + n);
+        if (n++ % 3 === 2) for (let j = 0, nj = LOW ? 4 : 6; j < nj; j++) { const a = j / nj * PI2 + rd(), r = .35 + rd() * .5; shroom(kq(bx, bz), X + Math.cos(a) * r, Z + Math.sin(a) * r, .7 + rd() * .5, GLOWC[(j + n) % 4], 1); }
+        else glowBells(kq(bx, bz), X, Z, LOW ? 5 : 9, 960 + n);
       }
     });
+    // 路邊的夜光小石子：貼著小徑邊緣（左右交錯）每 2.2 單位兩三顆，白天是淡淡的粉彩卵石，夜裡連成一串小光點，遠遠就看得出路往哪裡走
+    // （鈴蘭和蘑菇長在離路 4～5 公尺的樹叢邊，常被樹擋住、又小，從路上看只剩零星幾個點）
+    const PEB = ['#5eead4', '#7dd3fc', '#c4b5fd', '#99f6e4'], pg = jit(new THREE.IcosahedronGeometry(1, 0), .3, 23);
+    paths().forEach((L, li) => {
+      let acc = 0, side = li % 2 ? -1 : 1, m = 0;
+      for (let i = 1; i < L.length; i++) {
+        const [x0, z0] = L[i - 1], [x1, z1] = L[i], d = Math.hypot(x1 - x0, z1 - z0) || 1, ux = (x1 - x0) / d, uz = (z1 - z0) / d;
+        for (let u = (LOW ? 3.3 : 2.2) - acc; u < d; u += LOW ? 3.3 : 2.2) {
+          const cx = x0 + ux * u, cz = z0 + uz * u; side = -side; if (Math.hypot(cx, cz) < 19 || Math.max(Math.abs(cx), Math.abs(cz)) > 38) continue;
+          for (let o = .8, o0 = 0; o < 3.2; o += .12) { // 從路中間往外找到路的邊緣（邊緣外 0.5 單位內都放不下就算了：被樹或小場景擋住）
+            const X = (cx - uz * side * o) * K, Z = (cz + ux * side * o) * K; if (onPath(X, Z) > .02) continue; if (!o0) o0 = o; if (o > o0 + .5) break; if (!okAt(X, Z, .14)) continue;
+            for (let j = 0; j < (m++ % 3 ? 2 : 3); j++) { const px = X + ux * j * .42 - uz * side * (j % 2) * .2, pz = Z + uz * j * .42 + ux * side * (j % 2) * .2, s = .15 + rd() * .06; kq(px / K, pz / K).add(pg.clone(), PEB[(i + j + li) % 4], M4(px, H(px, pz) + s * .25, pz, 0, rd() * 6, 0, s, s * .6, s * .9), { gl: 1 }); }
+            break;
+          }
+        }
+        acc = (acc + d) % (LOW ? 3.3 : 2.2);
+      }
+    });
+    pg.dispose();
   }
 
   /* ---------- 會動的：溪上的蜻蜓 ---------- */
@@ -629,11 +674,13 @@
     });
     B.im.instanceMatrix.needsUpdate = true;
   }
-  // 踏腳石彩蛋：在踏腳石附近從一岸走到另一岸
+  // 踏腳石：站上去的時候托到石面上；彩蛋：踩著石頭從一岸走到另一岸
   function stepStep() {
     if (!STEP.rx) return; const lx = P.x - STEP.x, lz = P.z - STEP.z, along = lx * STEP.rx + lz * STEP.rz, off = Math.abs(-lx * STEP.rz + lz * STEP.rx);
     if (off > 1.6 || Math.abs(along) > STEP.w + 2.5) { STEP.side = 0; return; }
-    if (Math.abs(along) > STEP.w + .6) { const s = Math.sign(along); if (STEP.side && s === -STEP.side) eggHit('plain_stones', '踩著石頭過溪……一顆、兩顆、三顆，鞋子沒有濕！'); STEP.side = s; }
+    // 站在石面上：地形是溪床（石頭不在地形裡），腳下改成石面的高度（在 playerStep 之後、鏡頭之前）；跳起來的時候不管（P.y 在石面之上）
+    if (!CV.c && !RIDE.on) { let top = -1e9, k = -1; STEP.list.forEach(([x, z, y, r], j) => { if ((P.x - x) ** 2 + (P.z - z) ** 2 < r * r && y > top) { top = y; k = j; } }); if (top > P.y && top - P.y < .8) { P.y = top; if (P.vy < 0) P.vy = 0; P.ground = true; STEP.got.add(k); } }
+    if (Math.abs(along) > STEP.w + .6) { const s = Math.sign(along); if (STEP.side && s === -STEP.side && STEP.got.size >= 3) eggHit('plain_stones', '踩著石頭過溪……一顆、兩顆、三顆，鞋子沒有濕！'); if (s !== STEP.side) STEP.got.clear(); STEP.side = s; } // 要真的踩著石頭過去（至少三顆），從旁邊涉水過去不算
   }
 
   regionBuild(() => {

@@ -1182,6 +1182,13 @@ function terrainMat() {
             tR *= 0.94 + 0.12 * rf;
             tHt += rockK * ((rn - 0.5) * 0.22 + (rf - 0.5) * 0.1 + (smoothstep(0.0, 0.12, lyf) * (1.0 - smoothstep(0.88, 1.0, lyf)) - 1.0) * 0.06 * strK); // 凹凸在層的交界連續（只是一道凹槽），不然導數會在交界畫出亮暗虛線
           #endif
+          // 森林的山壁：幾十公尺一片的色調變化（偏暖的土黃、偏冷的灰），苔帶有的層長滿、有的層幾乎沒有，幾處整片爬滿苔——
+          // 原本一整圈同一個灰褐色、苔帶間距一樣，從平地中間或空中看像一座採石場
+          if (tB.x > 0.01) {
+            float rv = tN(vec2(ru * 0.021 + 3.0, vWP.y * 0.025 - 1.0)), rw = tN(vec2(ru * 0.045 - 7.0, lyi * 0.83)), rg = tN(vec2(ru * 0.028 + 11.0, vWP.y * 0.045 + 5.0));
+            tR *= mix(vec3(1.0), mix(vec3(1.12, 1.0, 0.82), vec3(0.85, 0.92, 1.0), smoothstep(0.28, 0.72, rv)), tB.x);
+            tCov = mix(tCov, max(clamp(tCov * smoothstep(0.2, 0.7, rw) * 1.7, 0.0, 1.0), smoothstep(0.6, 0.8, rg) * smoothstep(0.25, 0.55, cg) * 0.6), tB.x);
+          }
           tR = mix(tR, covC * (0.85 + 0.3 * n2), tCov * 0.85);
           diffuseColor.rgb = mix(diffuseColor.rgb, tR, rockK);
         }
