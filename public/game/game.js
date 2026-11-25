@@ -4365,22 +4365,41 @@ function waypointStep() {
   if (off) el.querySelector('.wpa').style.transform = `translate(-50%,-50%) rotate(${ang.toFixed(0)}deg) translateY(-25px)`;
 }
 let cmpSig = '';
+/* 時鐘：一條「一天」的軌道（白天 5、黃昏 1、夜晚 3、黎明 1 分鐘，依長度上色），太陽／月亮沿著軌道走，
+   旁邊寫現在的時段和「再過多久到下一個時段」；時段的字和軌道上同一段同色，不用猜色塊代表什麼，也知道夜行史萊姆什麼時候出來 */
+const DN_END = { day: 300, dusk: 360, night: 540, dawn: 600 }, DN_NEXT = { day: 'dusk', dusk: 'night', night: 'dawn', dawn: 'day' };
 function renderClock() {
-  let el = document.getElementById('dnClock'); if (!el) { el = document.createElement('div'); el.id = 'dnClock'; el.innerHTML = '<i class="dn-ic"></i><span class="dn-bar"><b></b></span><em></em>'; (document.getElementById('hud') || document.body).appendChild(el); }
-  const sig = DN.phase + Math.round(DN.p * 200); if (sig === W.clkSig) return; W.clkSig = sig;
-  el.className = 'dn-' + DN.phase; el.querySelector('b').style.width = (DN.p * 100).toFixed(1) + '%'; el.querySelector('em').textContent = DN_PHASE[DN.phase];
-  el.title = '月光谷的一天 10 分鐘：白天 5、黃昏 1、夜晚 3、黎明 1 分鐘';
+  let el = document.getElementById('dnClock');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'dnClock'; el.setAttribute('role', 'timer');
+    el.innerHTML = '<span class="dn-trk" aria-hidden="true"><u></u><i class="dn-mk"></i></span><span class="dn-tx" aria-hidden="true"><b></b><small><span></span> 後<em></em></small></span>';
+    (document.getElementById('hud') || document.body).appendChild(el);
+  }
+  const rem = Math.max(1, Math.ceil(DN_END[DN.phase] - DN.t)), sig = DN.phase + rem; if (sig === W.clkSig) return; W.clkSig = sig;
+  const pct = (DN.p * 100).toFixed(2) + '%', now = DN_PHASE[DN.phase], nx = DN_PHASE[DN_NEXT[DN.phase]], m = Math.floor(rem / 60), sec = rem % 60;
+  el.className = 'dn-' + DN.phase; el.querySelector('.dn-mk').style.left = pct; el.querySelector('u').style.width = pct;
+  el.querySelector('b').textContent = now; el.querySelector('small span').textContent = m + ':' + String(sec).padStart(2, '0'); // 一律 m:ss，數字寬度不跳 el.querySelector('em').textContent = nx;
+  el.setAttribute('aria-label', `現在是${now}，${m ? m + ' 分 ' : ''}${sec} 秒後${nx}（月光谷的一天 10 分鐘：白天 5、黃昏 1、夜晚 3、黎明 1 分鐘）`);
   clockLayout(el);
 }
-// 依序試三個位置：指南針右邊 → 右上按鈕下方 → 指南針下方；選第一個不會蓋到其他 HUD 的位置
+// 依序試幾個位置，選第一個不會蓋到其他 HUD 的：指南針右邊 → 方位角小牌右邊（縮小一號）→ 指南針下方 → 右上按鈕下方 → 指南針左邊
 function clockLayout(el) {
   const sig = innerWidth + 'x' + innerHeight + (W.ready ? 1 : 0) + (NET.on ? 1 : 0); if (sig === W.clkLay) return;
-  const tb = document.getElementById('topbtns'), r0 = tb && tb.getBoundingClientRect(); if (!r0 || !r0.width) return; W.clkLay = sig;
-  const avoid = ['topbtns', 'compass', 'cmpDeg', 'stats'].map(id => document.getElementById(id)).filter(e => e && e.offsetParent !== null).map(e => e.getBoundingClientRect()).filter(r => r.width);
-  const hit = a => avoid.some(b => a.left < b.right + 4 && a.right > b.left - 4 && a.top < b.bottom + 4 && a.bottom > b.top - 4);
-  const cmp = document.getElementById('compass').getBoundingClientRect(), deg = document.getElementById('cmpDeg'), dr = deg && deg.offsetParent !== null ? deg.getBoundingClientRect() : null;
-  const tries = [{}, { left: 'auto', right: (innerWidth - r0.right) + 'px', top: (r0.bottom + 6) + 'px' }, { left: (cmp.left + cmp.width / 2) + 'px', top: ((dr && dr.height ? dr.bottom : cmp.bottom) + 6) + 'px', transform: 'translateX(-50%)' }];
-  for (const t of tries) { el.style.left = el.style.right = el.style.top = el.style.transform = ''; Object.assign(el.style, t); if (!hit(el.getBoundingClientRect())) return; }
+  const tb = document.getElementById('topbtns'), r0 = tb && tb.getBoundingClientRect(), cp = document.getElementById('compass'), cmp = cp && cp.getBoundingClientRect();
+  if (!r0 || !r0.width || !cmp || !cmp.width) return; W.clkLay = sig;
+  const avoid = ['#topbtns', '#compass', '#cmpDeg', '#stats', '#objective', '.hfree'].map(q => document.querySelector(q)).filter(e => e && e.offsetParent !== null).map(e => e.getBoundingClientRect()).filter(r => r.width && r.height);
+  const hit = a => a.left < 4 || a.right > innerWidth - 4 || avoid.some(b => a.left < b.right + 6 && a.right > b.left - 6 && a.top < b.bottom + 4 && a.bottom > b.top - 4);
+  const deg = document.getElementById('cmpDeg'), dr = deg && deg.offsetParent !== null && deg.textContent ? deg.getBoundingClientRect() : null, below = (dr && dr.height ? dr.bottom : cmp.bottom) + 6;
+  const put = ({ sm, top, ...st }) => { el.style.left = el.style.right = el.style.top = el.style.transform = ''; el.toggleAttribute('data-sm', !!sm); const h = el.getBoundingClientRect().height || 26;
+    Object.assign(el.style, st, { top: typeof top === 'function' ? top(h) + 'px' : top }); return el.getBoundingClientRect(); };
+  const tries = [
+    { left: (cmp.right + 8) + 'px', top: h => cmp.top + cmp.height / 2 - h / 2 },
+    dr && dr.height ? { sm: 1, left: (dr.right + 8) + 'px', top: h => Math.max(cmp.bottom + 5, dr.top + dr.height / 2 - h / 2) } : null,
+    { left: (cmp.left + cmp.width / 2) + 'px', top: below + 'px', transform: 'translateX(-50%)' },
+    { left: 'auto', right: (innerWidth - r0.right) + 'px', top: (r0.bottom + 6) + 'px' },
+    { left: 'auto', right: (innerWidth - cmp.left + 8) + 'px', top: h => cmp.top + cmp.height / 2 - h / 2 }].filter(Boolean);
+  for (const t of tries) if (!hit(put(t))) return;
+  put({ sm: 1, left: (cmp.left + cmp.width / 2) + 'px', top: below + 'px', transform: 'translateX(-50%)' }); // 都擠不下（很窄的直向手機）：放指南針下方
 }
 function renderCompass() {
   const el = $('#cmpStrip'), w = el.clientWidth || 300, range = Math.PI * .8, items = [], o0 = W.obj;

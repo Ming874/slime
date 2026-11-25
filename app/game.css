@@ -470,15 +470,30 @@ body.touch #coach{white-space:normal;width:max-content;max-width:86vw;top:calc(5
 #warm span{font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000a;white-space:nowrap}
 @keyframes warmBlink{50%{box-shadow:0 0 10px #fb7185}}
 
-/* 第 3 堂：時鐘（指南針右邊的太陽／月亮與一天的進度條） */
-#dnClock{position:absolute;top:calc(max(12px,env(safe-area-inset-top)) + 9px);left:calc(50% + clamp(200px,min(46vw,100vw - 650px),500px) / 2 + 8px);display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:999px;background:#0b0f17a0;border:1px solid #ffffff22;font-size:11px;color:#e2e8f0;pointer-events:none;backdrop-filter:blur(6px)}
-#dnClock .dn-ic{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#fff7d1,#fbbf24);box-shadow:0 0 8px #fbbf24aa}
-#dnClock.dn-night .dn-ic{background:radial-gradient(circle at 65% 35%,transparent 38%,#e0e7ff 40%);box-shadow:0 0 8px #c7d2fe88}
-#dnClock.dn-dusk .dn-ic,#dnClock.dn-dawn .dn-ic{background:radial-gradient(circle at 40% 40%,#ffe4cc,#fb923c);box-shadow:0 0 8px #fb923caa}
-#dnClock .dn-bar{position:relative;width:54px;height:4px;border-radius:9px;overflow:hidden;background:linear-gradient(90deg,#7dd3fc 0 50%,#fb923c 50% 60%,#4c5a9a 60% 90%,#f9a8d4 90%)}
-#dnClock .dn-bar b{position:absolute;left:0;top:0;bottom:0;border-right:2px solid #fff;background:#0006}
-#dnClock em{font-style:normal}
-@media (max-width:640px){#dnClock{left:calc(50% + min(300px,52vw) / 2 + 4px)}#dnClock em{display:none}#dnClock .dn-bar{width:34px}}
+/* 第 3 堂：時鐘（指南針旁）——「一天」的軌道依長度上色（白天 5、黃昏 1、夜晚 3、黎明 1 分鐘），太陽／月亮沿軌道走；
+   右邊寫現在的時段＋「m:ss 後下一個時段」，兩個時段的字跟軌道上同一段同色。位置由 game.js 的 clockLayout 挑不會蓋到別的 HUD 的地方 */
+#dnClock{position:absolute;top:max(12px,env(safe-area-inset-top));left:calc(50% + clamp(200px,min(46vw,100vw - 650px),500px) / 2 + 8px);box-sizing:border-box;height:30px;display:flex;align-items:center;gap:10px;padding:0 13px 0 11px;border-radius:999px;
+  background:linear-gradient(180deg,#0e1726d9,#0a1220c4);border:1px solid #ffffff24;box-shadow:0 10px 26px -16px #000,inset 0 1px 0 #ffffff17;backdrop-filter:blur(6px);
+  font:700 12px/1 Inter,"Noto Sans TC",sans-serif;color:#e2e8f0;white-space:nowrap;pointer-events:none;
+  --day:#7dd3fc;--dusk:#fb923c;--night:#818cf8;--dawn:#f9a8d4;--pc:#bae6fd;--nc:#fdba74;--mk:radial-gradient(circle at 38% 36%,#fffbe6,#fcd34d 55%,#f59e0b);--glow:#fbbf24b0}
+#dnClock.dn-dusk{--pc:#fdba74;--nc:#c7d2fe;--mk:radial-gradient(circle at 38% 36%,#ffedd5,#fb923c 60%,#ea580c);--glow:#fb923cb0}
+#dnClock.dn-night{--pc:#c7d2fe;--nc:#fbcfe8;--mk:radial-gradient(circle at 74% 28%,#0c1424 0 40%,#0000 43%),radial-gradient(circle at 40% 45%,#f8fafc,#c7d2fe);--glow:#a5b4fc90}
+#dnClock.dn-dawn{--pc:#fbcfe8;--nc:#bae6fd;--mk:radial-gradient(circle at 38% 36%,#fff1f2,#f9a8d4 60%,#fb923c);--glow:#f9a8d4b0}
+#dnClock .dn-trk{position:relative;flex:none;width:96px;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,var(--day) 0 calc(50% - 1px),#0000 0 calc(50% + 1px),var(--dusk) 0 calc(60% - 1px),#0000 0 calc(60% + 1px),var(--night) 0 calc(90% - 1px),#0000 0 calc(90% + 1px),var(--dawn) 0)}
+#dnClock .dn-trk u{position:absolute;left:0;top:-1px;bottom:-1px;border-radius:3px 0 0 3px;background:#0b1220;opacity:.42}
+#dnClock .dn-mk{position:absolute;top:50%;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;border-radius:50%;background:var(--mk);box-shadow:0 0 0 2px #0b1220,0 0 10px 1px var(--glow)}
+#dnClock .dn-tx{display:flex;align-items:baseline;gap:7px}
+#dnClock .dn-tx b{font-weight:800;font-size:13px;color:var(--pc);letter-spacing:1px}
+#dnClock .dn-tx small{font-size:11.5px;color:#94a3b8;font-variant-numeric:tabular-nums}
+#dnClock .dn-tx small span{display:inline-block;min-width:2.6em;text-align:right;color:#e2e8f0}
+#dnClock .dn-tx em{font-style:normal;color:var(--nc)}
+#dnClock[data-sm]{height:24px;gap:8px;padding:0 10px 0 9px;font-size:11px}
+#dnClock[data-sm] .dn-trk{width:78px;height:5px}
+#dnClock[data-sm] .dn-mk{width:13px;height:13px;margin:-6.5px 0 0 -6.5px}
+#dnClock[data-sm] .dn-tx b{font-size:12px}
+#dnClock[data-sm] .dn-tx small{font-size:10.5px}
+@media (max-width:640px){#dnClock .dn-trk{width:52px}}
 /* 暫停選單：音量與畫質 */
 .rx-audio{display:grid;gap:8px;margin:10px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px}
 .rx-audio label,.rx-qual{display:flex;align-items:center;gap:10px;font-size:13px}
