@@ -935,7 +935,7 @@ function caveLeave(side) {
   if (!c.dead && side === 1 && CV.dir === 1) { // 從月光谷走到新區域
     S.cave = S.cave || {}; S.cave.seen = S.cave.seen || {};
     const first = !S.cave.seen[c.id]; S.cave.seen[c.id] = 1; save();
-    CV.flash = 1; if (first) { CV.lift = 1.4; W.quietZone = true; const z = ZONES.find(z => z.id === c.def.to); caveReveal(z.name, { sea: '穿過海蝕洞，白色沙灘與燈塔就在眼前', lava: '走出熔岩隧道，冒煙的火山口就在北方', ice: '走出冰洞，雪原的丘陵一片銀白' }[c.id] || ''); }
+    CV.flash = 1; if (first) CV.lift = 1.4; // 地名字卡：CV.c 一清掉，下一格 envStep 就換區（game.js 的 zoneArrive；第一次 2.5 秒、之後 1 秒）
   } else if (!c.dead && side === 0 && CV.dir === -1) { S.cave = S.cave || {}; (S.cave.seen = S.cave.seen || {})[c.id] = 1; CV.flash = .7; }
   else if (c.dead && side === 0 && CV.far > c.L * .6 && !(S.cave && S.cave.seen && S.cave.seen[c.id])) { S.cave = S.cave || {}; (S.cave.seen = S.cave.seen || {})[c.id] = 1; save(); } // 死路的洞（月光洞窟）走進去再出來也算走過：筆記本的地圖（map.js）才畫得出這條洞
 }
@@ -1061,12 +1061,6 @@ function caveSan(o) {
   const obj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}, ids = CAVE_DEF.map(d => d.id), pickIds = v => Object.fromEntries(Object.entries(obj(v)).filter(([k, x]) => ids.includes(k) && x).map(([k, x]) => [k, Math.max(1, Math.floor(+x) || 1)]));
   const c = obj(o), m = obj(c.moss);
   return { seen: pickIds(c.seen), mural: pickIds(c.mural), moss: { d: Math.floor(+m.d) || 0, n: Object.fromEntries(Object.entries(obj(m.n)).filter(([k]) => ids.includes(k)).map(([k, v]) => [k, clamp(Math.floor(+v) || 0, 0, 3)])) }, mossN: clamp(Math.floor(+c.mossN) || 0, 0, 9999) };
-}
-// 第一次走出山洞：區名大字浮現（2.3）
-function caveReveal(title, sub) {
-  let el = document.getElementById('zoneTitle'); if (!el) { el = document.createElement('div'); el.id = 'zoneTitle'; el.setAttribute('aria-live', 'polite'); el.innerHTML = '<small></small><b></b><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
-  el.querySelector('small').textContent = '發現新區域'; el.querySelector('b').textContent = title; el.querySelector('span').textContent = sub;
-  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on'); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('on'), 4200);
 }
 
 // 洞裡的腳步帶回音：同一個腳步聲，延遲 0.13、0.27 秒各再響一次、越來越小（不用即時運算的殘響，7.2）

@@ -73,6 +73,19 @@ export function PaperView({ p, live, hint }: { p: PaperData; live?: boolean; hin
         {(p.touch || !live) && <button type="button" className="pp-flipbtn" data-act={live ? 'paperFlip' : 'clipFlip'}>翻面</button>}
       </>
     );
+  } else if (p.v === 'sketch') {
+    // 旅行速寫：速寫本的一頁（上緣一排線圈孔）、鉛筆線稿（game.js 的 skSvg，和換區時那張地名字卡上的同一張）、手寫的區名與副標、第一次來的那天
+    body = (
+      <>
+        <i className="pp-sk-rings" aria-hidden="true" />
+        <div className="pp-sk-art" aria-hidden="true" dangerouslySetInnerHTML={{ __html: p.art || '' }} />
+        <div className="pp-sk-tx">
+          <p className="pp-l pp-sk-name" style={L(0)}>{p.head}</p>
+          {p.b.map((t, i) => <p key={i} className="pp-l pp-sk-sub" style={L(i + 1)}>{t}</p>)}
+          <p className="pp-l pp-sk-date" style={L(p.b.length + 1)}>{p.day} 第一次來</p>
+        </div>
+      </>
+    );
   } else if (p.v === 'receipt') {
     body = <Receipt d={p.d || { n: 0, inc: 0, tip: 0, fan: 0, sec: 0, t: 0 }} />;
   } else if (p.v === 'flyer') {

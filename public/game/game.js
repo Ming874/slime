@@ -133,7 +133,7 @@ const NPC_IDS = ['yun', 'chen', 'zhe', 'mei', 'jie', 'lin', 'yu', 'leo', 'kai', 
 // 宅配（氣球木箱）的機器與四間店：sanitize 在存檔區就要用，所以放在這裡（OWN、SHOPS 在後面才宣告，讀檔時還在暫時死區）
 const SHIP_KEYS = ['slicer', 'coater', 'dryer', 'decor', 'live'], SHOP_IDS = ['mach', 'mall', 'gear', 'arms'];
 // 收進手帳的紙：sanitize 在讀檔時就執行，比 PAPERS 早（還在暫時死區，用到會丟例外、被 load() 當成壞檔而開新遊戲），所以只能用這裡的字串白名單
-const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|note[0-2]|hole|bottle|arms|live|gn[1-8])$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
+const PAPER_IDS = /^(granny|gift|pc_(coast|volcano|snow)|sk_(forest|coast|volcano|snow|city)|note[0-2]|hole|bottle|arms|live|gn[1-8])$/, ROAD_IDS = ['coast', 'volcano', 'snow'];
 // 奶奶的筆記（gn1～gn8，6.1）：手帳裡那張紙 → 算進哪一個小秘密（前綴＝手帳上標的地方：home 工坊、cave 山洞）；讀檔時找到過的就補進手帳（同樹洞的紙條）
 const GN_EGG = { gn1: 'home_gn1', gn2: 'home_gn2', gn3: 'forest_gn', gn4: 'coast_gn', gn5: 'volcano_gn', gn6: 'snow_gn', gn7: 'cave_gn1', gn8: 'cave_gn2' };
 const SAVE_KEY = 'slime_world_v1';
@@ -2152,11 +2152,12 @@ function buildParticles() {
   // 種類：[動作, 顏色, 大小, 混合, 閃爍, 不透明度]
   const K = { pollen: ['drift', '#fff3c4', .1, THREE.NormalBlending, 0, .75], firefly: ['float', '#ffd75e', .3, THREE.AdditiveBlending, 1, 1], coast: ['float', '#ffffff', .08, THREE.AdditiveBlending, 0, .9],
     volcano: ['rise', '#fb923c', .16, THREE.AdditiveBlending, 0, 1], snow: ['fall', '#ffffff', .18, THREE.NormalBlending, 0, .9] };
-  let cur = '';
+  let cur = '', curZ = '', opT = 1;
   W.anim.push((dt, t) => {
-    const b = domBiome(P.x, P.z), nite = DN.night > .3, key = inCity() ? '' : b === 'forest' ? (nite ? 'firefly' : 'pollen') : b === 'coast' ? (nite ? 'firefly' : 'coast') : b;
-    pts.visible = !!key && !QL.noParts; if (!pts.visible) return;
-    if (key !== cur) { cur = key; const k = K[key]; U.col.value.set(k[1]); U.size.value = k[2]; mat.blending = k[3]; U.blink.value = k[4]; U.op.value = k[5]; mat.needsUpdate = true; }
+    const b = (!TITLE.on && W.zoneNow) || domBiome(P.x, P.z), nite = DN.night > .3, key = b === 'city' || inCity() ? '' : b === 'forest' ? (nite ? 'firefly' : 'pollen') : b === 'coast' ? (nite ? 'firefly' : 'coast') : b; // 看 W.zoneNow：出洞那一格和音樂、地名字卡一起換
+    const zch = b !== curZ; curZ = b; pts.visible = !!key && !QL.noParts; if (!pts.visible) return;
+    if (key !== cur) { cur = key; const k = K[key]; U.col.value.set(k[1]); U.size.value = k[2]; mat.blending = k[3]; U.blink.value = k[4]; mat.needsUpdate = true; opT = k[5]; U.op.value = zch ? 0 : opT; } // 換區那一格：新的粒子 0.8 秒淡入（日夜交替照舊直接換）
+    if (U.op.value < opT) U.op.value = Math.min(opT, U.op.value + dt * opT / .8);
     U.time.value = t; U.scale.value = innerHeight * .5; if (W.taxiV) U.cabInv.value.copy(W.taxiV.matrixWorld).invert();
     const kind = K[key][0]; pts.position.set(Math.floor(P.x / 50) * 50, G(P.x, P.z), Math.floor(P.z / 50) * 50);
     for (let i = 0; i < n; i++) {
@@ -4912,6 +4913,26 @@ const PAPERS = {
   gn8: { v: 'note', gn: 1, pg: 8, dd: 'moss', name: '奶奶的筆記：發光的苔蘚', b: ['洞壁上發光的苔蘚摘一小撮，', '放在捏捏上，夜裡會微微發亮。', '別摘太多，讓它慢慢長回來。'], sig: '——奶奶' },
 };
 NOTE_TXT.forEach((t, i) => { PAPERS['note' + i] = { v: 'note', torn: 1, name: `撕碎的紙條 ${i + 1}`, b: [t] }; }); // 潮汐石謎語的三張紙條（上緣撕過）
+// 換區的地名字卡與手帳的速寫（5.7）：區名、副標（白天／夜裡各一句）、紙膠帶的顏色、鉛筆線稿（viewBox 160×100）。
+// w＝淡淡的水彩（故意和線稿錯開一點點，像真的手畫）、l＝鉛筆線（skSvg 畫兩遍、第二遍偏一點點又淡，才有鉛筆的毛邊）
+const ZSK = {
+  forest: { name: '中央平地', sub: ['奶奶的工坊就在這裡', '螢火蟲出來散步了'], acc: '#6ee7a8',
+    w: [['M0 62Q28 50 56 57L62 61V78H0Z', '#bbf7d0', .6], ['M0 79Q40 76 80 79T160 78V100H0Z', '#86efac', .42], ['M58 51L81 33L105 51Z', '#fca5a5', .55], ['M116 49c-6-12 6-20 14-16 4-10 18-8 20 2 10 2 10 16 0 20-6 6-18 6-24 0-8 0-12-2-10-6z', '#4ade80', .4], ['M26 77c0-11 5-15 10-15s10 4 10 15z', '#6ee7a8', .75], ['M18 21a7 7 0 1 0 14 0a7 7 0 1 0-14 0', '#fde68a', .8]],
+    l: ['M2 60Q28 48 56 55', 'M0 77Q40 74 80 77T160 76', 'M62 48V77M98 48V77', 'M56 50L80 31L104 50', 'M75 77V64Q80 59 85 64V77', 'M66 55h7v7h-7z', 'M90 41V32h5v12', 'M93 28c-4-3-1-6 1-8s0-6-3-7', 'M123 77c1-8 1-14 0-21M129 77c-1-8-1-14 0-21', 'M114 47c-6-12 6-20 14-16 4-10 18-8 20 2 10 2 10 16 0 20-6 6-18 6-24 0-8 0-12-2-10-6z', 'M24 76c0-11 5-15 10-15s10 4 10 15z', 'M31 68v2M37 68v2', 'M8 90l2-5 2 5M52 92l2-5 2 5M144 88l2-5 2 5', 'M16 20a7 7 0 1 0 14 0a7 7 0 1 0-14 0'] },
+  coast: { name: '海岸', sub: ['風裡有鹽的味道', '浪聲比白天大一點'], acc: '#7dd3fc',
+    w: [['M0 56H160V77Q120 72 80 78T0 76Z', '#7dd3fc', .45], ['M0 79Q40 73 80 79T160 75V100H0Z', '#fde68a', .55], ['M121 65h15l1 8h-17z', '#fca5a5', .65], ['M123 48h12l1 8h-14z', '#fca5a5', .65], ['M31 31a9 9 0 1 0 18 0a9 9 0 1 0-18 0', '#fde68a', .65]],
+    l: ['M2 56H114M142 56H158', 'M118 84L122 36H134L138 84', 'M120 66H136M121 50H135', 'M121 36V29H135V36M119 36H137', 'M120 29L128 22L136 29', 'M114 28l-9-3M142 28l9-3', 'M10 66q5-4 10 0t10 0M44 72q5-4 10 0t10 0M76 63q5-4 10 0t10 0', 'M0 78Q40 72 80 78T116 76M140 74Q150 73 160 73', 'M44 18q4-4 8 0q4-4 8 0M68 26q3-3 6 0q3-3 6 0', 'M30 30a9 9 0 1 0 18 0a9 9 0 1 0-18 0', 'M36 85l1.6 3.4 3.7.4-2.8 2.5.8 3.6-3.3-1.9-3.3 1.9.8-3.6-2.8-2.5 3.7-.4z', 'M126 84v-7h4v7'] },
+  volcano: { name: '火山', sub: ['腳底下暖烘烘的', '山頂亮著橘色的光'], acc: '#fdba74',
+    w: [['M18 88L64 33Q80 28 96 33L142 88Z', '#d6d3d1', .6], ['M74 35Q80 48 73 60Q78 62 82 52Q86 44 86 35Z', '#fb923c', .6], ['M66 33Q80 39 94 33Q80 29 66 33Z', '#f97316', .7], ['M126 88q10-5 20 0z', '#7dd3fc', .55]],
+    l: ['M2 88H158', 'M16 88L64 33Q80 27 96 33L144 88', 'M64 33Q80 39 96 33', 'M75 36Q81 48 74 60M85 36q2 8-2 14', 'M73 25c-6-4-2-9 1-10s4-7-1-11M88 23c5-4 2-8-1-9s-3-6 2-9', 'M28 88q3-6 8-3 4 1 3 3M110 88q3-5 7-3', 'M124 88q11-6 22 0', 'M131 81c-3-3 0-5 1-6s0-4-2-5M139 81c-3-3 0-5 1-6s0-4-2-5', 'M40 70l6-2M50 58l5-2M110 66l-5-2M118 74l-6-2'] },
+  snow: { name: '雪原', sub: ['呼出來的氣都是白的', '星星好像比較近'], acc: '#bae6fd',
+    w: [['M0 66Q40 48 80 62T160 54V100H0Z', '#e0f2fe', .95], ['M104 74L112 22L120 74Z', '#a5f3fc', .6], ['M0 86Q50 74 100 84T160 82V100H0Z', '#bae6fd', .5]],
+    l: ['M2 66Q40 50 80 63T98 61M126 57Q140 53 158 55', 'M0 86Q50 75 100 84T160 82', 'M104 74L112 22L120 74M112 22V74', 'M96 74l4-22 4 22M120 74l4-18 4 18', 'M28 80l8-20 8 20zM36 80v4', 'M52 82l6-15 6 15zM58 82v3', 'M20 24l6 6M26 24l-6 6M23 23v8M60 16l4 4M64 16l-4 4M62 15v6M140 26l4 4M144 26l-4 4M142 25v6', 'M76 92h3M84 90h3M92 92h3'] },
+  city: { name: '大城市', sub: ['街上叮叮噹噹好熱鬧', '窗戶一格一格亮起來'], acc: '#fcd34d',
+    w: [['M12 84V42H38V84Z', '#fde68a', .55], ['M44 84V24H70V84Z', '#fcd34d', .38], ['M76 84V48H104V84Z', '#fdba74', .45], ['M110 84V34H134V84Z', '#fde68a', .5], ['M0 86H160V100H0Z', '#d6d3d1', .45]],
+    l: ['M0 86H160', 'M10 93h8M34 93h8M58 93h8M82 93h8M106 93h8M130 93h8', 'M12 86V42H38V86', 'M44 86V24H70V86M57 24V14', 'M76 86V48H104V86M76 66h28', 'M110 86V34H134V86', 'M17 48h5v5h-5zM28 48h5v5h-5zM17 60h5v5h-5zM28 60h5v5h-5z', 'M49 30h5v5h-5zM60 30h5v5h-5zM49 42h5v5h-5zM60 42h5v5h-5zM49 54h5v5h-5zM60 54h5v5h-5z', 'M115 40h5v5h-5zM125 40h5v5h-5zM115 52h5v5h-5zM125 52h5v5h-5z', 'M86 86V74h8v12M80 54h20v8H80z', 'M146 86V58q0-5-5-5h-3'] },
+};
+Object.keys(ZSK).forEach(z => { PAPERS['sk_' + z] = { v: 'sketch', zone: z, name: ZSK[z].name + '的速寫', head: ZSK[z].name, b: [ZSK[z].sub[0]] }; }); // 手帳的速寫：第一次到一區時跟著地名字卡收進來（zcShow）
 Object.keys(PAPERS).forEach(k => { PAPERS[k].id = k; if (GN_EGG[k]) PAPERS[k].egg = GN_EGG[k]; });
 const rcptSpec = d => ({ id: 'live', v: 'receipt', name: '直播收據', d: Object.assign({}, d), roll: 1 }); // 收據：每場一張（d＝那一場的數字）
 const paperSpec = r => (r && (r.id === 'live' ? rcptSpec(r.d || {}) : PAPERS[r.id])) || null;
@@ -5021,17 +5042,20 @@ function paperFlushAll() {
 // 小信封從右下飛進背包鈕（560 ms，等紙放下一半才飛）；背包鈕彈一下，新的紙加墨點。減少動態：只亮墨點
 function toBag(isNew) {
   const b = $('#topbtns [data-act="inv"]'); if (!b) return;
-  const done = () => { b.classList.remove('got'); void b.offsetWidth; b.classList.add('got'); setTimeout(() => b.classList.remove('got'), 380); if (isNew) b.classList.add('new'); sfx.paper('file'); };
+  const done = () => bagGot(isNew);
   const r = b.getBoundingClientRect(); if (RM() || !r.width || !b.animate) return done();
   const el = document.createElement('i'); el.className = 'file-chip'; el.setAttribute('aria-hidden', 'true'); document.body.appendChild(el);
   const x0 = innerWidth * .7, y0 = innerHeight * .8, x1 = r.left + r.width / 2, y1 = r.top + r.height / 2, mx = (x0 + x1) / 2, my = Math.min(y0, y1) + (y0 - y1) * .25 - 40;
   const a = el.animate([{ transform: `translate(${x0}px,${y0}px) rotate(-10deg) scale(1.25)`, opacity: 0 }, { transform: `translate(${(x0 * 3 + x1) / 4}px,${(y0 * 3 + my) / 4}px) rotate(-6deg) scale(1.15)`, opacity: 1, offset: .18 }, { transform: `translate(${mx}px,${my}px) rotate(6deg) scale(.95)`, opacity: 1, offset: .6 }, { transform: `translate(${x1}px,${y1}px) rotate(0deg) scale(.45)`, opacity: .85 }], { duration: 560, delay: 520, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'both' });
   a.onfinish = () => { el.remove(); done(); }; a.oncancel = () => el.remove();
 }
+// 東西收進手帳的那一下：背包鈕彈一下、新的加墨點（打開手帳就消失）、收紙的聲音
+function bagGot(isNew) { const b = $('#topbtns [data-act="inv"]'); if (!b) return; b.classList.remove('got'); void b.offsetWidth; b.classList.add('got'); setTimeout(() => b.classList.remove('got'), 380); if (isNew) b.classList.add('new'); sfx.paper('file'); }
 // 給 React 畫 2D 的紙（Paper.tsx 的 PaperView）；o.t＝收到那天（剪貼區重讀時郵戳與信的日期是收到的那天，不是今天）
 function paperView(s, o) {
   const d = new Date((o && o.t) || Date.now()), z = s.zone && ZONES.find(x => x.id === s.zone);
-  return Object.assign({ id: s.id, v: s.v, name: s.name, head: s.head || '', b: s.b || [], sig: s.sig || '', zone: s.zone || '', zoneName: z ? z.name : '', acc: z ? z.acc : '', gift: !!s.gift, torn: !!s.torn, d: s.d || null,
+  const sk = s.v === 'sketch' && ZSK[s.zone]; // 速寫：區名用字卡上的（森林＝中央平地；大城市不在 ZONES 裡），線稿是 SVG 字串
+  return Object.assign({ id: s.id, v: s.v, name: s.name, head: s.head || '', b: s.b || [], sig: s.sig || '', zone: s.zone || '', zoneName: sk ? sk.name : z ? z.name : '', acc: sk ? sk.acc : z ? z.acc : '', art: sk ? skSvg(s.zone) : '', gift: !!s.gift, torn: !!s.torn, d: s.d || null,
     gn: !!s.gn, pg: s.pg || 0, dd: s.dd || '', stamp: '',
     who: String(S.name || (window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.name) || '工坊主人').slice(0, 12), day: `${d.getMonth() + 1}/${d.getDate()}`, touch: TOUCH, rm: RM(), rev: 1, flip: 0, live: 0, hint: false, seq: 0 }, o);
 }
@@ -5045,6 +5069,77 @@ function placeLetter() {
   const geo = mergeParts([[new THREE.BoxGeometry(.26, .008, .11), '#fffaf0'], [new THREE.BoxGeometry(.26, .002, .004), '#e7dcc4', M4(0, .005, -.0185)], [new THREE.CylinderGeometry(.018, .02, .006, 12), '#b91c1c', M4(0, .007, 0)]]);
   const m = mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), bx + .6, y, bz + .3, W.ws); m.rotation.y = -.35; m.castShadow = false;
   m.userData = { paper: 1, flat: 1, pw: .26 }; const b = beam(W.ws, '#fde68a', 1.6, .09, y); b.position.x = bx + .6; b.position.z = bz + .3; b.castShadow = false; b.material.forceSinglePass = true; m.userData.beam = b; W.letterObj = m; // 光柱：加法混色、不寫深度，雙面一次畫完就好（透明雙面原本會拆成兩次繪製）
+}
+/* ============================================================
+   換區：手寫地名字卡（5.7）。從山洞出口走出去、計程車鑽出隧道、滑翔落地、開場結束時，畫面下方浮出一張手寫的紙條：
+   左邊一張小速寫、區名＋一句副標（白天／夜裡不同），第一次 2.5 秒、之後 1 秒。音樂、環境音、環境粒子都看 W.zoneNow，
+   和字卡在同一格換（人在洞裡、滑翔途中、計程車鑽出目的地洞口之前 W.zoneNow 都不變，出洞／落地那一格才換）。
+   第一次到一區：手帳多一頁該區的速寫（S.papers 的 sk_○○，背包裡的「旅行速寫」），線稿一筆一筆畫出來、字用墨水寫出來，最後整張縮小飛進背包鈕。
+   不跳 toast、不跳彈窗。字卡不接滑鼠與觸控；位置每次出現時算（zcPlace），避開準心、提示字、教學小卡、對話泡泡、快捷列、觸控按鈕、體溫條、訊息列（#log）上的字；
+   字卡還在的時候，訊息列的字不准伸到字卡底下（zcLog：太長的換行），兩邊的字都不會被擋
+   ============================================================ */
+const ZC = { on: false, z: '', first: false, t: 0, hold: 0, a: null, lim: 0, mo: null }, SK_SVG = {};
+// 線稿：水彩一層、鉛筆線畫兩遍（第二遍偏一點點、淡一點，才有鉛筆的毛邊）；pathLength＝1 讓每一筆都能用同一組 dasharray 畫出來
+function skSvg(z) {
+  const k = ZSK[z]; if (!k) return ''; if (SK_SVG[z]) return SK_SVG[z];
+  return SK_SVG[z] = `<svg class="zsk" viewBox="0 0 160 100" aria-hidden="true">${k.w.map(([d, c, o]) => `<path class="zw" d="${d}" fill="${c}" fill-opacity="${o}"/>`).join('')}<g class="zl2" transform="translate(.8 .6)">${k.l.map(d => `<path d="${d}"/>`).join('')}</g><g class="zl">${k.l.map((d, i) => `<path d="${d}" pathLength="1" style="--i:${i}"/>`).join('')}</g></svg>`;
+}
+const zcSub = z => ZSK[z].sub[DN.night > .55 ? 1 : 0];
+// start＝開場結束（playReady）：記下現在這一區；新手教學中畫面中央有教學提示，開場不放字卡（中央平地的速寫等第一次走回來再收）
+function zoneArrive(start) {
+  if (!W.ready || !P || TITLE.on || INTRO.on) return; const z = W.zoneNow; if (!ZSK[z]) return;
+  if (start) { W.zoneShown = z; if (S.tutDone) zcShow(z); return; }
+  if (z === W.zoneShown) return; W.zoneShown = z; zcShow(z);
+}
+function zcShow(z) {
+  const k = ZSK[z], id = 'sk_' + z, first = !hasPaper(id), rm = RM(); zcEnd();
+  let el = $('#zoneTitle'); if (!el) { el = document.createElement('div'); el.id = 'zoneTitle'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); ($('#hud') || document.body).appendChild(el); }
+  el.innerHTML = `<span class="zc-sk">${skSvg(z)}</span><span class="zc-tx"><b>${k.name}</b><span>${zcSub(z)}</span></span>`;
+  el.style.setProperty('--acc', k.acc); el.className = 'on' + (first && !rm ? ' draw' : ''); zcPlace(el); zcLog(el);
+  if (first) { S.papers.push({ id, t: Date.now() }); if (S.papers.length > 40) S.papers.splice(0, S.papers.length - 40); save(); ui('inv'); sfx.paper('slide'); } // 速寫現在就收進手帳（存好檔），飛進背包鈕只是動畫
+  Object.assign(ZC, { on: true, z, first, t: performance.now(), hold: first ? 2500 : 1000 });
+  if (el.animate) ZC.a = el.animate(rm ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(22px) rotate(-4deg)' }, { opacity: 1, transform: 'translateY(0) rotate(-1.2deg)' }], { duration: rm ? 320 : first ? 460 : 260, easing: rm ? 'linear' : 'cubic-bezier(.2,.9,.3,1.15)', fill: 'both' });
+}
+// 每格（envStep）：時間到就收；打開介面、回主選單、開場時直接收起（速寫已經在手帳裡，只補背包鈕的墨點）
+function zcStep() {
+  if (!ZC.on) return; if (GUI.kind || TITLE.on || INTRO.on) { const f = ZC.first; zcEnd(); if (f && GUI.kind !== 'inv') { const b = $('#topbtns [data-act="inv"]'); if (b) b.classList.add('new'); } return; }
+  if (performance.now() - ZC.t < ZC.hold) return; ZC.on = false;
+  const el = $('#zoneTitle'), first = ZC.first, rm = RM(), b = $('#topbtns [data-act="inv"]'), br = b && b.getBoundingClientRect(); if (!el) return; if (ZC.a) ZC.a.cancel();
+  if (!el.animate) { el.className = ''; ZC.lim = 0; if (first) bagGot(1); return; }
+  if (first && !rm && br && br.width && getComputedStyle(b).visibility !== 'hidden') { // 第一次：整張縮小、往上拱一下飛進背包鈕（和收紙的小信封同一條路）
+    const r = el.getBoundingClientRect(), dx = br.left + br.width / 2 - (r.left + r.width / 2), dy = br.top + br.height / 2 - (r.top + r.height / 2), sc = Math.max(.06, 28 / r.width);
+    ZC.a = el.animate([{ transform: 'translate(0,0) rotate(-1.2deg) scale(1)', opacity: 1 }, { transform: `translate(${dx * .3}px,${dy * .25 - 36}px) rotate(5deg) scale(.5)`, opacity: 1, offset: .42 }, { transform: `translate(${dx}px,${dy}px) rotate(0deg) scale(${sc})`, opacity: .25 }], { duration: 660, easing: 'cubic-bezier(.45,.05,.35,1)', fill: 'forwards' });
+  } else ZC.a = el.animate(rm ? [{ opacity: 1 }, { opacity: 0 }] : [{ opacity: 1, transform: 'translateY(0) rotate(-1.2deg)' }, { opacity: 0, transform: 'translateY(14px) rotate(-.4deg)' }], { duration: rm ? 380 : 320, easing: 'ease-in', fill: 'forwards' });
+  const a = ZC.a; a.onfinish = () => { if (ZC.a !== a) return; ZC.a = null; ZC.lim = 0; el.className = ''; a.cancel(); if (first) bagGot(GUI.kind !== 'inv'); }; // 飛到一半打開了手帳：不加墨點（已經看到了）
+}
+// 立刻收掉（換下一張、打開介面）：動畫取消、藏起來
+function zcEnd() { ZC.on = false; ZC.lim = 0; if (ZC.a) { const a = ZC.a; ZC.a = null; a.cancel(); } const el = $('#zoneTitle'); if (el) el.className = ''; }
+// 訊息列（左下的 toast）與字卡：字卡疊在訊息列上面（z-index 3），手機橫拿時訊息列一路伸到字卡底下。字卡在的時候（含收起來的動畫），
+// 已經在、會被往上推進字卡那一排的字，和這段時間新跳出來的字，寬度都限制在字卡左邊（含紙膠帶）之前——太長的就換行，字不會被字卡蓋住。
+// 限制就留在那一則上（它 6 秒後自己消失），字卡收起來時不會再重排一次。新跳的那則用 MutationObserver 在畫出來之前就套上（不改 toast()）
+function zcLog(el) {
+  const lg = $('#log'); ZC.lim = 0; if (!lg) return; const lr = lg.getBoundingClientRect(), x = parseFloat(el.style.left) - 11, y = parseFloat(el.style.top), h = el.offsetHeight;
+  if (!(x < lr.right && y < lr.bottom && y + h > lr.bottom - 120)) return; // 字卡不在訊息列那一欄（或在四則以上的高度）：不用管
+  const lim = Math.floor(x - 8 - lr.left); if (lim < 110) return; // 擠不出一句話的寬：不限制（zcPlace 已經盡量避開了）
+  ZC.lim = lim; lg.querySelectorAll('.logl').forEach(e => { if (e.getBoundingClientRect().bottom > y - 30) e.style.maxWidth = lim + 'px'; });
+  if (!ZC.mo && window.MutationObserver) { ZC.mo = new MutationObserver(ms => { if (ZC.lim) ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) n.style.maxWidth = ZC.lim + 'px'; })); }); ZC.mo.observe(lg, { childList: true }); }
+}
+// 位置：預設在快捷列（與經驗條上的等級字）正上方置中；碰到準心與提示字的保留區、教學小卡、「點擊畫面開始」、對話泡泡、觸控按鈕、體溫條就往上找，
+// 再不行就往旁邊挪（離中間越近越先試，最遠到貼著左右邊）；都放不下就換小一號的字卡再找一次。準心下方的提示字（#prompt）空著也先留位置：字卡出現途中對準東西不會被蓋住
+function zcPlace(el) {
+  const vw = innerWidth, vh = innerHeight, cx = vw / 2, cy = vh / 2, ob = [[cx - 150, cy - 34, cx + 150, cy + 58]];
+  // 透明度不看（開場剛結束時 HUD 正從 0 淡入）；對話泡泡例外：說完淡掉的泡泡還留在原地
+  const add = (e, p = 6, op) => { if (!e || e.hidden) return; const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || (op && +cs.opacity < .05)) return; const r = e.getBoundingClientRect(); if (r.width > 0 && r.height > 0) ob.push([r.left - p, r.top - p, r.right + p, r.bottom + p]); };
+  ['#prompt', '#coach', '#startHint', '#hfree', '#coop', '#warm', '#rideFF'].forEach(q => add($(q))); if (TOUCH) document.querySelectorAll('#touch .tbtn').forEach(e => add(e)); document.querySelectorAll('#talk .tkw, #talk .bkw').forEach(e => add(e, 10, 1));
+  document.querySelectorAll('#log .logl:not(.old)').forEach(e => { const n = ob.length; add(e, 6, 1); if (ob.length > n) ob[n][1] -= 30; }); // 訊息列上的字：字卡在的時候新的一則會把它往上推一格
+  let floor = vh - 72; for (const q of ['#bottom', '#xpbar span']) { const e = $(q), r = e && e.getBoundingClientRect(); if (r && r.height) floor = Math.min(floor, r.top - 6); } // 字卡的下緣：快捷列、經驗條上方的等級字（經驗值飄字也在那一行）
+  const put = (x, y) => { el.style.left = Math.round(x) + 'px'; el.style.top = Math.round(y) + 'px'; };
+  for (const sm of [false, true]) { // 矮的畫面（手機橫拿）：小一號、一行的字卡，正好塞進提示字與經驗條之間
+    el.classList.toggle('sm', sm); const w = el.offsetWidth, h = el.offsetHeight, hit = (x, y) => ob.some(o => x < o[2] && x + w > o[0] && y < o[3] && y + h > o[1]);
+    const xs = [cx - w / 2, 16, vw - 16 - w]; ob.forEach(o => xs.push(o[2] + 1, o[0] - w - 1)); xs.sort((a, b) => Math.abs(a + w / 2 - cx) - Math.abs(b + w / 2 - cx)); // 置中放不下：先試緊貼著擋路的東西往旁邊挪一點（例如訊息列上一則長的字），離中間越近越先試
+    for (const x of xs) for (let y = floor - h; y >= cy + 30; y -= 4) if (x >= 8 && x + w <= vw - 8 && !hit(x, y)) return put(x, y);
+  }
+  put(cx - el.offsetWidth / 2, Math.max(cy + 58, floor - el.offsetHeight)); // 都放不下：小一號的、置中，寧可壓到經驗條也不擋準心下方的提示字
 }
 /* 奶奶的切片機（第一個捏捏完成時送的）：產線空地的帆布棧板留著，等你看見才演——沒開介面、鏡頭在眼睛、不在城市、40 m 內、
    產線在畫面中央 80%、從眼睛到產線的視線沒有被小屋擋住（站在屋裡隔著後牆不算）；或在 60 m 內累計等了 25 秒。
@@ -5831,7 +5926,8 @@ function startPlay() {
   playReady();
 }
 function playReady() {
-  $('#startHint').hidden = TOUCH || locked(); W.camAway = false; toast(S.tutDone ? '歡迎回到月光谷。左上角是目前目標。' : '歡迎來到月光谷！跟著畫面中央的提示一步一步來。');
+  $('#startHint').hidden = TOUCH || locked(); W.camAway = false; zoneArrive(true);
+  const hi = S.tutDone ? '歡迎回到月光谷。左上角是目前目標。' : '歡迎來到月光谷！跟著畫面中央的提示一步一步來。'; if (ZC.on) setTimeout(() => { if (!TITLE.on) toast(hi); }, ZC.hold + (ZC.first ? 700 : 350)); else toast(hi); // 老玩家：開場結束先浮出地名字卡，收起來之後才說歡迎回來（不同時跳兩則）
   if (!S.seen) { S.seen = true; save(); } // 奶奶的信不再跳出來：它就躺在手作台上（placeLetter），拿起來讀。S.seen 是「有存檔」的依據（hasSave／savesInfo）
 }
 function avatarSVG(id) {
@@ -8478,7 +8574,7 @@ function rideStep(dt) {
   if (R.ph === 'drive') { const T1 = R.legs[0].dur, l = R.legs[R.li], p = legAt(l, legS(l, R.li ? R.t - T1 : R.t), RP), v = p.v * R.rate; R.v = v; R.a = rm ? 0 : v * p.dv * R.rate; R.alat = rm ? 0 : -v * v * p.k; R.s = p.s; placeCab(cab, p, R.sus, dt, R.a, R.alat); }
   else { R.v = R.a = R.alat = 0; placeCab(cab, R.park, R.sus, dt, 0, 0); }
   rideCam(dt);
-  if (swapped) { W.quietZone = true; cullChunks(P); landmarkStep(); DRS.skip = 2; }
+  if (swapped) { cullChunks(P); landmarkStep(); DRS.skip = 2; }
   if (R.ph === 'drive' && !cab.userData.city && (R.sN = (R.sN || 0) + 1) % 4 === 0) rideSlimes(cab);
   rideEnv(dt); rideSnd.step(R.v, R.k, !cab.userData.city && R.ue < 0, R.held);
   if (R.log) R.log.push([+now.toFixed(1), R.ph, R.li, +R.t.toFixed(1), +W.cam.position.x.toFixed(4), +W.cam.position.y.toFixed(4), +W.cam.position.z.toFixed(4), +P.yaw.toFixed(5), +R.u.toFixed(4), W.cam.layers.mask, +R.rate.toFixed(3), W.r.info.programs.length]);
@@ -8539,7 +8635,7 @@ function rideEnv(dt) {
   if (k > .5 && !R.out) W.envT = now; // 深處不重新烘焙天空環境光：換邊前後車身反射的是同一張；出洞那一格再放行（曝光正在閃，看不出來）
   if (R.snap > 0 && --R.snap === 0) { W.sky.material.uniforms.bot.value.copy(ENVC[0]); W.sky.material.uniforms.top.value.copy(ENVC[1]); W.sun.color.copy(ENVC[2]); } // 換邊後天空直接換成這一頭的顏色（深處看不到天空）
   // 曝光：管子裡眼睛適應黑暗、快到出口越來越亮；衝出洞口那一格「豁然開朗」，之後交給 caveEnv 每格往 1 拉
-  if (dest && !R.out && u < 0 && R.ph === 'drive') { R.out = true; CV.flash = rm ? .6 : 1; rideSnd.whoosh(); W.envT = now - 900; if (cu.city && !(S.seenZone && S.seenZone.city) && typeof caveReveal === 'function') { caveReveal('大城市', '穿過月光隧道，大街就在眼前'); (S.seenZone = S.seenZone || {}).city = true; } } // 天空環境光 0.6 秒後才重新烘焙（不擠在出洞那一格）
+  if (dest && !R.out && u < 0 && R.ph === 'drive') { R.out = true; CV.flash = rm ? .6 : 1; rideSnd.whoosh(); W.envT = now - 900; if (cu.city) (S.seenZone = S.seenZone || {}).city = true; } // 天空環境光 0.6 秒後才重新烘焙（不擠在出洞那一格）；下一格 envStep 換區：地名字卡、配樂、環境粒子一起換
   if (k > .001 && !R.out) { const rem = dest ? ue : 2 * TAXI.U - ue; W.r.toneMappingExposure = 1 - .1 * k + .35 * smooth(14, 2, rem) * k; }
   for (const X of TUBES) { let a = 0; if (X === T) a = smooth(14, 5, u) * (1 - smooth(3.5, .8, u)); X.card.visible = a > .003; if (X.card.visible) { X.card.material.opacity = a; X.card.material.color.copy(tubeCardColor(X.zone)); } } // 出口亮光卡
   DRS.good = 0; // 隧道裡畫得少：不要趁機升解析度，出洞那一格會掉幀
@@ -8638,7 +8734,6 @@ function rideFly(dt) {
   if (hd > .05) F.yw = lerpAng(F.yw, Math.atan2(-hx, -hz), kd); F.pc += (clamp(-.16 + .4 * Math.atan2(RV2.y - cam.position.y, Math.max(hd, .3)), -.55, .15) - F.pc) * kd;
   RQ.setFromEuler(RE.set(F.pc, F.yw, 0, 'YXZ')); cam.quaternion.copy(F.q0).slerp(F.q1, smooth(.15, .95, tau)).slerp(RQ, F.wc * smooth(0, .3, tau) * (1 - smooth(.6, 1, tau)));
   RV2.set(0, 0, -1).applyQuaternion(cam.quaternion); P.x = cam.position.x; P.z = cam.position.z; P.y = cam.position.y - P.eye; P.camY = P.y; P.yaw = R.lastYaw = Math.atan2(-RV2.x, -RV2.z); P.pitch = Math.asin(clamp(RV2.y, -1, 1)); P.vx = P.vz = P.vy = 0; P.ground = true;
-  W.quietZone = true; // 飛過別區的上空：不跳「進入○○」
 }
 // 落地：城市接著上車（鏡頭已經在右門外、看著後座，門開著）；月光谷就站在中央平地，操作交還
 function rideLand() {
@@ -9545,7 +9640,10 @@ function envStep(dt) {
   shC.set(fx, EP.y, fz); const a = Math.round(shC.dot(SUN_R) / tx) * tx, b = Math.round(shC.dot(SUN_U) / tx) * tx, c = shC.dot(SUN_D);
   shC.copy(SUN_R).multiplyScalar(a).addScaledVector(SUN_U, b).addScaledVector(SUN_D, c);
   W.sun.target.position.copy(shC); W.sun.position.copy(shC).addScaledVector(SUN_D, 66);
-  const zid = CV.c ? W.zoneNow : inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev && !W.quietZone) toast(zid === 'city' ? '抵達大城市' : `進入${ZONES.find(z => z.id === zid).name}`); W.quietZone = false; if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  // 換區：在洞裡、滑翔途中、計程車還沒鑽出目的地的洞口（RIDE.out）都不換——出洞、落地、出隧道那一格才換，音樂、環境音、環境粒子和地名字卡同一格切換
+  // （計程車在隧道深處就換到另一根管子了，人已經在另一頭；那時換的話配樂會比字卡早 1 秒換掉）
+  const zid = CV.c || (RIDE.on && (RIDE.ph === 'fly' || (RIDE.ph === 'drive' && !RIDE.out))) ? W.zoneNow : inCity() ? 'city' : domBiome(P.x, P.z); if (zid !== W.zoneNow) { const prev = W.zoneNow; W.zoneNow = zid; volcanoHint(zid); if (prev) zoneArrive(); if (S.zones.includes(zid)) (S.seenZone = S.seenZone || {})[zid] = true; }
+  zcStep();
   caveEnv(dt);
 }
 // 距離剔除：超出霧距的道具區塊不繪製（大城市時整片山谷都不畫）
@@ -9565,16 +9663,18 @@ let warmSig = '';
 function warmStep(dt) {
   const inS = inSnowZone();
   if (W.inSnow == null) { W.inSnow = inS; if (inS && !S.frozen && !(S.warm > 0)) S.warm = WARM_MAX; }
-  else if (inS !== W.inSnow) { W.inSnow = inS; if (inS && !S.frozen) { S.warm = WARM_MAX; W.warm1 = false; toast('進入雪原：體溫條（畫面左側）有 10 分鐘，歸零就會凍僵'); } }
+  else if (inS !== W.inSnow) { W.inSnow = inS; if (inS && !S.frozen) { S.warm = WARM_MAX; W.warm1 = false; W.warmTip = performance.now() + 6000; } } // 進雪原不跳 toast（換區只有地名字卡）：體溫條旁邊貼一張手寫小紙條 6 秒
   if (inS && !S.frozen) {
     S.warm = Math.max(0, S.warm - dt);
     if (S.warm <= 60 && !W.warm1) { W.warm1 = true; toast('體溫只剩 1 分鐘！快離開雪原'); }
     if (S.warm <= 0) { S.frozen = true; FZ.ev = 'freeze'; objSig = ''; saveCloud(); } // 不跳卡片：霜長滿畫面邊緣、手發抖、手指在霜上寫「去大城市的醫院看醫生」（frostStep），目標面板換成去醫院
   }
-  let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span>'; (document.getElementById('hud') || document.body).appendChild(el); }
-  const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen;
-  if (sig === warmSig) return; warmSig = sig; el.hidden = !show; document.body.classList.toggle('warmon', show); if (!show) return; // body.warmon：左邊的訊息列與（矮畫面時）教學小卡往右讓出體溫條（app/game.css）
-  el.classList.toggle('low', !S.frozen && pct < .25); el.classList.toggle('frozen', S.frozen);
+  let el = document.getElementById('warm'); if (!el) { el = document.createElement('div'); el.id = 'warm'; el.innerHTML = '<b>體溫</b><div class="wbar"><i></i></div><span></span><em class="wtip"><span>體溫只夠撐 10 分鐘，</span><span>歸零會凍僵</span></em>'; (document.getElementById('hud') || document.body).appendChild(el); }
+  const show = (inS || S.frozen) && !TITLE.on, pct = S.frozen ? 0 : S.warm / WARM_MAX, sec = Math.ceil(S.warm), tip = show && !S.frozen && performance.now() < (W.warmTip || 0), sig = show + '|' + pct.toFixed(2) + '|' + sec + '|' + S.frozen + '|' + tip;
+  if (sig === warmSig) return; warmSig = sig; el.hidden = !show; document.body.classList.toggle('warmon', show); if (!show) return; // body.warmon：左邊的訊息列往右讓出體溫條（app/game.css）
+  el.classList.toggle('low', !S.frozen && pct < .25); el.classList.toggle('frozen', S.frozen); el.classList.toggle('tip', tip);
+  // 不壓到左上的目標面板：手機橫拿時面板有三、四行高，條子置中會把「體溫」兩個字疊在目標的字上——往下移到面板下面（app/game.css 橫拿時條子也短一點）；每秒跟著倒數重算一次（矮的橫向畫面由 CSS 把體溫條貼到左下，這裡不設 top）
+  const ob = $('#objective'), orr = ob && ob.getBoundingClientRect(), hh = el.offsetHeight / 2; el.style.top = innerHeight > 520 && orr && orr.height && orr.bottom + 6 > innerHeight / 2 - hh ? Math.round(Math.min(orr.bottom + 6 + hh, innerHeight - 96 - hh)) + 'px' : '';
   el.querySelector('i').style.height = pct * 100 + '%'; el.querySelector('span').textContent = S.frozen ? '凍僵了' : Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
 }
 // 醫院：護理師在門口（聲音從門口出來）；「看醫生」要花錢，只能按數字或點選，E＝等一下
@@ -9846,6 +9946,7 @@ window.SlimeGame = {
   // 手上的紙（components/stations/Paper.tsx）與手帳的剪貼區：papers() 新的在前；paperAt(i) 重讀第 i 張（i＝S.papers 的索引）
   paper: paperNow, papers: () => S.papers.map((r, i) => { const s = paperSpec(r); return s && { i, id: r.id, v: s.v, name: s.name, zone: s.zone || '', gift: !!s.gift, torn: !!s.torn, gn: !!s.gn, t: r.t, isNew: r.t > S.jrSeen }; }).filter(Boolean).reverse(),
   paperAt: i => { const r = S.papers[i], s = paperSpec(r); return s ? paperView(s, { flip: CLIP.flip, t: r.t }) : null; }, paperOf: id => PAPERS[id] ? paperView(PAPERS[id], { rev: 0, live: 1 }) : null, rcptView: d => paperView(rcptSpec(d), {}), clip: () => CLIP.i, hasPaper, postcardImg: z => postcardArt(z).img(), PAPERS,
+  ZSK, skSvg, // 換區的地名字卡與手帳的旅行速寫（Inventory.tsx 的 Sketches、Paper.tsx 的 sketch）
 };
 
 /* ---------- 啟動 ---------- */

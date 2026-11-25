@@ -43,11 +43,12 @@ export type Game = {
   ship?: Ship[]; wareState?: (t: string, k: string) => WareState | null;
   paper?: () => PaperData | null; papers?: () => PaperRow[]; paperAt?: (i: number) => PaperData | null; paperOf?: (id: string) => PaperData | null; rcptView?: (d: Rcpt) => PaperData;
   clip?: () => number; hasPaper?: (id: string) => boolean; postcardImg?: (z: string) => string;
+  ZSK?: Record<string, { name: string; sub: string[]; acc: string }>; skSvg?: (z: string) => string; // 換區的地名字卡與手帳的旅行速寫（區名、副標、鉛筆線稿的 SVG 字串）
 };
-// 手上的紙（game.js 的 paperView）：v＝letter／note／postcard／receipt；b＝內文每一行；rev＝字已經寫好；live＝要跑墨水；hint＝右下按鍵提示的透明度
+// 手上的紙（game.js 的 paperView）：v＝letter／note／postcard／receipt／flyer／sketch；b＝內文每一行；rev＝字已經寫好；live＝要跑墨水；hint＝右下按鍵提示的透明度；art＝速寫的線稿（SVG 字串）
 export type Rcpt = { n: number; inc: number; tip: number; fan: number; sec: number; t: number; torn?: number };
 export type PaperData = {
-  id: string; v: string; name: string; head: string; b: string[]; sig: string; zone: string; zoneName: string; acc: string; gift: boolean; torn?: boolean; d: Rcpt | null;
+  id: string; v: string; name: string; head: string; b: string[]; sig: string; zone: string; zoneName: string; acc: string; art?: string; gift: boolean; torn?: boolean; d: Rcpt | null;
   gn: boolean; pg: number; dd: string; stamp: string; // 奶奶的筆記：筆記本的一頁、頁碼、左下的小塗鴉、蓋在紙上的小秘密章
   who: string; day: string; touch: boolean; rm: boolean; rev: number; flip: number; live: number; hint: number | boolean; seq: number;
 };

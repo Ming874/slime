@@ -518,6 +518,18 @@ body.frosty #rideHint,body.frosty #introSkip{color:#fff}
 body.warmon #log{left:54px} /* 雪原的體溫條在左邊正中間（高 190px）：矮的畫面上訊息列一長就會被它蓋住開頭的字，有體溫條時整列往右讓開 */
 /* 矮的橫向畫面：體溫條原本在左邊正中間、高 190px，390px 高的畫面上會蓋住目標面板的字；改成貼著左下往上長、短一點（訊息列與教學小卡已經往右讓開） */
 @media (max-height:520px) and (orientation:landscape){#warm{top:auto;bottom:calc(var(--slot) + 40px + env(safe-area-inset-bottom));transform:none}#warm .wbar{height:110px}}
+#warm>span{font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000a;white-space:nowrap} /* 倒數的時間（紙條裡的兩句也是 span，不要套到陰影） */
+/* 進雪原（5.7）：不跳 toast，體溫條旁邊貼一張手寫小紙條 6 秒（game.js 的 warmStep 加 .tip）；減少動態時全域規則把淡入縮成一瞬間 */
+#warm .wtip{position:absolute;left:40px;top:50%;padding:5px 12px 6px;background:#fffaf0;color:var(--pp-ink);font:400 15px/1.35 var(--pp-hand);white-space:nowrap;border-radius:3px 6px 4px 5px;box-shadow:0 8px 18px -10px #000b;
+  transform:translateY(-50%) rotate(-2deg);opacity:0;visibility:hidden;transition:opacity .5s,visibility .5s;font-style:normal;text-shadow:none}
+#warm .wtip::before{content:"";position:absolute;left:-7px;top:50%;margin-top:-6px;border:6px solid #0000;border-right-color:#fffaf0;border-left:0}
+#warm.tip .wtip{opacity:1;visibility:visible}
+#warm.tip{z-index:3} /* 紙條在的 6 秒：疊在目標星星（#wp，同樣 3、比 #warm 早放進 #hud）上面，星星飄過去不會蓋住紙條的字；對話泡泡（#talk 4）照樣在最上面 */
+#warm .wtip span{display:inline-block;white-space:nowrap} /* 兩句各自不斷行：要換行只會換在「，」後面，不會斷成「10 分｜鐘」 */
+/* 直拿（窄又高）：體溫條在畫面正中間的高度，紙條貼在條子中段會伸到準心上——改貼在條子上端、「體溫」兩個字旁邊，兩句疊成兩行
+   （絕對定位、寬度自動縮成最長那一句的寬）。條子上端離準心 100 多 px、在左上目標面板下面；橫拿與桌機照舊貼在中段 */
+@media (orientation:portrait){#warm .wtip{white-space:normal;top:-3px;transform:rotate(-2deg)}#warm .wtip::before{top:13px;margin-top:0}}
+@media (max-height:520px){#warm .wbar{height:110px}} /* 橫拿：game.js 的 warmStep 把條子移到目標面板下面，短一點才不會伸到左下的訊息列與 N 鈕 */
 @keyframes warmBlink{50%{box-shadow:0 0 10px #fb7185}}
 
 /* 第 3 堂：時鐘（指南針旁）——「一天」的軌道依長度上色（白天 5、黃昏 1、夜晚 3、黎明 1 分鐘），太陽／月亮沿軌道走；
@@ -584,14 +596,37 @@ body.warmon #log{left:54px} /* 雪原的體溫條在左邊正中間（高 190px�
 .ico.shape{background:none!important;box-shadow:none;border-radius:0;transform:rotate(-8deg);filter:drop-shadow(0 2px 2px #0006)}
 .ico.shape svg{display:block;width:100%;height:100%;fill:initial;stroke:initial}
 
-/* 第 4 堂：第一次走出山洞時，區名大字浮現（caves.js 的 caveReveal） */
-#zoneTitle { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; opacity: 0; z-index: 6; color: #fff; text-shadow: 0 2px 18px rgba(0, 0, 0, .45), 0 0 2px rgba(0, 0, 0, .5); }
-#zoneTitle small { display: block; font-size: 14px; letter-spacing: .4em; opacity: .85; margin-bottom: 6px; }
-#zoneTitle b { display: block; font: 700 clamp(44px, 8vw, 88px)/1.1 "LXGW WenKai TC", "Slime Hand", "Kaiti TC", "BiauKai", serif; letter-spacing: .12em; }
-#zoneTitle span { display: block; margin-top: 10px; font-size: clamp(14px, 2vw, 18px); opacity: .92; }
-#zoneTitle.on { animation: zoneTitle 4.2s ease forwards; }
-@keyframes zoneTitle { 0% { opacity: 0; transform: translate(-50%, -42%); letter-spacing: .3em; } 18% { opacity: 1; transform: translate(-50%, -50%); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -54%); } }
-@media (prefers-reduced-motion: reduce) { #zoneTitle.on { animation: zoneTitleR 4.2s linear forwards; } @keyframes zoneTitleR { 0%, 100% { opacity: 0; } 12%, 80% { opacity: 1; } } }
+/* 換區（5.7）：畫面下方浮出一張手寫地名字卡——左邊一張小速寫（鉛筆線＋淡淡的水彩）、區名＋一句副標，左上角貼一條該區顏色的紙膠帶。
+   位置由 game.js 的 zcPlace 每次出現時算（避開準心、提示字、教學小卡、對話泡泡、快捷列、觸控按鈕）；進出場用 WAAPI：
+   全域的「減少動態」規則管不到它，減少動態時 game.js 只淡入淡出。第一次（.draw）：線稿一筆一筆畫出來、字用墨水從左寫到右。
+   z-index 比對話泡泡（#talk 4）低：字卡出現之後才冒出來的泡泡疊在字卡上面，泡泡永遠不會被擋 */
+#zoneTitle{position:fixed;left:0;top:0;z-index:3;display:none;align-items:center;gap:12px;padding:8px 22px 9px 10px;max-width:calc(100vw - 32px);box-sizing:border-box;
+  background:linear-gradient(#0000 calc(100% - 3px),#78603c14 0),#fffaf0;color:var(--pp-ink);border-radius:3px 7px 4px 6px;box-shadow:0 1px 0 #78603c26,0 14px 26px -12px #000b;
+  pointer-events:none;font-family:var(--pp-hand);text-shadow:none;transform:rotate(-1.2deg);transform-origin:50% 50%;-webkit-user-select:none;user-select:none;will-change:transform,opacity}
+#zoneTitle.on{display:flex}
+#zoneTitle::before{content:"";position:absolute;left:-9px;top:-8px;width:56px;height:17px;background:color-mix(in srgb,var(--acc,#a7f3d0) 78%,transparent);transform:rotate(-16deg);box-shadow:0 1px 1px #0001}
+#zoneTitle .zc-sk{flex:none;width:68px;height:43px;border-radius:2px;background:#fdf6e3;box-shadow:inset 0 0 0 1px #78603c1f}
+#zoneTitle .zc-tx{display:flex;align-items:baseline;gap:.75em;white-space:nowrap;min-width:0}
+#zoneTitle b{font-weight:400;font-size:31px;line-height:1.15;letter-spacing:.1em}
+#zoneTitle .zc-tx span{font-size:17px;line-height:1.3;color:var(--pp-ink2);letter-spacing:.04em}
+#zoneTitle.sm{gap:8px;padding:5px 14px 5px 7px}
+#zoneTitle.sm::before{width:44px;height:13px;left:-7px;top:-6px}
+#zoneTitle.sm .zc-sk{width:46px;height:29px}
+#zoneTitle.sm b{font-size:22px}
+#zoneTitle.sm .zc-tx span{font-size:14px}
+@media (max-width:520px){#zoneTitle:not(.sm) .zc-tx{flex-direction:column;align-items:flex-start;gap:0}#zoneTitle b{font-size:27px}}
+#zoneTitle.draw .zl path{animation:zcDraw .42s calc(var(--i) * 60ms + 120ms) ease-out both}
+#zoneTitle.draw .zw,#zoneTitle.draw .zl2{animation:zcFade .5s .75s both}
+#zoneTitle.draw b{animation:zcInk .5s .3s linear both}
+#zoneTitle.draw .zc-tx span{animation:zcInk .5s .8s linear both}
+@keyframes zcDraw{from{stroke-dasharray:1;stroke-dashoffset:1;stroke-opacity:0}8%{stroke-opacity:1}to{stroke-dasharray:1;stroke-dashoffset:0;stroke-opacity:1}}
+@keyframes zcFade{from{opacity:0}}
+@keyframes zcInk{from{clip-path:inset(-30% 100% -30% -10%)}to{clip-path:inset(-30% -12% -30% -10%)}} /* 寫完的框比字大一圈：手寫字的筆畫出框也不會被裁 */
+/* 速寫的線稿（字卡左邊那張、手帳的旅行速寫）：game.js 的 skSvg */
+/* 線寬是 viewBox 單位、跟著畫的大小縮放：字卡上的小張（約 68 px 寬）用 2，手帳裡的縮圖與抽出來的大張另外調細；四邊淡出，像速寫本上沒有框的畫 */
+.zsk{display:block;width:100%;height:100%;overflow:visible;-webkit-mask:linear-gradient(90deg,#0000,#000 5% 95%,#0000),linear-gradient(#000 88%,#0000);-webkit-mask-composite:source-in;mask:linear-gradient(90deg,#0000,#000 5% 95%,#0000),linear-gradient(#000 88%,#0000);mask-composite:intersect}
+.zsk .zl path,.zsk .zl2 path{fill:none;stroke:var(--pp-ink,#3b2f2a);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.zsk .zl2 path{stroke-width:1.1;opacity:.32}
 
 /* 第 4 堂：開場的穿越機鏡頭——HUD 先收起來（訊息列 #log 照常，房號、時段提示看得到）、上下一點黑邊、右下角「略過」提示；
    最後 0.8 秒黑邊收回（intro-out），結束時 HUD 用 0.5 秒淡入（intro-done），不會一下子跳回來 */

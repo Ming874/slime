@@ -666,6 +666,26 @@
 .rx-clip.v-receipt .rx-clip-p i{position:absolute;inset:8px 6px 10px;background:repeating-linear-gradient(#0000 0 5px,#3b2f2a40 5px 6px)}
 .rx-clip.v-flyer .rx-clip-p{width:56px;background:#fde68a;outline:3px dashed #dc2626;outline-offset:-3px}
 .rx-clip.v-flyer .rx-clip-p i{position:absolute;left:10px;right:10px;top:12px;height:8px;background:#b91c1c;border-radius:2px;box-shadow:0 14px 0 -1px #fffaf0,0 24px 0 -1px #fffaf0}
+/* 手帳：旅行速寫（第一次到一區時，換區的地名字卡收進來的那一頁，game.js 的 zcShow）。縮圖是速寫本的一頁、上緣一排線圈孔、鉛筆線稿；
+   點一下在手帳中央抽出來看（和剪貼區共用 .rx-clipview）；線稿的筆觸樣式在 game.css 的 .zsk */
+.rx-sketches{grid-column:1/-1;padding:12px 14px 16px;border-radius:10px;background:color-mix(in srgb,#e0f2fe 12%,var(--card));border:1.5px dashed color-mix(in srgb,#0369a1 28%,var(--line))}
+.rx-clip.v-sketch{width:120px}
+.rx-clip.v-sketch .rx-clip-p{height:80px;padding:11px 6px 4px;box-sizing:border-box;background:#fdfbf4}
+.rx-clip.v-sketch .rx-clip-p::before{left:9px;right:9px;top:3px;width:auto;height:6px;margin:0;transform:none;background:radial-gradient(circle,#0000 1.4px,#78603c99 1.8px 2.5px,#0000 2.9px) 0 50%/10px 6px repeat-x}
+.rx-clip.v-sketch small{font-size:13.5px;letter-spacing:.06em}
+.rx-clip.v-sketch .zsk .zl path{stroke-width:1.7}.rx-clip.v-sketch .zsk .zl2 path{stroke-width:1}
+.rx-clipview[data-v="sketch"] .rx-clipview-in{width:min(460px,92%);height:auto;aspect-ratio:4/3;max-height:82%}
+.pp-sketch{display:flex;flex-direction:column;gap:6px;padding:30px 26px 18px;background:#fdfbf4}
+.pp-sk-rings{position:absolute;left:20px;right:20px;top:9px;height:12px;background:radial-gradient(circle,#0000 3px,#78603c 3.4px 4.6px,#0000 5px) 0 50%/22px 12px repeat-x}
+.pp-sk-art{flex:1 1 0;min-height:60px}
+.pp-sk-art .zsk .zl path{stroke-width:.9}.pp-sk-art .zsk .zl2 path{stroke-width:.55;opacity:.4} /* 大張：畫放大 2～3 倍，線要細回鉛筆的粗細 */
+.pp-sk-tx{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 .8em}
+.pp-sk-name{font-size:30px;line-height:1.25;letter-spacing:.1em}
+.pp-sk-sub{font-size:18px;color:var(--pp-ink2)}
+.pp .pp-sk-date{margin-left:auto;font-size:14px;color:var(--pp-ink2);transform:rotate(-3deg)}
+@media (max-height:500px){.pp-sketch{padding:26px 20px 12px}.pp-sk-name{font-size:24px}.pp-sk-sub{font-size:16px}
+  .rx-clipview[data-v="sketch"]{padding:10px 20px 28px}.rx-clipview[data-v="sketch"] .rx-clipview-in{width:auto;height:100%;max-height:none;max-width:92%}} /* 手機橫拿：用滿手帳的高度、寬度跟著 4:3，不壓到底下「點一下放回」 */
+@media (max-aspect-ratio:3/4){.rx-clipview[data-v="sketch"] .rx-clipview-in{aspect-ratio:4/5}} /* 手機直拿：字會換成兩三行，頁面拉高一點，畫才不會被擠小 */
 .rx-clipview{position:absolute;inset:0;z-index:30;display:grid;place-items:center;padding:20px;background:#f5ead0c4;cursor:pointer;animation:rx-clip-in .3s cubic-bezier(.2,.8,.2,1) both}
 .rx-clipview-in{position:relative;width:min(400px,92%);height:min(300px,80%)}
 .rx-clipview[data-v="letter"] .rx-clipview-in{width:min(420px,92%);height:min(520px,88%)}

@@ -25,6 +25,7 @@ export default function Inventory() {
       </div>
       <Quest />
       <Eggs />
+      <Sketches />
       <Clips />
     </div>
   );
@@ -140,10 +141,15 @@ function Eggs() {
 // 收到的信與明信片（手上的紙收起來的地方）：迷你的紙交錯旋轉、貼一條紙膠帶，新的貼紅色「新」；點一下就在手帳中央抽出來重讀，再點一下或按 E 放回
 const CLIP_R = (id: string) => { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) % 997; return (h % 9) - 4; };
 function Clips() {
-  // 只有手帳開著時才把重讀的紙畫進 #gwin：#gwin 是所有介面共用的框，換成別的介面時不能留著
-  const g = G(), list = g.papers?.() ?? [], ci = g.kind === 'inv' ? g.clip?.() ?? -1 : -1, cur = ci >= 0 ? g.paperAt?.(ci) : null;
+  // 只有手帳開著時才把重讀的紙畫進 #gwin：#gwin 是所有介面共用的框，換成別的介面時不能留著；旅行速寫另外一區（Sketches），抽出來看也走這裡
+  const g = G(), list = (g.papers?.() ?? []).filter((c) => c.v !== 'sketch'), ci = g.kind === 'inv' ? g.clip?.() ?? -1 : -1, cur = ci >= 0 ? g.paperAt?.(ci) : null;
   const host = typeof document !== 'undefined' ? document.getElementById('gwin') : null;
-  if (!list.length) return null;
+  const view = cur && host ? createPortal(
+    <div className="rx-clipview" data-act="clipClose" role="dialog" aria-label={`重讀：${cur.name}`} data-v={cur.v}>
+      <div className="rx-clipview-in"><PaperView p={cur} /></div>
+      <small className="rx-clipview-tip">{cur.touch ? '點一下放回' : '點一下或按 E 放回'}</small>
+    </div>, host) : null;
+  if (!list.length) return view;
   return (
     <div className="rx-clips">
       <div className="rx-clips-hd"><b>收到的信與明信片</b><span>{list.length} 張</span></div>
@@ -156,11 +162,30 @@ function Clips() {
           </button>
         ))}
       </div>
-      {cur && host && createPortal(
-        <div className="rx-clipview" data-act="clipClose" role="dialog" aria-label={`重讀：${cur.name}`} data-v={cur.v}>
-          <div className="rx-clipview-in"><PaperView p={cur} /></div>
-          <small className="rx-clipview-tip">{cur.touch ? '點一下放回' : '點一下或按 E 放回'}</small>
-        </div>, host)}
+      {view}
+    </div>
+  );
+}
+
+// 旅行速寫（第一次到一區時，換區的地名字卡收進手帳的那一頁，game.js 的 zcShow）：速寫本的一頁一頁，照第一次去的順序；點一下在手帳中央抽出來看（和剪貼區共用 clipOpen）
+function Sketches() {
+  const g = G(), list = (g.papers?.() ?? []).filter((c) => c.v === 'sketch').reverse();
+  if (!list.length) return null;
+  return (
+    <div className="rx-sketches">
+      <div className="rx-clips-hd"><b>旅行速寫</b><span>{list.length} / {Object.keys(g.ZSK ?? {}).length || 5} 頁</span></div>
+      <div className="rx-clip-row">
+        {list.map((c) => {
+          const nm = g.ZSK?.[c.zone]?.name ?? c.name;
+          return (
+            <button key={c.i} type="button" className={`rx-clip v-sketch${c.isNew ? ' new' : ''}`} data-act="clipOpen" data-k={c.i} style={{ '--r': `${CLIP_R(c.id + c.t) * .6}deg` } as CSSProperties} aria-label={`看看速寫：${nm}`}>
+              <span className="rx-clip-p" aria-hidden="true" dangerouslySetInnerHTML={{ __html: g.skSvg?.(c.zone) ?? '' }} />
+              <small>{nm}</small>
+              {c.isNew && <em>新</em>}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
