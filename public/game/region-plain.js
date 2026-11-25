@@ -1,7 +1,7 @@
 'use strict';
 /* 中央平地（森林）與南方山景：地形多元化與場景細節（登記方式見 regions.js）。內容都包在 IIFE 裡，避免和別的檔案撞名
    - 地形（基礎單位；只動 max(|x|,|z|) < 42、離中心 17 以外）：東北的岩層方山（7 m，四面斷崖＋往西北一條緩坡）、西北的白樺丘、西南的苔石丘、
-     東南從南面山壁的瀑布流下來的小溪（瀑布潭 → 溪谷（小木橋底下一段淺灘）→ 溪尾小水潭），和幾座緩緩的小丘。
+     東南從南面山壁的瀑布流下來的小溪（瀑布潭 → 溪谷（架著一座拱起來的小木橋，走得上去）→ 溪尾小水潭），和幾座緩緩的小丘。
      小徑、小場景、地標、謎題、山洞口與月光裂縫、計程車走廊附近都淡到 0，區域邊界（42）也淡到 0，不留接縫
    - 隨機的樹與石頭（buildProps）：溪、方山和周圍一圈草地、白樺丘、苔石丘與幾片林間空地不長，樹林成群、空地留白，這些地方改放這裡設計好的東西
    - 場景物件：每一塊（東北、西北、西南、東南）分成大物件、細節兩個網格交給 cullChunks（手機合成一個）；風吹、夜光、遠處細節縮小都寫在頂點屬性裡
@@ -72,7 +72,7 @@
       if (d < bd) { bd = d; bt = C[i][2] + (C[i + 1][2] - C[i][2]) * t; }
     }
     const w = creekW(bt), sd = Math.sqrt(bd) - w;
-    if (sd < best.sd) best = { sd, s: POOL.s + (TAIL.s - POOL.s) * bt, w, D: .5 - .48 * Math.exp(-(((bt - BR.t) / .028) ** 2)), t: bt }; // 小木橋底下是一段淺淺的淺灘：走過橋的時候腳下（地形）只比橋面低一點
+    if (sd < best.sd) best = { sd, s: POOL.s + (TAIL.s - POOL.s) * bt, w, D: .5, t: bt }; // 小木橋底下照常是溪（人走在橋面上，見 buildCreek 的 regionWalk）
     return best;
   }
   const nearCreek = (x, z) => x > 26 && x < 43 && z > 9 && z < 43;
@@ -330,18 +330,30 @@
     for (let i = 0; i < 7; i++) { const a = 2.3 + i * .55 + rd() * .2, R = poolR(POOL, a) * K + 1.3 + rd() * 1.4, x = PK + Math.cos(a) * R, z = PZ + Math.sin(a) * R; if (okAt(x, z, .3)) fern(kf, x, z, .7 + rd() * .3, i * 3, i % 3 ? 0 : .7); }
     { const a = -2.1, R = poolR(POOL, a) * K + .3; reeds(kf, PK + Math.cos(a) * R, PZ + Math.sin(a) * R, 1, 3, POOL.s - .15); }
     const Cp = creekPts().p; let run = 0;
-    // 小木橋：一座平平的木板橋（橋下是淺灘，見 water() 的 D），兩邊有欄杆（碰撞），兩頭各墊兩塊石頭
+    // 小木橋：一座微微拱起的木板橋，兩邊有欄杆（碰撞），兩頭各一塊石階、墊兩塊石頭。橋面是可以走的表面（regionWalk）：
+    // 從兩頭的石階走上去、沿著拱起的橋面走過溪，溪水照常從橋底下流過（原本橋面貼著水面、橋下墊高成淺灘，過橋其實是涉水）
     { const i = Math.round(Cp.length * BR.t), [x, z, t] = Cp[i], fx = Cp[i + 3][0] - Cp[i - 3][0], fz = Cp[i + 3][1] - Cp[i - 3][1], fl = Math.hypot(fx, fz), ux = fx / fl, uz = fz / fl, rx = uz, rz = -ux;
-      const s = POOL.s + (TAIL.s - POOL.s) * t, X = x * K, Z = z * K, Ls = (creekW(t) + 1.15) * K, y = s + .16, ry = Math.atan2(-rz, rx), PL = ['#b08458', '#a07850', '#c09068'];
-      Object.assign(BR, { X, Z, rx, rz, Ls, y });
-      for (let u = -Ls, n = 0; u <= Ls; u += .32, n++) ks.add(new THREE.BoxGeometry(.29, .07, 1.5), PL[n % 3], M4(X + rx * u, Math.max(y, H(X + rx * u, Z + rz * u) + .05) - .035 + (n % 2) * .008, Z + rz * u, 0, ry + (hashN(n, 3, 7) - .5) * .04, 0));
+      const X = x * K, Z = z * K, Ls = (creekW(t) + 1.15) * K, ry = Math.atan2(-rz, rx), PL = ['#b08458', '#a07850', '#c09068'], at = u => [X + rx * u, Z + rz * u];
+      // 橋面（木板頂面）的高度 deck(u)：u＝沿著橋身離橋中心的距離；橋頭比橋腳的地面高 0.22、也比外面石階底下的地面高 0.16（岸往外還在變高的那頭不會低過岸），
+      // 中間再拱起 0.42，最陡約 0.3（走得上去，坡度上限 1.1）
+      const gE = sd => [H(...at(sd * Ls)), H(...at(sd * (Ls + .42)))], end = sd => { const [g0, g1] = gE(sd); return Math.max(g0 + .22, g1 + .16); };
+      const yA = end(-1), yB = end(1), ARC = .42, deck = u => yA + (yB - yA) * (u + Ls) / (2 * Ls) + ARC * (1 - (u / Ls) ** 2), tilt = u => Math.atan((yB - yA) / (2 * Ls) - 2 * ARC * u / (Ls * Ls));
+      Object.assign(BR, { X, Z, rx, rz, Ls, y: deck(0) });
+      for (let u = -Ls, n = 0; u <= Ls + 1e-6; u += .32, n++) { const [px, pz] = at(u); ks.add(new THREE.BoxGeometry(.29, .07, 1.5), PL[n % 3], M4(px, deck(u) - .035 + (n % 2) * .008, pz, 0, ry + (hashN(n, 3, 7) - .5) * .04, tilt(u))); }
+      // 兩根順著拱的橋樑（木板底下）、溪岸上的四根短樁（從岸邊撐著橋樑，看起來是架在岸上，不是浮著）
+      const beam = (u0, u1, o, dy, w, col) => { const [ax, az] = at(u0), [bx, bz] = at(u1), ya = deck(u0) + dy, yb = deck(u1) + dy, L = Math.hypot(u1 - u0, yb - ya); ks.add(new THREE.BoxGeometry(L + .02, w, w), col, M4((ax + bx) / 2 + ux * o, (ya + yb) / 2, (az + bz) / 2 + uz * o, 0, ry, Math.atan2(yb - ya, u1 - u0))); };
+      [-1, 1].forEach(e => { for (let k = 0; k < 6; k++) beam(-Ls - .12 + k * (2 * Ls + .24) / 6, -Ls - .12 + (k + 1) * (2 * Ls + .24) / 6, e * .55, -.14, .13, '#7a5a3c');
+        [-1, 1].forEach(sd => { const u = sd * (Ls - .55), [px, pz] = at(u), qx = px + ux * e * .55, qz = pz + uz * e * .55, gy = H(qx, qz); seg(ks, V3(qx, gy - .3, qz), V3(qx, deck(u) - .16, qz), .07, '#6b4d33', 6); }); });
       [-1, 1].forEach(e => {
-        ks.add(new THREE.BoxGeometry(2 * Ls + .3, .13, .13), '#7a5a3c', M4(X + ux * e * .55, y - .14, Z + uz * e * .55, 0, ry, 0));
         let prev = null;
-        for (const k of [-.97, -.33, .33, .97]) { const px = X + rx * Ls * k + ux * e * .78, pz = Z + rz * Ls * k + uz * e * .78, p = V3(px, Math.max(y, H(px, pz)), pz); seg(ks, V3(px, p.y - .25, pz), V3(px, p.y + .8, pz), .055, '#6b4d33', 6); if (prev) { seg(ks, V3(prev.x, prev.y + .74, prev.z), V3(px, p.y + .74, pz), .04, '#8b6544', 6); seg(ks, V3(prev.x, prev.y + .4, prev.z), V3(px, p.y + .4, pz), .03, '#8b6544', 5); } prev = p; }
-        for (let u = -Ls; u <= Ls; u += .45) addCol({ x: X + rx * u + ux * e * .8, z: Z + rz * u + uz * e * .8, r: .1 }); // 欄杆：走在橋上不會從旁邊穿出去
+        for (const k of [-.97, -.5, 0, .5, .97]) { const u = Ls * k, [bx, bz] = at(u), px = bx + ux * e * .78, pz = bz + uz * e * .78, p = V3(px, deck(u), pz); seg(ks, V3(px, p.y - .25, pz), V3(px, p.y + .8, pz), .055, '#6b4d33', 6); if (prev) { seg(ks, V3(prev.x, prev.y + .74, prev.z), V3(px, p.y + .74, pz), .04, '#8b6544', 6); seg(ks, V3(prev.x, prev.y + .4, prev.z), V3(px, p.y + .4, pz), .03, '#8b6544', 5); } prev = p; }
+        for (let k = 0, n = Math.ceil(2 * Ls / .45); k <= n; k++) { const u = -Ls + k * 2 * Ls / n; addCol({ x: X + rx * u + ux * e * .8, z: Z + rz * u + uz * e * .8, r: .1 }); } // 欄杆：走在橋上不會從旁邊穿出去（兩頭對稱、到最後一根柱子）；橋底下也過不去：橋面離溪床不到 1.6 公尺，人鑽不過
         [-1, 1].forEach(sd => rock(ks, X + rx * sd * (Ls + .25) + ux * e * .95, Z + rz * sd * (Ls + .25) + uz * e * .95, .42, { sink: .4, col: false, mt: .8, seed: 880 + (e + 1) * 2 + (sd + 1) / 2 }));
-      }); }
+      });
+      // 兩頭的石階：一塊扁平的七角石板，頂面在地面和橋頭中間（地面 → 石階 → 橋頭，每級約 0.11）；靠岸的那頭埋進土坡
+      const steps = [-1, 1].map(sd => { const u = sd * (Ls + .42), [px, pz] = at(u), top = Math.max(gE(sd)[1] + .05, (sd < 0 ? yA : yB) - .11); ks.add(jit(new THREE.CylinderGeometry(.5, .56, .4, 7), .04, 890 + sd), (nx, ny) => ny > .6 ? '#b4b8ae' : '#8d948c', M4(px, top - .2, pz, 0, ry + .3, 0, 1, 1, .9)); return [px, pz, top]; });
+      regionWalkStrip(...at(-Ls), ...at(Ls), .76, t => deck((2 * t - 1) * Ls), 'wood'); // 橋面：木板寬 1.5，邊上留一點
+      steps.forEach(([sx, sz, top]) => regionWalk((px, pz) => (px - sx) ** 2 + (pz - sz) ** 2 < .25 ? top : null, [sx - .5, sz - .5, sx + .5, sz + .5], 'rock')); }
     // 溪岸：水邊的石頭（三五顆一組）、彎道內側的蘆葦、稍遠一點的蕨類與藍色小花
     for (let i = 8; i < Cp.length - 8; i += 3) {
       const [x, z, t] = Cp[i], fx = Cp[i + 3][0] - Cp[i - 3][0], fz = Cp[i + 3][1] - Cp[i - 3][1], fl = Math.hypot(fx, fz), rx = fz / fl, rz = -fx / fl, w = creekW(t), bend = (Cp[i + 3][0] - 2 * x + Cp[i - 3][0]) * rx + (Cp[i + 3][1] - 2 * z + Cp[i - 3][1]) * rz;
@@ -366,12 +378,15 @@
       [.62, .7].forEach((k, j) => { const p = a.clone().lerp(b, k), m = obj(kf, p.x + (j - .5) * .12, p.z, { y: p.y + .22, s: .7 - j * .2 }); m(new THREE.CylinderGeometry(.045, .06, .2, 5, 1, true), '#f3ece0', 0, .1, 0); m(new THREE.SphereGeometry(.15, 7, 3, 0, PI2, 0, Math.PI / 2), '#e5484d', 0, .19, 0, 0, 0, 0, 1, .72, 1); }); // 木頭背上的兩朵小紅菇
       for (let j = 0; j <= 6; j++) { const p = a.clone().lerp(b, j / 6); addCol({ x: p.x, z: p.z, r: .38 }); } }
     // 踏腳石：巨樹東邊，五顆平平的大石頭橫過溪面，石面高出水面約 15 公分、往下一直埋進溪床（不會浮在水裡）。
-    // 踩上去的時候腳下是石面（stepStep 把玩家托到石面上）：原本石頭只是給眼睛看的路線，過溪其實是在膝蓋深的溪床裡涉水
+    // 石面是可以走的表面（regionWalk）：從岸邊一顆一顆踩過去；在溪床裡涉水走過去會撞到中間那幾顆（石面比溪床高 0.45 公尺以上，跨不上去的表面當成牆），跳起來才上得去
     STEP.list = [];
     { const i = Math.round(Cp.length * .58), [x, z, t] = Cp[i], fx = Cp[i + 3][0] - Cp[i - 3][0], fz = Cp[i + 3][1] - Cp[i - 3][1], fl = Math.hypot(fx, fz), rx = fz / fl, rz = -fx / fl, s = POOL.s + (TAIL.s - POOL.s) * t;
       Object.assign(STEP, { x: x * K, z: z * K, rx, rz, w: creekW(t) * K });
       [-1.9, -.95, 0, .95, 1.9].forEach((o, j) => { const X = x * K + rx * o + rz * (j % 2 ? .18 : -.12), Z = z * K + rz * o - rx * (j % 2 ? .18 : -.12), sy = .75, y = Math.max(H(X, Z), s) - .2, g = rk(600 + j), p = g.attributes.position; let top = 0; for (let v = 0; v < p.count; v++) top = Math.max(top, p.getY(v)); g.dispose();
-        rock(ks, X, Z, .48, { y, sy, sink: 0, col: false, moss: '#9aa09a', mt: .9, seed: 600 + j, bo: .3 }); STEP.list.push([X, Z, y + top * .48 * sy * .9, .56]); }); } // 石面：最高的頂點往下一點（頂面那一圈）
+        rock(ks, X, Z, .48, { y, sy, sink: 0, col: false, moss: '#9aa09a', mt: .9, seed: 600 + j, bo: .3 }); STEP.list.push([X, Z, y + top * .48 * sy * .9, .56]); }); // 石面：最高的頂點往下一點（頂面那一圈）
+      const L = STEP.list, box = [Math.min(...L.map(q => q[0])) - .6, Math.min(...L.map(q => q[1])) - .6, Math.max(...L.map(q => q[0])) + .6, Math.max(...L.map(q => q[1])) + .6];
+      STEP.surf = { fn: (px, pz) => { let top = null; for (const [sx, sz, sy, r] of L) if ((px - sx) ** 2 + (pz - sz) ** 2 < r * r && (top == null || sy > top)) top = sy; return top; } };
+      regionWalk(STEP.surf.fn, box, 'rock'); }
     // 溪邊的樹：大多在東岸（西岸是巨樹的地方），三五棵成群
     [[.08, 1, 2.8], [.16, 1, 3.4], [.36, 1, 2.6], [.47, 1, 3.6], [.74, 1, 2.6], [.86, -1, 3], [.27, -1, 3.2], [.93, 1, 3.2]].forEach(([tt, side, off], j) => {
       const i = Math.min(Cp.length - 4, Math.max(3, Math.round(Cp.length * tt))), [x, z, t] = Cp[i], fx = Cp[i + 3][0] - Cp[i - 3][0], fz = Cp[i + 3][1] - Cp[i - 3][1], fl = Math.hypot(fx, fz), rx = fz / fl, rz = -fx / fl;
@@ -392,7 +407,7 @@
       duck(cx + .9, cz - .5, 1, -2.4); duck(cx + 1.45, cz - .05, .58, -2.2); duck(cx + 1.9, cz + .35, .55, -2.5);
     }
   }
-  const STEP = { list: [], got: new Set() }; // 踏腳石：[x, z, 石面高度, 站得上去的半徑]（彩蛋：從一岸踩到另一岸）
+  const STEP = { list: [], got: new Set(), surf: null }; // 踏腳石：[x, z, 石面高度, 站得上去的半徑]（彩蛋：從一岸踩到另一岸）；surf＝登記給 regionWalk 的石面
   const SNOW = { x: 17.5, z: 54 }; // 山脊頂的雪地小家族（基礎單位）：從台地的望遠鏡看過去，視線剛好擦過巨樹樹冠的西邊
 
   /* ---------- 南面山壁：山脊上的松樹線、山壁下緣的岩脈、山腳的樹與灌木（只放物件，不動地形） ---------- */
@@ -674,12 +689,11 @@
     });
     B.im.instanceMatrix.needsUpdate = true;
   }
-  // 踏腳石：站上去的時候托到石面上；彩蛋：踩著石頭從一岸走到另一岸
+  // 彩蛋：踩著踏腳石從一岸走到另一岸（站上石面交給 regionWalk，這裡只記踩過哪幾顆）
   function stepStep() {
     if (!STEP.rx) return; const lx = P.x - STEP.x, lz = P.z - STEP.z, along = lx * STEP.rx + lz * STEP.rz, off = Math.abs(-lx * STEP.rz + lz * STEP.rx);
     if (off > 1.6 || Math.abs(along) > STEP.w + 2.5) { STEP.side = 0; return; }
-    // 站在石面上：地形是溪床（石頭不在地形裡），腳下改成石面的高度（在 playerStep 之後、鏡頭之前）；跳起來的時候不管（P.y 在石面之上）
-    if (!CV.c && !RIDE.on) { let top = -1e9, k = -1; STEP.list.forEach(([x, z, y, r], j) => { if ((P.x - x) ** 2 + (P.z - z) ** 2 < r * r && y > top) { top = y; k = j; } }); if (top > P.y && top - P.y < .8) { P.y = top; if (P.vy < 0) P.vy = 0; P.ground = true; STEP.got.add(k); } }
+    if (P.ground && P.surf && STEP.surf && P.surf.fn === STEP.surf.fn) { let top = -1e9, k = -1; STEP.list.forEach(([x, z, y, r], j) => { if ((P.x - x) ** 2 + (P.z - z) ** 2 < r * r && y > top) { top = y; k = j; } }); if (k >= 0) STEP.got.add(k); } // 腳正踩在石面上
     if (Math.abs(along) > STEP.w + .6) { const s = Math.sign(along); if (STEP.side && s === -STEP.side && STEP.got.size >= 3) eggHit('plain_stones', '踩著石頭過溪……一顆、兩顆、三顆，鞋子沒有濕！'); if (s !== STEP.side) STEP.got.clear(); STEP.side = s; } // 要真的踩著石頭過去（至少三顆），從旁邊涉水過去不算
   }
 

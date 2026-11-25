@@ -1396,7 +1396,7 @@ function introResolve() {
     if (hit) { const { c, q } = hit; if (CV.c !== c) caveEnter(c, q.s < c.L / 2 ? 1 : -1); CV.i = q.i; CV.s = q.s; CV.l = q.l; kind = c.dead ? 'moon' : 'tube'; }
     else { CV.c = null; kind = caveRegion(P.x, P.z); if (kind === 'south') kind = 'plain'; }
   }
-  P.y = G(P.x, P.z); P.camY = P.y; P.vy = P.vx = P.vz = 0; P.dip = P.dipV = 0; P.roll = 0; P.eye = IN.sneak ? 1.18 : 1.62; if (moved) save();
+  P.y = G(P.x, P.z, P.y); P.camY = P.y; P.vy = P.vx = P.vz = 0; P.dip = P.dipV = 0; P.roll = 0; P.eye = IN.sneak ? 1.18 : 1.62; if (moved) save(); // 帶著 initPlayer 算好的腳的高度：存在橋上的還是站在橋面
   return kind;
 }
 function introPlan() {

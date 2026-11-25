@@ -234,7 +234,7 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return 
 // 雲端存檔（gate.js 的 SlimeCloud）：每次存檔都通知；'now'＝馬上上傳（買東西、做完加工），'leave'＝頁面要關了
 const cloud = how => { try { if (window.SlimeCloud) SlimeCloud.sync(how); } catch (e) { } };
 function saveCloud() { save(); cloud('now'); }
-function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = RIDE.on && RIDE.safe ? RIDE.safe : { x: P.x, z: P.z, yaw: P.yaw }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } } // 搭車中存安全的站位（換邊前＝上車的地方、換邊後＝目的地的下車處），重新整理不會卡在山裡
+function save() { if (NOSAVE || resetting || (window.SlimeCloud && SlimeCloud.frozen)) return; S.last = Date.now(); if (P) S.pos = RIDE.on && RIDE.safe ? RIDE.safe : { x: P.x, z: P.z, yaw: P.yaw, y: +P.y.toFixed(2) }; try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); saveWarned = false; cloud(); } catch (e) { if (!saveWarned) { saveWarned = true; setTimeout(() => toast('無法儲存進度：瀏覽器的儲存空間已滿或被停用（無痕模式？）'), 0); } } } // 搭車中存安全的站位（換邊前＝上車的地方、換邊後＝目的地的下車處），重新整理不會卡在山裡
 
 /* ---------- 經濟公式 ---------- */
 const trend = { sp: null };
@@ -478,7 +478,7 @@ const sfx = {
   land(k = .5, kind = 'grass') { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, .16, 180, .8, .08 + k * .14, 'lowpass'); sfx.step(kind, 1.2 + k); },
   pop() { if (!S.sound) return; const t = audio().currentTime; [660, 880, 1320].forEach((f, i) => tone(f, t + i * 0.07, 0.25, 0.16)); },
   tick() { if (!S.sound) return; const ac = audio(); noise(ac, ac.currentTime, 0.05, 2500, 2, 0.2); },
-  // 腳步聲依地面材質變化：草地／泥土小徑／沙灘／岩石／雪地／城市柏油
+  // 腳步聲依地面材質變化：草地／泥土小徑／沙灘／岩石／雪地／城市柏油／木板橋
   step(kind = 'grass', v = 1) {
     if (!S.sound) return; const ac = audio(), t = ac.currentTime;
     if (kind === 'snow') { for (let i = 0; i < 3; i++) noise(ac, t + i * .018, .05, rnd(900, 1800), 1.2, .045 * v, 'bandpass'); noise(ac, t, .09, 400, .8, .04 * v, 'lowpass'); }
@@ -486,6 +486,7 @@ const sfx = {
     else if (kind === 'ice') { noise(ac, t, .035, rnd(3200, 4200), 3, .05 * v, 'bandpass'); tone(rnd(1800, 2400), t, .05, .01 * v, 'triangle'); noise(ac, t, .05, 220, 1, .04 * v, 'lowpass'); }
     else if (kind === 'splash') { noise(ac, t, .16, rnd(900, 1500), .7, .08 * v, 'bandpass', 1.2); noise(ac, t + .03, .1, 3000, 1.2, .03 * v, 'highpass'); }
     else if (kind === 'rock' || kind === 'city') { noise(ac, t, .04, kind === 'city' ? 2600 : 1400, 2.5, .07 * v, 'bandpass'); noise(ac, t, .06, 180, 1, .06 * v, 'lowpass'); }
+    else if (kind === 'wood') { noise(ac, t, .05, rnd(650, 900), 2.2, .06 * v, 'bandpass'); tone(rnd(140, 175), t, .09, .035 * v, 'triangle'); } // 木板橋：空空的「咚」
     else if (kind === 'dirt') { noise(ac, t, .07, rnd(500, 800), .9, .07 * v, 'lowpass'); noise(ac, t + .01, .04, 2200, 1.5, .02 * v, 'bandpass'); }
     else { noise(ac, t, .06, rnd(300, 600), 1, .05 * v, 'lowpass'); noise(ac, t, .08, rnd(3000, 5000), 1.2, .016 * v, 'bandpass'); }
   },
@@ -972,7 +973,21 @@ function H0(x, z) {
   return h;
 }
 const WS_R = 16, WS_Y = .4;
-function G(x, z) { if (CV.c) return caveG(x, z); const T = TAXI.V, u = (x - T.x) * T.dx + (z - T.z) * T.dz; if (u > -.3 && u < TAXI.LEN && Math.abs((x - T.x) * T.dz - (z - T.z) * T.dx) < TAXI.HW) return T.y; return H(x, z); } // 玩家腳下：在山洞裡用山洞自己的地面；月光隧道的洞口裡是管子的地板（地形在那裡被挖掉了，H 還是山坡的高度）
+// 玩家腳下：在山洞裡用山洞自己的地面；月光隧道的洞口裡是管子的地板（地形在那裡被挖掉了，H 還是山坡的高度）。
+// yf＝玩家腳的高度：有給才算「可以走的表面」（regionWalk：橋面、踏腳石），取地形與表面中不高於 yf＋STEP_UP 的最高者——
+// 從緩坡或台階走得上去、從橋底下走過去不會被吸上橋面。史萊姆、道具擺放、開場落點不給 yf，照舊只看地形。WALK_ON＝這一次站到的表面（腳步聲用）；
+// WALK_BLK＝這一點有個表面跨不上去、又比頭低（頂面在腳＋STEP_UP 到腳＋WALK_HEAD 之間、沒埋在地形裡）：tryMove 當成牆，不會從石頭、低矮的橋身裡穿過去，跳起來才上得去
+const STEP_UP = .45, WALK_HEAD = 1.7; let WALK_ON = null, WALK_BLK = false;
+function G(x, z, yf) {
+  WALK_ON = null; WALK_BLK = false; if (CV.c) return caveG(x, z);
+  const T = TAXI.V, u = (x - T.x) * T.dx + (z - T.z) * T.dz; if (u > -.3 && u < TAXI.LEN && Math.abs((x - T.x) * T.dz - (z - T.z) * T.dx) < TAXI.HW) return T.y;
+  const g = H(x, z); if (yf == null || !REGION.walk.length) return g; const lim = yf + STEP_UP; let h = g;
+  for (const s of REGION.walk) { // 表面只有幾個：先用包圍盒篩，框外不呼叫
+    const b = s.box; if (b && (x < b[0] || x > b[2] || z < b[1] || z > b[3])) continue; const y = s.fn(x, z, yf); if (y == null || y <= g) continue;
+    if (y <= lim) { if (y > h) { h = y; WALK_ON = s; } } else if (y < yf + WALK_HEAD) WALK_BLK = true;
+  }
+  return h;
+}
 
 /* 天空環境光（IBL）：用和天空相同的漸層＋太陽烘焙成 PMREM。
    原本開放世界用的是攝影棚式的暗色環境圖，金屬、水面、史萊姆反射出的是一片深藍黑色，與晴朗的天空不符。
@@ -4040,7 +4055,8 @@ const SENS = [.0016, .0025, .0038], SENS_N = ['低', '中', '高'];
 function initPlayer() {
   let sp = S.pos && isFinite(S.pos.x) && isFinite(S.pos.z) ? S.pos : { x: 0, z: 16, yaw: 0 };
   if (!inCity(sp.x) && !caveAt(sp.x, sp.z) && (!regionOK(sp.x, sp.z) || coldBlocked(sp.x, sp.z))) sp = { x: 0, z: 16, yaw: 0 }; // 存檔在山洞裡（山脊底下）：保留，開場時再放到洞的地面上
-  P = { x: sp.x, z: sp.z, y: G(sp.x, sp.z), vy: 0, vx: 0, vz: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: G(sp.x, sp.z), bob: 0, stepT: 0, coy: 0, jb: 0, sneak: false, running: false, dip: 0, dipV: 0, roll: 0 };
+  const y = G(sp.x, sp.z, isFinite(sp.y) ? sp.y : undefined); // 存檔記了腳的高度：存在橋上的，回來還是站在橋上（不是橋底下的溪裡）
+  P = { x: sp.x, z: sp.z, y, vy: 0, vx: 0, vz: 0, yaw: sp.yaw || 0, pitch: -.08, ground: true, r: .35, eye: 1.62, camY: y, bob: 0, stepT: 0, coy: 0, jb: 0, sneak: false, running: false, dip: 0, dipV: 0, roll: 0, surf: null };
 }
 // 腳下的地面材質（決定腳步聲）
 function surfaceAt(x, z) {
@@ -4048,6 +4064,7 @@ function surfaceAt(x, z) {
   if (inCity(x)) return 'city'; if (onPath(x, z) > .5) return 'dirt';
   const b = domBiome(x, z); if (b === 'snow') return 'snow'; if (b === 'volcano') return 'rock'; if (b === 'coast' && H(x, z) < 1.5 * K) return 'sand'; return 'grass';
 }
+const footAt = () => (P.surf && P.surf.kind) || surfaceAt(P.x, P.z); // 站在橋面、踏腳石上：用表面自己的腳步聲
 const locked = () => document.pointerLockElement === $('#worldCv');
 let HINT0 = '';
 function showFreeHint() { const h = $('#startHint'); if (!HINT0) HINT0 = h.innerHTML; h.innerHTML = '<b>滑鼠已解鎖（遊戲繼續進行）</b><br>按 Alt 或點擊畫面回到操控'; h.hidden = false; }
@@ -4175,13 +4192,14 @@ function bumpTree(c) {
 }
 function tryMove(dx, dz) {
   { const cm = caveMove(dx, dz); if (cm !== undefined) return cm; } // 在山洞裡（或剛走進洞口）：地面與牆壁用山洞的曲線算
-  let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z), h1 = G(nx, nz), d = Math.hypot(dx, dz) || 1e-6;
-  if (h1 < -2.2) return false;
-  const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7);
+  let nx = P.x + dx, nz = P.z + dz; const h0 = G(P.x, P.z, P.y), blk0 = WALK_BLK, h1 = G(nx, nz, P.y), d = Math.hypot(dx, dz) || 1e-6; // 帶腳的高度：橋面上的坡度用橋面算，橋底下用地形算
+  if (h1 < -2.2 || (WALK_BLK && !blk0)) return false; // 前面是跨不上去的表面（溪中間的踏腳石、橋身）：像撞到石頭一樣停住；已經在底下（舊存檔）的人照樣走得出來
+  const ux = dx / d, uz = dz / d, ha = G(P.x + ux * .7, P.z + uz * .7, P.y);
   if ((ha - h0) / .7 > 1.1) { const rr = Math.max(Math.abs(nx), Math.abs(nz)) / K; if (!inCity(nx) && rr > 44 && rr < 60) barrierMsg('山脊太陡了，爬不上去。沿著小徑走到山洞口（路標會告訴你還有多遠）。'); return false; }
   if (!inCity(nx) && !regionOK(nx, nz) && regionOK(P.x, P.z)) { if ((ha - h0) / .7 < .8) barrierMsg(barrierWhy(nx, nz)); return false; }
   if (coldBlocked(nx, nz) && !coldBlocked(P.x, P.z)) { const nw = performance.now(); if (!W.coldT || nw - W.coldT > 4000) { W.coldT = nw; toast('刺骨的寒氣擋住了去路……沒有保暖衣無法進入雪原。' + (armsOpen() ? '到大城市的武器店買一件吧。' : '升到 Lv ' + ARMS_LV + ' 後，大城市會開設武器店。')); } return false; }
   for (const c of colsNear(nx, nz)) {
+    if (c.yr && (P.y < c.yr[0] || P.y > c.yr[1])) continue; // 只擋某個高度的碰撞（橋上的欄杆、橋底下的橋墩）
     if (c.box) { const [x0, z0, x1, z1] = c.box, cx = clamp(nx, x0, x1), cz = clamp(nz, z0, z1), ddx = nx - cx, ddz = nz - cz, l = Math.hypot(ddx, ddz); if (l < P.r) { if (c.gate && GATES[c.gate]) barrierMsg({ coast: '東方', volcano: '北方' }[c.gate] + '能量門還封著：解開「' + GATES[c.gate].title + '」才能通過。'); if (c.msg) barrierMsg(c.msg); if (l < 1e-4) return false; nx = cx + ddx / l * P.r; nz = cz + ddz / l * P.r; } }
     else { const ddx = nx - c.x, ddz = nz - c.z, l = Math.hypot(ddx, ddz), R = c.r + P.r; if (l < R) { if (c.tree) bumpTree(c); if (l < 1e-4) return false; nx = c.x + ddx / l * R; nz = c.z + ddz / l * R; } }
   }
@@ -4211,11 +4229,11 @@ function playerStep(dt) {
   if (P.vx && !tryMove(P.vx * dt, 0)) P.vx = 0; if (P.vz && !tryMove(0, P.vz * dt)) P.vz = 0;
   P.jb = Math.max(0, P.jb - dt); P.coy = P.ground ? .12 : Math.max(0, P.coy - dt);
   if (P.jb > 0 && P.coy > 0) { P.vy = P.sneak ? 5.6 : 7.2; P.ground = false; P.coy = 0; P.jb = 0; sfx.jump(); }
-  const vy0 = P.vy; P.vy -= 22 * dt; P.y += P.vy * dt; const g = G(P.x, P.z);
-  if (P.y <= g) { if (!P.ground && vy0 < -3.5) { const k = clamp((-vy0 - 3.5) / 10, 0, 1); P.dipV -= 1.4 + k * 3.2; sfx.land(k, surfaceAt(P.x, P.z)); } P.y = g; P.vy = 0; P.ground = true; }
+  const vy0 = P.vy, y0 = P.y; P.vy -= 22 * dt; P.y += P.vy * dt; const g = G(P.x, P.z, Math.max(y0, P.y)); P.surf = WALK_ON; // 用這一格落下之前的腳：掉得快也不會一格穿過橋面
+  if (P.y <= g) { if (!P.ground && vy0 < -3.5) { const k = clamp((-vy0 - 3.5) / 10, 0, 1); P.dipV -= 1.4 + k * 3.2; sfx.land(k, footAt()); } P.y = g; P.vy = 0; P.ground = true; }
   else if (P.y - g > .25) P.ground = false;
   const hsp = Math.hypot(P.vx, P.vz), moving = hsp > .6 && P.ground; P.bob += moving ? dt * hsp * 2.1 : 0;
-  if (moving) { P.stepT -= dt * hsp / 4.3; if (P.stepT < 0) { P.stepT = .42; const kd = surfaceAt(P.x, P.z), vv = P.sneak ? .35 : run ? 1.2 : 1; sfx.step(kd, vv); if (CV.k > .4) caveEcho(kd, vv); } }
+  if (moving) { P.stepT -= dt * hsp / 4.3; if (P.stepT < 0) { P.stepT = .42; const kd = footAt(), vv = P.sneak ? .35 : run ? 1.2 : 1; sfx.step(kd, vv); if (CV.k > .4) caveEcho(kd, vv); } }
   P.eye += ((P.sneak ? 1.18 : 1.62) - P.eye) * Math.min(1, dt * 10);
   P.dipV += (-P.dip * 160 - P.dipV * 14) * dt; P.dip = clamp(P.dip + P.dipV * dt, -.35, .2);
   P.camY += (P.y - P.camY) * Math.min(1, dt * 18);
