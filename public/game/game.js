@@ -6181,7 +6181,7 @@ function shopFront(id, x, w, g, open) {
     B(w + .4, .5, 12.4, '#e2e8f0', x, 8.2, -20);
     B(.45, 1.3, .25, '#ef4444', x, 7.35, F + .1, 0, 0, 0, 'glow'); B(1.3, .45, .25, '#ef4444', x, 7.35, F + .1, 0, 0, 0, 'glow');
   } else if (id === 'arms') {
-    if (open) { B(w + .3, 3.6, 7.7, '#8b8580', x, 1.8, -22.3); [-1, 1].forEach(s => { B(.5, 3.6, 4.7, '#8b8580', x + s * (w / 2 - .1), 1.8, F - 2.25); for (let yy = .55; yy < 3.6; yy += .6) B(.52, .05, .1, '#6b6560', x + s * (w / 2 - .1), yy, F + .11); }); } // 石砌底座只做在後段與兩側（中間是店頭）
+    if (open) { B(w + .3, 3.6, 7.5, '#8b8580', x, 1.8, -22.35); [-1, 1].forEach(s => { B(.4, 3.6, 4.7, '#8b8580', x + s * (w / 2 - .05), 1.8, F - 2.25); for (let yy = .55; yy < 3.6; yy += .6) B(.42, .05, .1, '#6b6560', x + s * (w / 2 - .05), yy, F + .11); }); } // 石砌底座只做在後段與兩側（中間是店頭）
     else { B(w + .3, 3.6, 12.3, '#8b8580', x, 1.8, -20); for (let yy = .55; yy < 3.6; yy += .6) B(w + .32, .05, .1, '#6b6560', x, yy, F + .1); for (let i = 0; i < 18; i++) B(.05, .55, .1, '#6b6560', L + .4 + ((i * 1.37) % (w - .8)), .3 + (i % 6) * .6, F + .11); }
     for (let i = 0; i <= 4; i++) B(.28, 4.4, .2, '#4a2f1d', L + .15 + i * (w - .3) / 4, 5.8, F + .1);
     B(w + .2, .3, .22, '#4a2f1d', x, 3.75, F + .1); B(w + .2, .3, .22, '#4a2f1d', x, 7.95, F + .1);
@@ -7182,7 +7182,7 @@ function kpSay(id, key, sub = {}) {
   const pool = key.startsWith('pick:') ? [L.pick[key.slice(5)]] : key.startsWith('pay:') ? [L.pay[key.slice(4)]] : L[key]; if (!pool || !pool[0]) return null;
   const said = n.kpSaid || (n.kpSaid = {}), now = performance.now(), fresh = pool.filter(x => !said[x] || now - said[x] > 6000); if (!fresh.length) return null;
   const raw = fresh[Math.floor(Math.random() * fresh.length)]; said[raw] = now; n.talk = Math.max(n.talk, 2.5); // 說話時轉過來看你
-  return bark(npcWho(n), raw.replace('{d}', sub.d != null ? Math.round(sub.d).toLocaleString('en-US') : '').replace('{n}', sub.n || ''));
+  return bark(npcWho(n), raw.replace('{d}', sub.d != null ? Math.round(sub.d).toLocaleString('en-US') : '').replace('{n}', sub.n || ''), { pin: true }); // 店員在你背後回答：泡泡貼在畫面邊上
 }
 // 空手對準櫃台或店員按 E：聊一句（錢夠了的「想買」先問）
 function kpTalk(id) { const w = Object.keys(S.wish).some(x => wareShop(x) === id && (wareState(...x.split(':')) || {}).can); kpSay(id, w ? 'wish' : 'hi'); const n = kpNpc(id); if (n) npcGest(n, 'nod'); }
@@ -8066,10 +8066,10 @@ function wareAct(t, tap) {
   if (!h) { if (t && t.type === 'ware') return wareTake(t.it); if (t && t.type === 'counter') return kpTalk(t.it.shop); if (kp) return kpTalk(kp); if (t) doActAt(t); return; }
   if (h.ph !== 'read') return; // 拿起後 450 ms 內、結帳與錢不夠演出中：不收（防誤買）
   if (t && t.type === 'ware' && t.it !== h.it) { wareBack(true); return wareTake(t.it); } // 換拿
-  if (t && t.type === 'ware') return wareBack();
-  const atC = !!t && ((t.type === 'counter' && t.it.shop === h.shop) || kp === h.shop);
-  if (tap && !atC) return; // 觸控：只認點到的東西（點天空、地板、牆壁什麼都不做）
-  const st = h.st = wareState(h.t, h.k); if (!st.can) return st.why === 'poor' ? warePoor(st) : wareRefuse(st);
+  const atC = !!t && ((t.type === 'counter' && t.it.shop === h.shop) || kp === h.shop), home = !!t && t.type === 'ware';
+  if (tap && !atC && !home) return; // 觸控：只認點到的東西（點天空、地板、牆壁什麼都不做）
+  const st = h.st = wareState(h.t, h.k); if (!st.can) return st.why === 'poor' ? warePoor(st) : wareRefuse(st); // 買不了：放回，原因由店員說（錢不夠先攤零錢）
+  if (home) return wareBack(); // 對準原位：放回
   if (atC || nearCounter(h.shop)) return warePay(st);
   kpSay(h.shop, 'far'); const n = kpNpc(h.shop); if (n) npcGest(n, 'wave'); // 離櫃台遠：店員招手，不結帳
 }

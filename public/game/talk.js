@@ -442,14 +442,14 @@ function tkCardsHide() { const now = tkNow(); TK.cg.forEach(c => { if (!c.fly &&
 function tkPose() { return TK.cards && (TK.st === 'ask' || TK.st === 'fly') ? 'fan' : TK.on && TK.who && TK.who.k === 'note' && !TK.who.at ? 'hold' : ''; }
 
 /* ---------- 一句話、想法雲、章 ---------- */
-// 不佔按鍵的一句話：最多 2 個，新的擠掉最舊的。o：{ egg（章要蓋在這裡）, stamp（直接附章）, quiet（不出聲） }
+// 不佔按鍵的一句話：最多 2 個，新的擠掉最舊的。o：{ egg（章要蓋在這裡）, stamp（直接附章）, quiet（不出聲）, pin（說話的人在畫面外時貼在邊上，不消失：店員在你背後回答） }
 function bark(who, text, o = {}) {
   if (!who || !text || !W.ready || TITLE.on || GUI.kind || !tkInit()) return null; // 介面開著、主選單：直接丟掉
   const now = tkNow(), self = who.k === 'self'; while (BK.list.length >= 2) tkBkKill(BK.list[0]);
   const el = document.createElement('div'); el.className = 'bkw' + (self ? ' self' : '');
   el.innerHTML = '<div class="tki"><div class="tb ' + (self ? 'self' : 'bark') + '">' + tkRich(text) + '</div>' + (self ? '' : '<svg class="tkt" aria-hidden="true"><path/></svg>') + '</div>'; el.style.opacity = '0'; el.firstChild.style.transformOrigin = self ? '50% 100%' : '30% 100%';
   TK.bEl.appendChild(el);
-  const n = tkLen(text), b = { who, el, ki: el.firstChild, tb: el.querySelector('.tb'), path: el.querySelector('path'), t0: now, egg: o.egg || '', pl: '', plBad: 0, placed: false, x: 0, y: 0, s: 1,
+  const n = tkLen(text), b = { who, el, ki: el.firstChild, tb: el.querySelector('.tb'), path: el.querySelector('path'), t0: now, egg: o.egg || '', pin: !!o.pin, pl: '', plBad: 0, placed: false, x: 0, y: 0, s: 1,
     dur: self ? clamp(1800 + 100 * n, 2400, 6000) + (o.egg || o.stamp ? 800 : 0) : clamp(1200 + 100 * n, 1600, 4200) };
   tkBkMeasure(b); BK.list.push(b); BK.safeN = 0;
   if (o.stamp) setTimeout(() => { if (BK.list.includes(b)) tkStampOn(b, o.stamp); }, TKT.stamp);
@@ -461,6 +461,7 @@ function tkBkKill(b) { const i = BK.list.indexOf(b); if (i >= 0) BK.list.splice(
 function barkStep(dt, now) {
   if (--BK.safeN <= 0 || !BK.safe) { BK.safeN = 30; BK.safe = tkSafe(); } const sf = BK.safe, vw = innerWidth, vh = innerHeight, rm = RM();
   const obs = sf.obs.slice(); if (TK.mw && TK.el && !TK.el.hidden) obs.push({ x: TK.x, y: TK.y, w: TK.w * TK.s, h: TK.h * TK.s }); if (TK.cards && TK.crect) obs.push(TK.crect);
+  if (typeof WARE !== 'undefined' && WARE.h && WARE.R) obs.push(WARE.R); // 店裡拿在手上的吊牌卡（game.js）：泡泡讓開
   let stack = sf.b; // 想法雲：疊在快捷列上方中間，新的在上面
   for (const b of BK.list.slice()) {
     const e = now - b.t0; if (e > b.dur + 220 || GUI.kind || TITLE.on) { tkBkKill(b); continue; }
@@ -473,10 +474,14 @@ function barkStep(dt, now) {
     } else {
       const w = b.who; if (!w.at) { tkBkKill(b); continue; }
       w.at(tkV); tkProj(tkV, PA); w.mouth(tkV); tkProj(tkV, PM); const p = w.xz ? w.xz() : null, dist = p ? Math.hypot(p[0] - P.x, p[1] - P.z) : 0;
-      if (PA.z < .05 || PA.x < 0 || PA.x > vw || PA.y < 0 || PA.y > vh || dist > 12) op = 0; // 說話的人不在畫面內或太遠：不顯示
-      const s = b.s = clamp(2.6 / Math.max(.3, dist), .9, 1.06), bw = b.w * s, bh = b.h * s; [x, y] = tkChoose(b, tkCand(PA, PM, bw, bh, s), sf, bw, bh, now, obs);
+      const off = PA.z < .05 || PA.x < 0 || PA.x > vw || PA.y < 0 || PA.y > vh; let dir = null;
+      if ((off && !b.pin) || dist > 12) op = 0; // 說話的人不在畫面內或太遠：不顯示（pin：貼在畫面邊上，尾巴指向他那一側）
+      const s = b.s = clamp(2.6 / Math.max(.3, dist), .9, 1.06), bw = b.w * s, bh = b.h * s;
+      if (off && b.pin) { const r = tkPin(PA, sf, bw, bh, obs); x = r[0]; y = r[1]; dir = [r[2], r[3]]; } else [x, y] = tkChoose(b, tkCand(PA, PM, bw, bh, s), sf, bw, bh, now, obs);
       if (!b.placed || Math.abs(x - b.x) > 160 || Math.abs(y - b.y) > 160) { b.x = x; b.y = y; b.placed = true; } else { const k = 1 - Math.exp(-18 * dt); b.x += (x - b.x) * k; b.y += (y - b.y) * k; }
-      x = b.x; y = b.y; const tl = tkTail(b, (PM.x - x) / s, (PM.y - y) / s, false, 110 * Math.max(1, vh / 800)); if (tl) d = tl.d;
+      x = b.x; y = b.y;
+      if (dir) { const cx = b.bx + b.bw / 2, cy = b.by + b.bh / 2, k = Math.min(b.bw / 2 / Math.max(1e-3, Math.abs(dir[0])), b.bh / 2 / Math.max(1e-3, Math.abs(dir[1]))), tl = tkTail(b, cx + dir[0] * (k + 30), cy + dir[1] * (k + 30), true); if (tl) d = tl.d; }
+      else { const tl = tkTail(b, (PM.x - x) / s, (PM.y - y) / s, false, 110 * Math.max(1, vh / 800)); if (tl) d = tl.d; }
     }
     const tr = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0) scale(' + b.s.toFixed(3) + ')'; if (tr !== b.tr) { b.tr = tr; b.el.style.transform = tr; }
     const kt = sc !== 1 ? 'scale(' + sc.toFixed(3) + ')' : ''; if (kt !== b.kt) { b.kt = kt; b.ki.style.transform = kt; } // 彈出：從尾巴那一側長出來
