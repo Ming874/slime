@@ -82,7 +82,7 @@ function Detail({ it, hb }: { it?: InvItem; hb: number }) {
 }
 
 function Equip() {
-  const S = G().S;
+  const g = G(), S = g.S, ship = g.ship ?? [];
   const row = (has: boolean, name: string, note: string) => (
     <li className={has ? 'on' : ''}><i className="rx-check" aria-hidden="true" /><span>{name}</span><small>{has ? '已擁有' : note}</small></li>
   );
@@ -93,6 +93,14 @@ function Equip() {
         {row(!!S.own.coat, '保暖衣', '大城市武器店')}
         {row(!!S.own.sword, '長劍', '大城市武器店')}
       </ul>
+      {ship.length > 0 && (
+        <>
+          <b className="rx-ship-hd">宅配中</b>
+          <ul className="rx-ship-list">
+            {ship.map((e) => <li key={e.k}><span>{g.OWN[e.k]?.name}</span><small>{e.via === 'web' ? '關上電腦就降落' : '回到中央平地就降落'}</small></li>)}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
