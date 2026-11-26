@@ -2049,6 +2049,9 @@ function buildLandmarks3() {
       for (let i = 0; i <= len; i += 3) [-1.05, 1.05].forEach(o => { const px = x0 + i, pz = z0 + o, gy = H(px, pz); pp.push([new THREE.CylinderGeometry(.13, .15, dy - gy + 1.4, 7), '#5b4030', M4(px, (dy + 1 + gy - .4) / 2, pz)]); });
       pp.push([new THREE.BoxGeometry(len, .07, .07), '#5b4030', M4(x0 + len / 2, dy + .85, z0 - 1.05)], [new THREE.BoxGeometry(len, .07, .07), '#5b4030', M4(x0 + len / 2, dy + .85, z0 + 1.05)]);
       const pm = mesh(mergeParts(pp), flatV, 0, 0, 0, sc); pm.castShadow = pm.receiveShadow = !LOW; near.push(pm);
+      // 棧橋是走得上去的表面（沒有的話人會穿過木板掉進海裡），兩側欄杆與盡頭擋住不會掉下去
+      const xe = x0 + len - .3; regionWalk((px, pz) => px >= x0 - .25 && px <= xe && Math.abs(pz - z0) <= 1 ? dy + .05 : null, [x0 - .3, z0 - 1.05, xe + .05, z0 + 1.05], 'wood', () => dy - .06);
+      addCol({ box: [x0 + .6, z0 - 1.14, xe, z0 - 1.0] }); addCol({ box: [x0 + .6, z0 + 1.0, xe, z0 + 1.14] }); addCol({ box: [xe, z0 - 1.1, xe + .14, z0 + 1.1] });
       const boat = new THREE.Group(); boat.position.set(x0 + 12, wy + .15, z0 - 2.6); boat.rotation.y = .12; sc.add(boat); near.push(boat);
       const hull = new THREE.SphereGeometry(1, 16, 8, 0, PI2, Math.PI / 2, Math.PI / 2);
       mesh(mergeParts([[hull, '#f4efe6', M4(0, .45, 0, 0, 0, 0, 2.1, .6, .8)], [new THREE.TorusGeometry(1, .06, 5, 32), '#2f6f9a', M4(0, .45, 0, Math.PI / 2, 0, 0, 2.1, .8, 1)], [new THREE.BoxGeometry(.25, .06, 1.4), '#8b6544', M4(-.4, .4, 0)], [new THREE.BoxGeometry(.25, .06, 1.2), '#8b6544', M4(.7, .4, 0)], [new THREE.BoxGeometry(2.4, .05, .08), '#c8a26b', M4(.2, .5, .5, 0, .2, .15)]], true), smoothV, 0, 0, 0, boat);
