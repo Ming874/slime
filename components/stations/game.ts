@@ -37,7 +37,7 @@ export type Game = {
   nextQuest: () => string | null; questReady: (k: string) => boolean; madeIn: (zone: string) => number;
   hintBlock: (k: string) => string;
   DN?: { phase: string; night: number; p: number }; DN_PHASE?: Record<string, string>; creditsHTML?: () => string;
-  AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string;
+  AVATARS?: { id: string; n: string; c: string; d: string }[]; avatarSVG?: (id: string) => string; ADM_TP?: Record<string, unknown[]>;
   tideStepsHTML: () => string; mapImage: () => string; enter: () => string;
   eggs?: () => Egg[];
   mapView?: () => MapView; mapDraw?: (c: HTMLCanvasElement) => void; // 筆記本的手繪地圖（public/game/map.js）

@@ -2813,6 +2813,11 @@ function nookLake(M) {
   [-1, 1].forEach(s => { a(M.soft, new THREE.BoxGeometry(.3, .62, TL), '#f1f5f9', s * (TW + .15), .26, TZ + TL / 2); a(M.warm, new THREE.BoxGeometry(.05, .62, TL), '#cfdbe8', s * (TW - .02), .26, TZ + TL / 2); });
   a(M.soft, new THREE.CylinderGeometry(TW + .3, TW + .3, TL, 14, 1, true, Math.PI / 2, Math.PI), '#f1f5f9', 0, .57, TZ + TL / 2, Math.PI / 2, 0, 0);
   a(M.warm, new THREE.CylinderGeometry(TW, TW, TL, 14, 1, true, Math.PI / 2, Math.PI), '#cfdbe8', 0, .57, TZ + TL / 2, Math.PI / 2, 0, 0, -1, 1, 1);
+  { // 牆壁碰撞：沒有的話走得進牆裡，鏡頭會看到牆的背面（破圖）
+    const lw = (lx, lz) => [ix + lx * Math.cos(face) + lz * Math.sin(face), iz - lx * Math.sin(face) + lz * Math.cos(face)];
+    for (let k = 0; k < 28; k++) { const t = k / 28 * PI2, off = Math.atan2(Math.sin(t), Math.cos(t)); if (Math.abs(off) < GAP + .12) continue; const [wx, wz] = lw(Math.sin(t) * (R - .06), Math.cos(t) * (R - .06)); addCol({ x: wx, z: wz, r: .32 }); }
+    for (let zz = TZ - .1; zz <= TZ + TL + .05; zz += .4) [-1, 1].forEach(s => { const [wx, wz] = lw(s * (TW + .1), zz); addCol({ x: wx, z: wz, r: .26 }); });
+  }
   // 屋裡：毛毯、蓋著小被子睡覺的冰晶史萊姆、蠟燭、馬克杯
   a(M.warm, new THREE.CylinderGeometry(1.3, 1.3, .03, 18), '#c08457', 0, .02, -.2); a(M.warm, new THREE.BoxGeometry(.7, .14, .45), '#f9a8d4', -.25, .09, -.75);
   a(M.warm, new THREE.CylinderGeometry(.05, .05, .2, 8), '#fef9c3', .7, .12, -.3); a(M.lamp, new THREE.ConeGeometry(.03, .09, 6), '#fbbf24', .7, .27, -.3);
@@ -5156,9 +5161,9 @@ function hudBlink(id) { const el = document.getElementById(id); if (!el || !el.a
 const GUI = { kind: null };
 const GUIS = {
   line: { t: '加工產線', tabs: ['make'] }, decor: { t: '裝飾桌', tabs: ['decor'] }, live: { t: '直播台', tabs: ['live'] },
-  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '筆記本', tabs: ['pause', 'map'] }, paper: { t: '', tabs: ['paper'] },
+  pc: { t: '工作電腦', tabs: ['web', 'weekly', 'eshop', 'branch', 'codex'] }, museum: { t: '展示場', tabs: ['museum', 'visit'] }, board: { t: '公告欄', tabs: ['weekly'] }, bench: { t: '手作台', tabs: ['bench'] }, mapg: { t: '古地圖石台', tabs: ['mapg'] }, inv: { t: '背包', tabs: ['inv', 'codex'] }, pause: { t: '筆記本', get tabs() { return isAdmin() ? ['pause', 'map', 'admin'] : ['pause', 'map']; } }, paper: { t: '', tabs: ['paper'] },
 };
-const TABN = { bench: '手作', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單', map: '地圖', paper: '紙' };
+const TABN = { bench: '手作', eshop: '網購', weekly: '本週限定', museum: '展示台', visit: '參觀朋友', mapg: '拼回地圖', make: '加工', decor: '裝飾', live: '直播', web: '網路商店', branch: '事業', codex: '圖鑑', inv: '背包', pause: '選單', map: '地圖', admin: '管理員', paper: '紙' };
 let tab = '';
 /* 沉浸式介面：每個工作站用一種「道具」呈現（components/StationLayer.tsx 加上外觀與動畫，app/stations.css 是樣式）。
    開關的過場由下面的 GX 控制，#gui[data-mode] 決定是哪一種：
@@ -6389,9 +6394,37 @@ function dreamGo() {
 }
 let invSel = null;
 function renderInv() { ui('inv'); } // 畫面改由 React 負責（components/stations/）
-const RENDER = { paper: () => ui('paper'), bench: renderBench, eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause, map: () => ui('map') }; // map：筆記本的手繪地圖（map.js、NoteMap.tsx）
+const RENDER = { admin: () => ui('admin'), paper: () => ui('paper'), bench: renderBench, eshop: () => renderShop('eshop'), weekly: renderWeekly, museum: renderMuseum, visit: renderVisit, mapg: renderMapGame, make: renderMake, decor: renderDecor, live: renderLive, web: renderWeb, branch: renderBranch, codex: renderCodex, inv: renderInv, pause: renderPause, map: () => ui('map') }; // map：筆記本的手繪地圖（map.js、NoteMap.tsx）
 
 /* ---------- 開發者工具（管理員與管理後台設定的開發測試帳號）：一鍵解鎖全部地圖，方便測試各區 ---------- */
+const isAdmin = () => !!(window.SlimeCloud && SlimeCloud.user && SlimeCloud.user.admin);
+// 管理員控制台：資金、經驗、時間、傳送、解鎖、補給（只改自己的存檔；按鈕在筆記本的「管理員」分頁，components/stations/Admin.tsx）
+const ADM_TP = { base: ['中央平地', 0, 16], coast: ['海岸', 100, 0], volcano: ['火山', 0, -96], snow: ['雪原', -100, 0], city: ['大城市', null, null] };
+function admTeleport(k) {
+  const d = ADM_TP[k]; if (!d) return; let x, z;
+  if (k === 'city') { x = CITY.x + 3; z = CITY.z + 9; }
+  else if (k === 'base') { x = d[1]; z = d[2]; }
+  else { const [bx, bz] = kk([d[1], d[2]]); x = bx; z = bz; for (let i = 0; i < 60; i++) { const tx = bx + rnd(-14, 14), tz = bz + rnd(-14, 14); if (slimeGround(tx, tz, k)) { x = tx; z = tz; break; } } }
+  P.x = x; P.z = z; P.y = G(x, z); P.camY = P.y; P.vy = P.vx = P.vz = 0; W.camAway = false; save(); closeGui(); toast('已傳送到' + d[0]);
+}
+function admAct(k) {
+  if (!isAdmin()) return toast('只有管理員可以使用控制台');
+  const [cmd, arg] = k.split(':');
+  if (cmd === 'money') { addMoney(+arg); toast('資金 +' + fmt(+arg)); }
+  else if (cmd === 'fans') { S.fans += +arg; toast('粉絲 +' + arg); }
+  else if (cmd === 'lv') { const lv = xpLevel(S.xp); if (lv >= MAX_LV) return toast('已經是最高等級'); gainXP(XP_LV[lv] - S.xp, '管理員'); }
+  else if (cmd === 'gel') { unlockedSpecies().forEach(sp => S.gel[sp.id] = (S.gel[sp.id] || 0) + 10); toast('每種已解鎖的凝膠 +10'); }
+  else if (cmd === 'own') { Object.keys(OWN).forEach(o => S.own[o] = true); refreshBase(); refreshCold(); toast('已取得全部設備'); }
+  else if (cmd === 'zones') { devUnlockZones(); }
+  else if (cmd === 'warm') { S.warm = WARM_MAX; S.frozen = false; toast('體溫回滿、解除凍僵'); }
+  else if (cmd === 'time') { const T = { day: 120, dusk: 320, night: 420, dawn: 560 }[arg]; if (arg === 'real') { W.dnOff = 0; toast('時間回到真實時間'); } else { const now = (Date.now() / 1000) % DAY_LEN; W.dnOff = T - now; toast('時間：' + DN_PHASE[arg]); } }
+  else if (cmd === 'tp') return admTeleport(arg);
+  else if (cmd === 'slimes') { const zid = inCity() ? null : domBiome(P.x, P.z); if (!zid) return toast('大城市裡沒有史萊姆'); for (let i = 0; i < 5; i++) { const a = rnd(0, PI2), r = rnd(4, 9); spawnSlime(zid, [P.x + Math.cos(a) * r, P.z + Math.sin(a) * r]); } toast('在附近生成 5 隻史萊姆'); }
+  else if (cmd === 'fps') { W.admFps = !W.admFps; let el = document.getElementById('admFps'); if (!el) { el = document.createElement('div'); el.id = 'admFps'; document.body.appendChild(el); } el.hidden = !W.admFps; toast(W.admFps ? '顯示 FPS' : '隱藏 FPS'); }
+  renderTop(); renderHotbar(true); objSig = ''; renderObjective(); save(); ui('admin');
+}
+// FPS 顯示（管理員開啟時）：每半秒更新一次
+(() => { let n = 0, t0 = performance.now(); const f = () => { requestAnimationFrame(f); n++; const now = performance.now(); if (now - t0 < 500) return; if (W.admFps) { const el = document.getElementById('admFps'); if (el) el.textContent = Math.round(n * 1000 / (now - t0)) + ' FPS' + (W.r ? ' · ' + W.r.info.render.calls + ' draws' : ''); } n = 0; t0 = now; }; requestAnimationFrame(f); })();
 const isDev = () => !!(window.SlimeCloud && SlimeCloud.user && (SlimeCloud.user.dev || SlimeCloud.user.admin));
 function devUnlockZones() {
   if (!isDev()) return toast('只有開發測試帳號可以使用');
@@ -6465,6 +6498,7 @@ document.addEventListener('click', e => {
     case 'serve': { const c = S.customers.find(x => x.id === +id); if (!c) return; const p = shopItem(c); if (!p) return; const pr = shopPrice(c, p), aff = S.regulars[c.name] || 0, tip = aff >= 5 ? Math.round(pr * .15) : 0; S.stock = S.stock.filter(q => q !== p); S.customers = S.customers.filter(x => x !== c); S.regulars[c.name] = aff + 1; gainXP(4); addMoney(pr + tip); S.fans += 1; sfx.pop(); toast(`${c.name} 滿意離開 +${fmt(pr + tip)}${tip ? '（含小費）' : ''}`); refresh(); save(); break; }
     case 'finish': finish(); break;
     case 'devZones': devUnlockZones(); break;
+    case 'adm': admAct(k); break;
     case 'devMoon': moonDev(); break; // 遺跡的石柱：點亮下一根／演一次開花（story.js）
     case 'sound': S.sound = !S.sound; renderTop(); save(); if (TITLE.on) renderTitle(); break;
     case 'avatar': setAvatar(k); break;
@@ -10672,7 +10706,7 @@ window.SlimeGame = {
   MG, STEPS, MKEY, ownAny, TOUCH, QUIRK, MASTER_N, AUTO_T,
   get L() { return L; }, get D() { return D; }, get decorSel() { return { p: decorSt.p, sel: decorSt.sel }; }, BRANCHES,
   branchReady, contractItems, shopItem, shopPrice,
-  AVATARS, avatarSVG, SP, SPECIES, ZONES, RAR, DN, DN_PHASE, creditsHTML, PHOTO_EVT, REPAIRS, UPS, OWN, PACKS, DECO, CUTS, GRADES, GOAL, SHOP_UPS, QUEST, WEEK_MS, CH,
+  AVATARS, avatarSVG, ADM_TP, isAdmin, SP, SPECIES, ZONES, RAR, DN, DN_PHASE, creditsHTML, PHOTO_EVT, REPAIRS, UPS, OWN, PACKS, DECO, CUTS, GRADES, GOAL, SHOP_UPS, QUEST, WEEK_MS, CH,
   fmt, cap, slots, upCost, effCrisp, fair, rating, priceOf, weeklyOrders, wkItems, weekNo, invItems, short, farmLeft, fmtSec,
   unlockedSpecies, gradeOf, priceWhy, packPct, xpLevel, decoBonus,
   qState, nextQuest: () => nextQuest(), questReady: k => questReady(k), madeIn, hintBlock, tideStepsHTML, mapImage, enter: ENTER,
